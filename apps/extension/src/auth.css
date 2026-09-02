@@ -12,12 +12,17 @@ body {
     overflow: hidden;
 }
 
+/* Brand gradient rather than a hosted photo. The previous background was a
+   Supabase signed URL whose token expired 2025-09-19 and whose project has
+   since been deleted, so this panel rendered flat grey for ~11 months. A
+   gradient has no expiry, no network round trip, and ships inside the
+   extension zip -- which matters here because the auth page is the first
+   thing a new user sees. Colours track the logo blue and the indigo-600
+   used throughout the web UI. */
 .background-overlay {
     position: absolute;
     inset: 0;
-    background-image: url('https://teyjdjamdlguuezclsrq.supabase.co/storage/v1/object/sign/images/login.jpg?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1cmwiOiJpbWFnZXMvbG9naW4uanBnIiwiaWF0IjoxNzI2NzMwODYxLCJleHAiOjE3NTgyNjY4NjF9.G2lQx6hT9igfcrORAR7Gz5WkznoXZtgT8XQtZSSldVk&t=2024-09-19T07%3A27%3A41.855Z');
-    background-size: cover;
-    background-position: center;
+    background-image: linear-gradient(135deg, #2563eb 0%, #4f46e5 50%, #6366f1 100%);
     mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 30%, rgba(0, 0, 0, 0) 50%);
     -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 30%, rgba(0, 0, 0, 0) 50%);
 }
