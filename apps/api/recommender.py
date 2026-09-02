@@ -132,6 +132,67 @@ class Recommender:
         # the Python list-of-lists and CSR matrix nearly doubles dataset memory.
         self.documents[language] = None
 
+    def get_categories(self, language: str) -> List[Dict[str, Any]]:
+        """Return stable category metadata without reopening transcript files."""
+        self._ensure_language_loaded(language)
+        categories = sorted({
+            category
+            for category in self.categories[language]
+            if category and category != "Unknown"
+        })
+        return [{"category": category, "icon": None} for category in categories]
+
+    def _score_documents_by_words(
+        self,
+        word_ids: List[int],
+        language: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return known-word counts and comprehension ratios for every row."""
+        self._ensure_language_loaded(language)
+
+        matrix = self.matrices[language]
+        total_words = self.total_words_per_doc[language]
+        word_vector = np.zeros(matrix.shape[1], dtype=np.int8)
+        valid_word_ids = [word_id for word_id in word_ids if 0 <= word_id < matrix.shape[1]]
+        if valid_word_ids:
+            word_vector[valid_word_ids] = 1
+
+        # int8 accumulation overflows for documents containing more than 127
+        # matching words. Keep the explicit upcast even though it is temporary.
+        known_words = matrix.dot(word_vector.astype(np.int32)).astype(np.int32)
+        ratios = np.divide(
+            known_words,
+            total_words,
+            out=np.zeros_like(known_words, dtype=float),
+            where=total_words != 0,
+        )
+        return known_words, ratios
+
+    def calculate_vocabulary_coverage(
+        self,
+        word_ids: List[int],
+        language: str,
+    ) -> Dict[str, float]:
+        """Calculate top/bottom coverage from matrix scores only.
+
+        Empty rows are cache artifacts rather than useful videos and are excluded.
+        In particular, this prevents legacy ``*.npz.meta.json`` rows from
+        affecting the result without consulting any transcript JSON.
+        """
+        _, ratios = self._score_documents_by_words(word_ids, language)
+        nonempty_rows = self.total_words_per_doc[language] > 0
+        percentages = ratios[nonempty_rows] * 100
+
+        if percentages.size == 0:
+            return {"top30_avg": 0.0, "bottom30_avg": 0.0}
+
+        percentages.sort()
+        count = max(1, int(percentages.size * 0.3))
+        return {
+            "top30_avg": float(np.mean(percentages[-count:])),
+            "bottom30_avg": float(np.mean(percentages[:count])),
+        }
+
     async def debug_video_recommendation(
             self, 
             user_id: str, 
@@ -685,7 +746,7 @@ class Recommender:
         start_time = time.time()
 
         try:
-            self._ensure_language_loaded(language)
+            known_words_per_doc, ratios = self._score_documents_by_words(word_ids, language)
         except ValueError as exc:
             print(exc)
             return []
@@ -694,19 +755,6 @@ class Recommender:
         files = self.filenames[language]
         cats = self.categories[language]
         total_words_per_doc = self.total_words_per_doc[language]
-
-        word_vector = np.zeros(D.shape[1], dtype=np.int8)
-        valid_word_ids = [word_id for word_id in word_ids if 0 <= word_id < D.shape[1]]
-        if valid_word_ids:
-            word_vector[valid_word_ids] = 1
-
-        known_words_per_doc = D.dot(word_vector.astype(np.int32)).astype(np.int32)
-        ratios = np.divide(
-            known_words_per_doc,
-            total_words_per_doc,
-            out=np.zeros_like(known_words_per_doc, dtype=float),
-            where=total_words_per_doc != 0,
-        )
 
         valid_indices = []
         for doc_index in range(min(D.shape[0], len(files))):
