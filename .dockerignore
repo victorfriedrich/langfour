@@ -1,0 +1,29 @@
+# Build context is the repository root (see apps/api/Dockerfile). Without this
+# file the context is ~2.4 GB: the transcript corpus plus the archived .git
+# directories under _to_delete/.
+_to_delete
+.git
+.github
+node_modules
+**/node_modules
+apps/web
+apps/extension
+docs
+*.md
+
+# The corpus is fetched at boot by apps/api/corpus_sync.py, not baked in.
+apps/api/data/processed
+apps/api/data/archives
+apps/api/data/downloaded_files
+apps/api/data/youtube_thumbnails
+
+# One-off scripts and tests are not part of the service.
+apps/api/scripts
+apps/api/test_*.py
+
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.DS_Store
+**/.env
+**/.pytest_cache

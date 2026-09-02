@@ -1,0 +1,14 @@
+.idea
+.cache
+.parcel-cache
+build
+dist
+dist.zip
+build.zip
+node_modules
+parcel-bundle-reports
+dist.crx
+dist.pem
+.vercel
+src/**/*.js
+src/**/*.js.map

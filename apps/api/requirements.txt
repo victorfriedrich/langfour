@@ -1,0 +1,13 @@
+boto3==1.35.36
+fastapi==0.115.0
+moviepy==1.0.3
+numpy==2.1.1
+openai==1.48.0
+pydantic==2.9.2
+python-dotenv==1.0.1
+python-multipart==0.0.9
+pytubefix==7.1rc1
+scipy==1.14.1
+supabase==2.7.4
+uvicorn==0.30.6
+youtube-transcript-api==0.6.2

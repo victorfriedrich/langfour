@@ -1,0 +1,148 @@
+.sub-tr-popup {
+  position: fixed;
+  overscroll-behavior: contain;
+  z-index: 100000;
+  background: rgba(35, 35, 38, 0.95);
+  border: 1px solid #ffffff1c;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  font-family: Arial, sans-serif;
+  min-width: 150px;
+  /* Set a minimum width */
+  max-width: 400px;
+  /* Optional: set a maximum width */
+  width: auto;
+  /* Allow width to adjust based on content */
+  height: auto;
+  /* Allow height to adjust based on content */
+  max-height: 80vh;
+  /* Prevent popup from exceeding viewport height */
+  overflow: hidden;
+  /* Hide any overflowing content */
+  transition: width 0.3s ease, height 0.3s ease;
+  /* Smooth transitions */
+  margin-bottom: 10px;
+  transform: translateY(-38px);
+}
+
+.sub-tr-popup-content {
+  max-height: none;
+  /* Remove fixed max-height */
+  overflow-y: auto;
+  /* Enable vertical scrolling if needed */
+}
+
+.sub-tr-dict-item {
+  margin-bottom: 5px;
+}
+
+.sub-tr-dict-item-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.sub-tr-dict-item-text {
+  font-weight: bold;
+  font-size: 16px;
+  color: #ffffff;
+}
+
+.sub-tr-plus-button {
+  background: transparent;
+  border: 1px solid #ffffff3d;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background-color 0.2s, color 0.2s;
+  margin-left: 12px;
+}
+
+.nomargin {
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+
+.sub-tr-plus-button:hover {
+  background-color: #ffffff3d;
+  color: #ffffff;
+}
+
+.sub-tr-translation {
+  color: #fff;
+  font-size: 16px;
+  margin-left: 12px;
+  margin-right: 12px;
+  text-align: center;
+  word-wrap: break-word;
+  /* Allow long words to wrap */
+}
+
+.sub-tr-dict-item-ts {
+  color: #b7b7b7;
+}
+
+.sub-tr-dict-item-pos {
+  color: #50b772;
+}
+
+.sub-tr-dict-meaning {
+  padding-left: 20px;
+  margin-top: 8px;
+  margin-bottom: 20px;
+}
+
+.sub-tr-dict-meaning-item {
+  padding: 2px 4px;
+  word-break: break-all;
+}
+
+.sub-tr-loading {
+  width: 50%;
+  height: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sub-tr-close-icon {
+  z-index: 1;
+  fill: transparent;
+  cursor: default;
+  width: 14px;
+  height: 14px;
+  transition: fill 0.2s;
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  fill-rule: evenodd;
+}
+
+.sub-tr-popup:hover .sub-tr-close-icon {
+  fill: #eeeeee87;
+}
+
+.sub-tr-popup:hover .sub-tr-close-icon:hover {
+  fill: #eeeeee;
+}
+
+/* Optional: Responsive Design */
+@media (max-width: 600px) {
+  .sub-tr-popup {
+    max-width: 90%;
+    /* Adjust max-width for smaller screens */
+  }
+}
+
+@media (min-width: 601px) {
+  .sub-tr-popup {
+    max-width: 400px;
+    /* Default max-width for larger screens */
+  }
+}

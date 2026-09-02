@@ -1,0 +1,18 @@
+# apps/api — local rules only.
+#
+# Secrets, the transcript corpus and all Python build/cache patterns live in
+# the root .gitignore so there is a single place to audit them. Keep this file
+# small.
+#
+# NOTE: this file used to be the stock GitHub Python template plus a bare
+# `articles/` rule. That rule silently excluded apps/api/data/articles/ —
+# 1.7 MB of parsed articles the recommender reads at runtime, which both the
+# README and the root .gitignore say is tracked. Do not reintroduce it.
+
+# Scraper and parser scratch output
+french.txt
+spanish50k.txt
+youtubers_*
+
+# Local overrides
+local_settings.py

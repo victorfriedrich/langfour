@@ -1,0 +1,34 @@
+name: Extension CI
+
+on:
+  pull_request:
+    paths:
+      - "apps/extension/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/extension-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/extension/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/extension-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run lint --workspace=spotlight-lingo
+      - run: npm run typecheck --workspace=spotlight-lingo

@@ -1,0 +1,33 @@
+{
+  "name": "langfive",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Langfive monorepo — web app, Chrome extension, and API.",
+  "packageManager": "npm@10.9.0",
+  "engines": { "node": ">=20" },
+  "workspaces": [
+    "apps/web",
+    "apps/extension"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,magenta -k \"npm:dev:web\" \"npm:dev:api\"",
+    "dev:web": "npm run dev --workspace=lang-frontend",
+    "dev:api": "cd apps/api && .venv/bin/uvicorn app:app --reload --port 8000",
+    "dev:ext": "npm run start --workspace=spotlight-lingo",
+    "dev:all": "concurrently -n web,api,ext -c cyan,magenta,yellow -k \"npm:dev:web\" \"npm:dev:api\" \"npm:dev:ext\"",
+
+    "build": "npm run build --workspaces --if-present",
+    "build:web": "npm run build --workspace=lang-frontend",
+    "build:ext": "npm run build --workspace=spotlight-lingo",
+    "lint": "npm run lint --workspaces --if-present",
+
+    "api:install": "python3 -m venv apps/api/.venv && apps/api/.venv/bin/pip install -r apps/api/requirements-dev.txt",
+    "api:test": "apps/api/.venv/bin/pytest apps/api",
+
+    "corpus:pack": "apps/api/scripts/pack_corpus.sh",
+    "corpus:upload": "apps/api/scripts/upload_corpus.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

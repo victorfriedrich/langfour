@@ -1,0 +1,29 @@
+.sub-tr-word {
+  position: relative;
+  display: inline-block;
+  pointer-events: auto;
+}
+
+.sub-tr-word-hidden {
+  color: rgb(255, 183, 50);
+  transition: all .1s ease-in;
+}
+
+.sub-tr-mask {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.sub-tr-mask-hidden {
+  
+  border-radius: 10px;
+  transition: all .1s ease-in;
+}
+
+.sub-tr-reveal {
+  opacity: 1;
+  transform: none;
+  filter: none;
+  box-shadow: none;
+  background-color: transparent;
+}

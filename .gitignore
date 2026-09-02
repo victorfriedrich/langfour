@@ -1,0 +1,195 @@
+# Langfive — root .gitignore
+#
+# This file is the authoritative one for secrets and for the large data that
+# must never enter git history. apps/web, apps/extension and apps/api each keep
+# a small local file for their own build output; nothing about credentials or
+# the corpus lives there, so there is one place to audit.
+#
+# Reminder: .gitignore only protects files git is not already tracking. After
+# changing it, run:  git rm -r --cached . && git add -A
+
+# ---- secrets -------------------------------------------------------------
+# Every app's real .env, at any depth. The three .env.sample files are the
+# documentation and are deliberately re-included below.
+.env
+.env.*
+*.env
+!.env.sample
+!.env.*.sample
+!.env.example
+!.env.*.example
+
+# direnv, which loads a shell environment automatically and is easy to forget
+.envrc
+.direnv/
+
+# Keys, certificates and cloud credentials. The R2 tokens and the Supabase
+# service_role key are the ones that matter here; these patterns catch the
+# usual ways such things end up on disk.
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+id_rsa*
+id_ed25519*
+.aws/
+.npmrc
+.pypirc
+credentials
+credentials.json
+secrets.json
+service-account*.json
+*-service-account.json
+*.secrets
+
+# ---- the transcript corpus ----------------------------------------------
+# ~2.2 GB across ~11.8k JSON files. Deliberately not in git: it compresses ~16x
+# and ships as one gzipped tarball per language (~130 MB total) in Cloudflare
+# R2 instead.
+#
+#   apps/api/scripts/pack_corpus.sh     processed/ -> data/archives/*.tar.gz
+#   apps/api/scripts/upload_corpus.sh   archives   -> R2
+#   apps/api/corpus_sync.py             R2         -> processed/ at boot
+# NB: '/*' not '/', so the negation below can take effect -- git cannot
+# re-include a file whose parent directory is excluded.
+apps/api/data/processed/*
+apps/api/data/archives/
+
+# blacklist.txt is 12 KB of hand-curated exclusions (420 entries) read by
+# recommender._load_blacklist() at startup. It is NOT in the tarballs
+# (pack_corpus.sh archives processed/<lang>/ only) and so is NOT in R2.
+# It must be tracked, or deleting processed/ destroys it silently --
+# _load_blacklist() guards with os.path.exists and just returns an empty set.
+!apps/api/data/processed/blacklist.txt
+
+# Any archive anywhere, so a stray tarball outside archives/ cannot slip in.
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# ---- api runtime artefacts ----------------------------------------------
+# Regenerable, and some of it is large.
+apps/api/data/downloaded_files/
+apps/api/data/youtube_thumbnails/
+apps/api/data/processing_progress.txt
+apps/api/csv/
+apps/api/transcripts/
+apps/api/media/
+
+# ---- scraper output: TRACKED, but handle with care -----------------------
+# The scrape lists (yt_*.json, videos_*.json, youtuber_videos.json,
+# germany_top_youtubers.json) are deliberately NOT ignored -- they are inputs
+# to the one-off scripts and are kept in the repo for now.
+#
+# The hazard worth knowing: when the YouTube Data API returns 403 it echoes
+# the *entire request URL* in the error body, &key=<api key> included. A
+# stringified HttpError written into one of these records is therefore enough
+# to commit a live credential. videolistcreation.redact_api_key() scrubs it at
+# the write site; anything new that stores an API error here must do the same.
+
+# data/articles/ is 1.7 MB and the recommender reads it at runtime, so it IS
+# tracked. It is called out here because an `articles/` rule in
+# apps/api/.gitignore used to exclude it by accident.
+!apps/api/data/articles/
+
+# ---- local tooling, not part of the project ------------------------------
+# Agent settings and the sandbox git/gh bootstrap helpers. Machine-specific,
+# and gh-bootstrap.sh carries a personal email and session notes.
+.claude/
+scripts/
+
+# ---- node ----------------------------------------------------------------
+node_modules/
+.next/
+out/
+dist/
+build/
+.parcel-cache/
+.turbo/
+parcel-bundle-reports/
+*.tsbuildinfo
+next-env.d.ts
+.pnp
+.pnp.js
+.vercel
+
+# ---- python --------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+ENV/
+.Python
+*.egg-info/
+*.egg
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+coverage/
+
+# ---- logs, caches, scratch ----------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+pip-log.txt
+.cache/
+*.tmp
+*.bak
+*.orig
+*.rej
+_tmp_*/
+tmp/
+
+# Local databases, and SQLite's sidecar files. Without the sidecar patterns,
+# `git add -A` while a connection is open commits a -wal/-shm pair whose base
+# .sqlite is ignored -- several MB that reconstructs nothing on its own.
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+*.db-shm
+*.db-wal
+
+# ---- editor / os ---------------------------------------------------------
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# macOS Finder duplicates: "page copy.tsx", "yt_fr copy 2.json". These are
+# always accidents; there are three in the tree right now.
+* copy.*
+* copy [0-9]*
+
+# ---- migration leftovers -------------------------------------------------
+*.pre_rls_backup
+_to_delete/
+supabase/.branches/
+supabase/.temp/
+supabase/functions/.env
+
+# Local GitHub PAT, read by scripts/gh-bootstrap.sh to give cloud sessions
+# push/PR access. Plaintext credential -- never commit, never `git add -f`.
+.gh-pat

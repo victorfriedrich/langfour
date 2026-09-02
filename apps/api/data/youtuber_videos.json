@@ -1,0 +1,77 @@
+[
+  {
+    "Name": "HaerteTest",
+    "Subscribers": 19900000,
+    "ChannelLink": "https://www.youtube.com/channel/UCqsS8fU6yVxrJr5y_CoUn3w",
+    "Failreason": "ViewsPerSub"
+  },
+  {
+    "Name": "Kinder Spielzeug Kanal",
+    "Subscribers": 19300000,
+    "ChannelLink": "https://www.youtube.com/channel/UCVEDZVtA5NUtjxSXHjtvkag",
+    "Videos": [
+      {
+        "id": "BVwSD3SfJc0",
+        "title": "The Kids play with trucks and tractors 🛻",
+        "views": 9100000,
+        "length": 0,
+        "score": 1.0
+      },
+      {
+        "id": "KDRDiWq29qM",
+        "title": "Cars and Trucks compilation : The Kids play with toys 🚓",
+        "views": 4300000,
+        "length": 0,
+        "score": 0.5501683660269422
+      },
+      {
+        "id": "RgFkO3feEFg",
+        "title": "Let's meet firefighters! | Educational Videos for Kids | Kidibli",
+        "views": 1600000,
+        "length": 0,
+        "score": 0.2971380719170971
+      },
+      {
+        "id": "lkdenSDtKxc",
+        "title": "The Kids play astronauts on a rocket ship 🚀🧑‍🚀",
+        "views": 1600000,
+        "length": 0,
+        "score": 0.2971380719170971
+      },
+      {
+        "id": "7nAWi6qAhs4",
+        "title": "Let's learn about Space and Rockets! | Science Videos for Kids | Kidibli",
+        "views": 1100000,
+        "length": 0,
+        "score": 0.2502806100449036
+      },
+      {
+        "id": "vG6zsgbfMRI",
+        "title": "Let's learn about Firetrucks! | Educational Videos for Kids | Kidibli",
+        "views": 1000000,
+        "length": 0,
+        "score": 0.24090911767046486
+      },
+      {
+        "id": "VyS9aaIRYMA",
+        "title": "The Kids discover big vehicles 👷🚛",
+        "views": 970724,
+        "length": 0,
+        "score": 0.2381655195629242
+      },
+      {
+        "id": "5f2ABrD8Aeo",
+        "title": "Let's learn about Airplanes! | Educational Videos for Kids | Kidibli",
+        "views": 930164,
+        "length": 0,
+        "score": 0.23436444225585185
+      }
+    ]
+  },
+  {
+    "Name": "Ice Cream Rolls",
+    "Subscribers": 12200000,
+    "ChannelLink": "https://www.youtube.com/channel/UCAon55hNT6ESbdQ5y1hRWTA",
+    "Failreason": "ViewsPerSub 28394.022727272728"
+  }
+]

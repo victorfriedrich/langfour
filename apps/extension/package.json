@@ -1,0 +1,45 @@
+{
+  "name": "spotlight-lingo",
+  "version": "1.1.1",
+  "description": "",
+  "scripts": {
+    "start": "parcel watch manifest.json --config @parcel/config-webextension --no-hmr --no-scope-hoist",
+    "build": "parcel build manifest.json --config @parcel/config-webextension --no-scope-hoist",
+    "build-server": "vercel build && cpy ./static .vercel/output --no-overwrite",
+    "pack": "bestzip build/v$npm_package_version.zip dist/*",
+    "analize": "parcel build manifest.json --config @parcel/config-webextension --reporter @parcel/reporter-bundle-analyzer --no-scope-hoist",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@supabase/supabase-js": "^2.45.4",
+    "@types/chrome": "0.0.268",
+    "@types/lodash-es": "^4.17.12",
+    "dompurify": "^3.4.14",
+    "lodash-es": "^4.17.21",
+    "wink-pos-tagger": "^2.2.2"
+  },
+  "devDependencies": {
+    "@parcel/config-webextension": "^2.12.0",
+    "@parcel/reporter-bundle-analyzer": "^2.12.0",
+    "@parcel/transformer-inline-string": "^2.12.0",
+    "@types/node": "^22.4.1",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "bestzip": "^2.2.1",
+    "buffer": "^6.0.3",
+    "cpy-cli": "^5.0.0",
+    "eslint": "^8.57.1",
+    "parcel": "^2.12.0",
+    "prettier": "3.3.3",
+    "tslib": "^2.6.3",
+    "typescript": "^5.6.2"
+  },
+  "browserslist": [
+    "last 1 Chrome version"
+  ]
+}
