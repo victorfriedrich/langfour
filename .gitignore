@@ -1,4 +1,4 @@
-# Langfive — root .gitignore
+# Langfour — root .gitignore
 #
 # This file is the authoritative one for secrets and for the large data that
 # must never enter git history. apps/web, apps/extension and apps/api each keep

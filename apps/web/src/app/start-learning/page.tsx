@@ -87,7 +87,7 @@ const MigrateLogin = () => {
                 <div className="w-full max-w-md space-y-8 pb-32">
                     <div>
                         <h1 className="text-center text-4xl font-extrabold text-gray-800">
-                            Join Learnfive
+                            Join Langfour
                         </h1>
                         <p className="mt-2 text-center text-lg text-gray-600">
                             Sign up and save your demo account progress

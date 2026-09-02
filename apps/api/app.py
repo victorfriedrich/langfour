@@ -47,7 +47,10 @@ app.add_middleware(AuthMiddleware)
 # CORS spec -- browsers reject a wildcard origin on credentialed requests, so
 # the previous config was not doing what it appeared to. Origins are now
 # explicit and configured per environment.
-_default_origins = "http://localhost:3000,https://langfive.com,https://www.langfive.com"
+# The deployed frontend is www.langfour.com (Vercel). The previous default
+# listed langfive.com, which does not resolve -- so unless ALLOWED_ORIGINS was
+# set in the environment, the browser blocked every call from the real site.
+_default_origins = "http://localhost:3000,https://langfour.com,https://www.langfour.com"
 ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()
 ]
