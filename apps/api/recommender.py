@@ -31,6 +31,7 @@ class Recommender:
         self.documents = {}
         self.filenames = {}
         self.categories = {}
+        self.titles = {}
         self.max_word_ids = {}
         self.matrices = {}
         self.total_words_per_doc = {}
@@ -78,8 +79,15 @@ class Recommender:
 
             filenames = meta.get("filenames")
             categories = meta.get("categories")
+            titles = meta.get("titles")
             max_word_id = meta.get("max_word_id")
-            if not filenames or categories is None or len(filenames) != len(categories):
+            if (
+                not filenames
+                or categories is None
+                or titles is None
+                or len(filenames) != len(categories)
+                or len(filenames) != len(titles)
+            ):
                 return False
 
             json_filenames = sorted(
@@ -107,6 +115,7 @@ class Recommender:
 
             self.filenames[language] = filenames
             self.categories[language] = categories
+            self.titles[language] = titles
             self.max_word_ids[language] = int(max_word_id or matrix.shape[1] - 1)
             self.matrices[language] = matrix
             self.total_words_per_doc[language] = np.asarray(matrix.sum(axis=1)).ravel()
@@ -129,17 +138,20 @@ class Recommender:
             return
 
         logger.info("Initializing data for language: %s", language)
-        docs, files, cats = load_documents(os.path.join(self.base_folder, language))
-        triple = sorted(zip(files, docs, cats))
-        if triple:
-            files, docs, cats = map(list, zip(*triple))
+        docs, files, cats, titles = load_documents(os.path.join(self.base_folder, language))
+        rows = sorted(zip(files, docs, cats, titles))
+        if rows:
+            files, docs, cats, titles = map(list, zip(*rows))
         else:
-            files, docs, cats = [], [], []
+            files, docs, cats, titles = [], [], [], []
 
-        docs, files, cats = self._filter_blacklisted_files(docs, files, cats, self.blacklisted_files)
+        docs, files, cats, titles = self._filter_blacklisted_files(
+            docs, files, cats, titles, self.blacklisted_files
+        )
 
         self.filenames[language] = files
         self.categories[language] = cats
+        self.titles[language] = titles
         self.max_word_ids[language] = self._determine_max_word_id(docs)
         self.matrices[language] = self._create_document_term_matrix(language, docs)
         self.total_words_per_doc[language] = np.asarray(self.matrices[language].sum(axis=1)).ravel()
@@ -228,14 +240,17 @@ class Recommender:
         
         return blacklisted_files
     
-    def _filter_blacklisted_files(self, documents, filenames, categories, blacklisted_files):
+    def _filter_blacklisted_files(
+        self, documents, filenames, categories, titles, blacklisted_files
+    ):
         """Filter out blacklisted files from all data structures"""
         if not blacklisted_files:
-            return documents, filenames, categories
+            return documents, filenames, categories, titles
         
         filtered_docs = []
         filtered_files = []
         filtered_cats = []
+        filtered_titles = []
         
         original_count = len(filenames)
         
@@ -244,6 +259,7 @@ class Recommender:
                 filtered_docs.append(documents[i])
                 filtered_files.append(filenames[i])
                 filtered_cats.append(categories[i])
+                filtered_titles.append(titles[i])
         
         filtered_count = len(filtered_files)
         blacklisted_count = original_count - filtered_count
@@ -253,7 +269,7 @@ class Recommender:
             blacklisted_count, original_count, filtered_count,
         )
         
-        return filtered_docs, filtered_files, filtered_cats
+        return filtered_docs, filtered_files, filtered_cats, filtered_titles
     
     def _determine_max_word_id(self, documents: List[List[int]]) -> int:
         """
@@ -266,6 +282,23 @@ class Recommender:
                 if word_id is not None:
                     max_id = max(max_id, word_id)
         return max_id
+
+    def _write_matrix_metadata(self, language: str, max_word_id: int) -> None:
+        meta_path = os.path.join(
+            self.base_folder, language, "document_term_matrix.npz.meta.json"
+        )
+        with open(meta_path, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "filenames": self.filenames[language],
+                    "categories": self.categories[language],
+                    "titles": self.titles[language],
+                    "max_word_id": int(max_word_id),
+                },
+                fh,
+                ensure_ascii=False,
+                indent=2,
+            )
     
     def _create_document_term_matrix(
         self, 
@@ -310,6 +343,8 @@ class Recommender:
                     logger.info("Blacklist updated - rebuilding matrix for %s", language)
 
             if not shape_mismatch:
+                if meta.get("titles") != self.titles[language]:
+                    self._write_matrix_metadata(language, current_max_id)
                 logger.info("Document-term matrix for '%s' loaded from disk.", language)
                 return D
 
@@ -338,18 +373,7 @@ class Recommender:
         # Save NPZ
         save_npz(matrix_path, D)
 
-        # Save manifest for future validation
-        with open(meta_path, "w", encoding="utf-8") as fh:
-            json.dump(
-                {
-                    "filenames": self.filenames[language],
-                    "categories": self.categories[language],
-                    "max_word_id": int(max_word_id),
-                },
-                fh,
-                ensure_ascii=False,
-                indent=2,
-            )
+        self._write_matrix_metadata(language, max_word_id)
 
         logger.info(
             "Matrix for '%s' => %d x %d, %d nonzeros, %.2f MB resident",
@@ -424,6 +448,7 @@ class Recommender:
         D = self.matrices[language]  # This is your CSR matrix
         files = self.filenames[language]
         cats = self.categories[language]
+        titles = self.titles[language]
         
         # Debug matrix dimensions
         logger.debug(
@@ -513,42 +538,19 @@ class Recommender:
         # Take top candidates (more than needed in case some fail to load)
         top_candidates = valid_scores[:min(top_n * 2, len(valid_scores))]
         
-        # Now load JSON metadata only for top candidates
         videos = []
         for doc_index, ratio in top_candidates:
             if len(videos) >= top_n:
                 break
-                
-            try:
-                video_id = files[doc_index].replace("_processed.json", "")
-                file_path = os.path.join(self.base_folder, language, files[doc_index])
-                
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    data = json.load(file)
-                
-                # Calculate new words (total - known)
-                new_words = total_words_per_doc[doc_index] - known_words_per_doc[doc_index]
-                
-                video_info = {
-                    "id": video_id,
-                    "percentUnderstood": round(ratio * 100, 2),
-                    "category": cats[doc_index],
-                    "title": data.get("title", ""),
-                    "source": data.get("source", ""),
-                    "date": data.get("date", ""),
-                    "newWords": int(new_words)
-                }
-                
-                videos.append(video_info)
-                
-            except Exception:
-                # files[doc_index] rather than file_path: the latter is bound
-                # inside the try block, so referencing it here would raise
-                # NameError and mask the original failure.
-                logger.error(
-                    "Error loading video data from %s", files[doc_index], exc_info=True
-                )
-                continue
+
+            new_words = total_words_per_doc[doc_index] - known_words_per_doc[doc_index]
+            videos.append({
+                "id": files[doc_index].replace("_processed.json", ""),
+                "percentUnderstood": round(ratio * 100, 2),
+                "category": cats[doc_index],
+                "title": titles[doc_index],
+                "newWords": int(new_words),
+            })
 
         end_time = time.time()
         logger.debug("Total recommendation time: %.2f seconds", end_time - start_time)
@@ -636,6 +638,7 @@ class Recommender:
         D = self.matrices[language]
         files = self.filenames[language]
         cats = self.categories[language]
+        titles = self.titles[language]
         total_words_per_doc = self.total_words_per_doc[language]
 
         valid_indices = []
@@ -647,28 +650,16 @@ class Recommender:
         valid_indices.sort(key=lambda i: ratios[i], reverse=True)
         videos = []
         for doc_index in valid_indices[:top_n]:
-            try:
-                video_id = files[doc_index].replace("_processed.json", "")
-                file_path = os.path.join(self.base_folder, language, files[doc_index])
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    data = json.load(file)
-
-                known_words = int(known_words_per_doc[doc_index])
-                total_words = int(total_words_per_doc[doc_index])
-                videos.append({
-                    "id": video_id,
-                    "percentUnderstood": round(float(ratios[doc_index]) * 100, 2),
-                    "category": cats[doc_index],
-                    "title": data.get("title", ""),
-                    "source": data.get("source", ""),
-                    "date": data.get("date", ""),
-                    "newWords": max(total_words - known_words, 0),
-                    "knownWords": known_words,
-                })
-            except Exception:
-                logger.error(
-                    "Error loading video data from %s", files[doc_index], exc_info=True
-                )
+            known_words = int(known_words_per_doc[doc_index])
+            total_words = int(total_words_per_doc[doc_index])
+            videos.append({
+                "id": files[doc_index].replace("_processed.json", ""),
+                "percentUnderstood": round(float(ratios[doc_index]) * 100, 2),
+                "category": cats[doc_index],
+                "title": titles[doc_index],
+                "newWords": max(total_words - known_words, 0),
+                "knownWords": known_words,
+            })
 
         end_time = time.time()
         logger.debug("Total recommendation time: %.2f seconds", end_time - start_time)
