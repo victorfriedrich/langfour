@@ -79,7 +79,7 @@ The migration only adds policies and revokes `anon` writes; it drops no data.
 Set on Koyeb before deploying:
 
 - `ALLOWED_ORIGINS` — comma-separated. Defaults to
-  `http://localhost:3000,https://langfive.com,https://www.langfive.com`.
+  `http://localhost:3000,https://app.langfour.com`.
   **Correct this to your real domains.**
 - `EXTENSION_ID` — your published Chrome extension ID, so content-script
   requests (`Origin: chrome-extension://<id>`) are accepted.
