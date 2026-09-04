@@ -1,0 +1,5 @@
+# Channel discovery pipeline (ytpipeline.py) only. Not installed into the
+# container image: the API never harvests or calls the YouTube Data API.
+-r requirements.txt
+google-api-python-client==2.149.0
+lingua-language-detector==2.0.2
