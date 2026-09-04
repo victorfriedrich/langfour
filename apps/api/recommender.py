@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from scipy.sparse import csr_matrix, lil_matrix, save_npz, load_npz
 import numpy as np
 from dotenv import load_dotenv
@@ -8,21 +9,21 @@ from typing import List, Dict, Any
 from file_manager import load_documents
 from languages import require_code
 import time
-import tracemalloc
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 class Recommender:
     def __init__(self, base_folder: str):
-        tracemalloc.start()
         """
         Initialize the Recommender by preparing structures for multiple languages.
         Documents are now stored as lists of word IDs (integers) rather than full dictionaries.
         """
         self.base_folder = base_folder  # e.g., 'processed'
         self.languages = [lang for lang in os.listdir(base_folder) if os.path.isdir(os.path.join(base_folder, lang))]
-        print(f"Detected languages: {self.languages}")
-        
+        logger.info("Detected languages: %s", self.languages)
+
         # Load blacklist
         blacklisted_files = self._load_blacklist()
         
@@ -48,10 +49,21 @@ class Recommender:
         for lang in self.languages:
             self._ensure_language_loaded(lang)
 
-        current, peak = tracemalloc.get_traced_memory()
-        print(f"Recommender initialized | Current: {current/1024/1024:.2f}MB | Peak: {peak/1024/1024:.2f}MB")
-        tracemalloc.stop()
-    
+        # Report the steady-state footprint of what we actually retain. This is
+        # the number that governs how much memory the container needs, and it
+        # is free to compute -- unlike tracemalloc, which was tracing every
+        # allocation during startup purely to print one line.
+        matrix_bytes = sum(
+            m.data.nbytes + m.indices.nbytes + m.indptr.nbytes
+            for m in self.matrices.values()
+        )
+        logger.info(
+            "Recommender initialized | %d languages | %d documents | %.1f MB resident matrices",
+            len(self.matrices),
+            sum(m.shape[0] for m in self.matrices.values()),
+            matrix_bytes / 1024 / 1024,
+        )
+
 
 
     def _try_load_cached_language(self, language: str) -> bool:
@@ -99,10 +111,13 @@ class Recommender:
             self.matrices[language] = matrix
             self.total_words_per_doc[language] = np.asarray(matrix.sum(axis=1)).ravel()
             self.documents[language] = None
-            print(f"Document-term matrix and metadata for '{language}' loaded from disk.")
+            logger.info("Document-term matrix and metadata for '%s' loaded from disk.", language)
             return True
-        except Exception as exc:
-            print(f"Could not load cached matrix metadata for '{language}': {exc}")
+        except Exception:
+            logger.warning(
+                "Could not load cached matrix metadata for '%s'; will rebuild.",
+                language, exc_info=True,
+            )
             return False
 
     def _ensure_language_loaded(self, language: str) -> None:
@@ -113,7 +128,7 @@ class Recommender:
         if self._try_load_cached_language(language):
             return
 
-        print(f"Initializing data for language: {language}")
+        logger.info("Initializing data for language: %s", language)
         docs, files, cats = load_documents(os.path.join(self.base_folder, language))
         triple = sorted(zip(files, docs, cats))
         if triple:
@@ -132,158 +147,67 @@ class Recommender:
         # the Python list-of-lists and CSR matrix nearly doubles dataset memory.
         self.documents[language] = None
 
-    async def debug_video_recommendation(
-            self, 
-            user_id: str, 
-            video_id: str, 
-            language: str = "es"
-        ) -> Dict[str, Any]:
-            """
-            Debug a specific video recommendation calculation
-            """
-            print(f"\n=== DEBUGGING VIDEO {video_id} ===")
-            
-            try:
-                self._ensure_language_loaded(language)
-            except ValueError as exc:
-                return {"error": str(exc)}
-            
-            # Get user data
-            user_known_words = await self.get_known_words(user_id)
-            known_words_set = set(user_known_words)
-            print(f"User has {len(user_known_words)} known words")
-            
-            # Find the video in our data
-            files = self.filenames[language]
-            D = self.matrices[language]
-            cats = self.categories[language]
-            
-            video_filename = f"{video_id}_processed.json"
-            video_index = None
-            
-            for i, filename in enumerate(files):
-                if filename == video_filename:
-                    video_index = i
-                    break
-            
-            if video_index is None:
-                print(f"❌ Video {video_id} not found in files list")
-                print(f"Looking for filename: {video_filename}")
-                print(f"Available files (first 10): {files[:10]}")
-                return {"error": f"Video {video_id} not found"}
-            
-            print(f"✅ Found video at index {video_index}")
-            print(f"📁 Filename: {files[video_index]}")
-            print(f"🏷️ Category: {cats[video_index]}")
-            
-            # Get the video's word data from the sparse matrix without keeping
-            # all document word lists in memory.
-            unique_video_words = set(D[video_index].indices.tolist())
-            video_words = unique_video_words
-            total_unique_words = len(unique_video_words)
-            
-            print(f"📝 Video has {len(video_words)} total words")
-            print(f"🔤 Video has {total_unique_words} unique words")
-            
-            # Calculate overlap manually
-            known_in_video = unique_video_words & known_words_set
-            unknown_in_video = unique_video_words - known_words_set
-            
-            manual_ratio = len(known_in_video) / total_unique_words if total_unique_words > 0 else 0
-            manual_percentage = round(manual_ratio * 100, 2)
-            
-            print(f"🔍 Manual calculation:")
-            print(f"  - Known words in video: {len(known_in_video)}")
-            print(f"  - Unknown words in video: {len(unknown_in_video)}")
-            print(f"  - Comprehension ratio: {manual_ratio:.4f}")
-            print(f"  - Comprehension percentage: {manual_percentage}%")
-            
-            # Now test with the matrix approach
-            print(f"\n🔢 Matrix calculation:")
-            D = self.matrices[language]
-            matrix_vocab_size = D.shape[1]
-            
-            # Create user vector
-            user_vector = np.zeros(matrix_vocab_size, dtype=np.int8)
-            valid_known_words = [word_id for word_id in user_known_words if word_id < matrix_vocab_size]
-            
-            for word_id in valid_known_words:
-                user_vector[word_id] = 1
-            
-            # Get matrix calculations for this video
-            total_words_matrix = D[video_index].sum()
-            known_words_matrix = D[video_index].dot(user_vector.astype(np.int32)).astype(np.int32)
-            matrix_ratio = known_words_matrix / total_words_matrix if total_words_matrix > 0 else 0
-            matrix_percentage = matrix_ratio * 100
-            
-            print(f"  - Total words (matrix): {total_words_matrix}")
-            print(f"  - Known words (matrix): {known_words_matrix}")
-            print(f"  - Comprehension ratio: {matrix_ratio}")
-            print(f"  - Comprehension percentage: {matrix_percentage}%")
-            
-            # Load the actual JSON file to check metadata
-            file_path = os.path.join(self.base_folder, language, files[video_index])
-            try:
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    video_data = json.load(file)
-                
-                print(f"\n📋 Video metadata:")
-                print(f"  - Title: {video_data.get('title', 'N/A')}")
-                print(f"  - Date: {video_data.get('date', 'N/A')}")
-                print(f"  - Source: {video_data.get('source', 'N/A')}")
-                
-            except Exception as e:
-                print(f"❌ Error loading video metadata: {e}")
-                video_data = {}
-            
-            # Check for discrepancies
-            print(f"\n🔍 Discrepancy analysis:")
-            total_diff = abs(int(total_words_matrix) - total_unique_words)
-            known_diff = abs(int(known_words_matrix) - len(known_in_video))
-            percentage_diff = abs(matrix_percentage - manual_percentage)
-            
-            print(f"  - Total words difference: {total_diff}")
-            print(f"  - Known words difference: {known_diff}")
-            print(f"  - Percentage difference: {percentage_diff}%")
-            
-            if percentage_diff > 1.0:
-                print(f"⚠️  SIGNIFICANT DISCREPANCY DETECTED!")
-                
-                # Check if there are word IDs that exceed matrix bounds
-                out_of_bounds_video = [w for w in video_words if w >= matrix_vocab_size]
-                out_of_bounds_user = [w for w in user_known_words if w >= matrix_vocab_size]
-                
-                if out_of_bounds_video:
-                    print(f"  - Video has {len(out_of_bounds_video)} words with IDs >= {matrix_vocab_size}")
-                    print(f"  - Sample out-of-bounds video words: {out_of_bounds_video[:10]}")
-                
-                if out_of_bounds_user:
-                    print(f"  - User has {len(out_of_bounds_user)} known words with IDs >= {matrix_vocab_size}")
-                    print(f"  - Sample out-of-bounds user words: {out_of_bounds_user[:10]}")
-            
-            # Sample some words for manual verification
-            print(f"\n🔤 Sample word analysis:")
-            sample_words = list(unique_video_words)[:10]
-            for word_id in sample_words:
-                is_known = word_id in known_words_set
-                in_matrix = word_id < matrix_vocab_size
-                matrix_value = D[video_index, word_id] if in_matrix else "N/A"
-                print(f"  Word ID {word_id}: Known={is_known}, InMatrix={in_matrix}, MatrixValue={matrix_value}")
-            
-            return {
-                "video_id": video_id,
-                "video_index": video_index,
-                "manual_percentage": manual_percentage,
-                "matrix_percentage": matrix_percentage,
-                "total_words_manual": total_unique_words,
-                "total_words_matrix": int(total_words_matrix),
-                "known_words_manual": len(known_in_video),
-                "known_words_matrix": int(known_words_matrix),
-                "percentage_difference": percentage_diff,
-                "metadata": video_data
-            }
-    
-    
+    def get_categories(self, language: str) -> List[Dict[str, Any]]:
+        """Return stable category metadata without reopening transcript files."""
+        self._ensure_language_loaded(language)
+        categories = sorted({
+            category
+            for category in self.categories[language]
+            if category and category != "Unknown"
+        })
+        return [{"category": category, "icon": None} for category in categories]
+
+    def _score_documents_by_words(
+        self,
+        word_ids: List[int],
+        language: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return known-word counts and comprehension ratios for every row."""
+        self._ensure_language_loaded(language)
+
+        matrix = self.matrices[language]
+        total_words = self.total_words_per_doc[language]
+        word_vector = np.zeros(matrix.shape[1], dtype=np.int8)
+        valid_word_ids = [word_id for word_id in word_ids if 0 <= word_id < matrix.shape[1]]
+        if valid_word_ids:
+            word_vector[valid_word_ids] = 1
+
+        # int8 accumulation overflows for documents containing more than 127
+        # matching words. Keep the explicit upcast even though it is temporary.
+        known_words = matrix.dot(word_vector.astype(np.int32)).astype(np.int32)
+        ratios = np.divide(
+            known_words,
+            total_words,
+            out=np.zeros_like(known_words, dtype=float),
+            where=total_words != 0,
+        )
+        return known_words, ratios
+
+    def calculate_vocabulary_coverage(
+        self,
+        word_ids: List[int],
+        language: str,
+    ) -> Dict[str, float]:
+        """Calculate top/bottom coverage from matrix scores only.
+
+        Empty rows are cache artifacts rather than useful videos and are excluded.
+        In particular, this prevents legacy ``*.npz.meta.json`` rows from
+        affecting the result without consulting any transcript JSON.
+        """
+        _, ratios = self._score_documents_by_words(word_ids, language)
+        nonempty_rows = self.total_words_per_doc[language] > 0
+        percentages = ratios[nonempty_rows] * 100
+
+        if percentages.size == 0:
+            return {"top30_avg": 0.0, "bottom30_avg": 0.0}
+
+        percentages.sort()
+        count = max(1, int(percentages.size * 0.3))
+        return {
+            "top30_avg": float(np.mean(percentages[-count:])),
+            "bottom30_avg": float(np.mean(percentages[:count])),
+        }
+
     def _load_blacklist(self) -> set:
         """Load blacklisted filenames from blacklist.txt"""
         blacklist_path = os.path.join(self.base_folder, 'blacklist.txt')
@@ -296,11 +220,11 @@ class Recommender:
                         filename = line.strip()
                         if filename:  # Skip empty lines
                             blacklisted_files.add(filename)
-                print(f"Loaded {len(blacklisted_files)} blacklisted files")
-            except Exception as e:
-                print(f"Error reading blacklist.txt: {e}")
+                logger.info("Loaded %d blacklisted files", len(blacklisted_files))
+            except Exception:
+                logger.error("Error reading blacklist.txt", exc_info=True)
         else:
-            print("No blacklist.txt found - proceeding without blacklist")
+            logger.info("No blacklist.txt found - proceeding without blacklist")
         
         return blacklisted_files
     
@@ -324,7 +248,10 @@ class Recommender:
         filtered_count = len(filtered_files)
         blacklisted_count = original_count - filtered_count
         
-        print(f"Filtered out {blacklisted_count} blacklisted files ({original_count} -> {filtered_count})")
+        logger.info(
+            "Filtered out %d blacklisted files (%d -> %d)",
+            blacklisted_count, original_count, filtered_count,
+        )
         
         return filtered_docs, filtered_files, filtered_cats
     
@@ -380,19 +307,18 @@ class Recommender:
             if os.path.exists(blacklist_path):
                 if os.path.getmtime(blacklist_path) > os.path.getmtime(matrix_path):
                     shape_mismatch = True
-                    print("Blacklist updated – rebuilding matrix for", language)
+                    logger.info("Blacklist updated - rebuilding matrix for %s", language)
 
             if not shape_mismatch:
-                print(f"Document-term matrix for '{language}' loaded from disk.")
+                logger.info("Document-term matrix for '%s' loaded from disk.", language)
                 return D
 
-            print(f"Dataset changed – rebuilding matrix for '{language}'")
+            logger.info("Dataset changed - rebuilding matrix for '%s'", language)
 
         # ------------------------------------------------------------------
         # 2. Slow path – build the matrix from scratch
         # ------------------------------------------------------------------
-        tracemalloc.start()
-        print(f"Creating document-term matrix for '{language}'…")
+        logger.info("Creating document-term matrix for '%s'...", language)
         start = time.time()
 
         num_docs     = len(documents)
@@ -404,10 +330,10 @@ class Recommender:
                 if wid is not None and wid <= max_word_id:
                     D[i, wid] = 1                       # binary presence
             if (i + 1) % 1000 == 0 or (i + 1) == num_docs:
-                print(f"  processed {i + 1}/{num_docs} docs")
+                logger.debug("  processed %d/%d docs", i + 1, num_docs)
 
         D = D.tocsr()
-        print(f"Finished in {time.time() - start:.2f}s — caching to disk")
+        logger.info("Finished in %.2fs - caching to disk", time.time() - start)
 
         # Save NPZ
         save_npz(matrix_path, D)
@@ -425,13 +351,11 @@ class Recommender:
                 indent=2,
             )
 
-        # Debug memory stats
-        current, peak = tracemalloc.get_traced_memory()
-        print(
-            f"Matrix for '{language}' => current {current/1_048_576:.2f} MB | "
-            f"peak {peak/1_048_576:.2f} MB"
+        logger.info(
+            "Matrix for '%s' => %d x %d, %d nonzeros, %.2f MB resident",
+            language, D.shape[0], D.shape[1], D.nnz,
+            (D.data.nbytes + D.indices.nbytes + D.indptr.nbytes) / 1_048_576,
         )
-        tracemalloc.stop()
 
         return D
     
@@ -447,7 +371,7 @@ class Recommender:
                 page += 1
             return list(seen_video_ids)
         except Exception as e:
-            print(f"Error fetching seen videos from Supabase: {str(e)}")
+            logger.error("Error fetching seen videos from Supabase", exc_info=True)
             return []
     
     async def get_known_words(self, user_id: str) -> List[int]:
@@ -463,12 +387,14 @@ class Recommender:
                 page += 1
 
             end_time = time.time()
-            print(f"Time taken to fetch known words: {end_time - start_time:.2f} seconds")
+            logger.debug(
+                "Fetched %d known words in %.2fs", len(known_word_ids), end_time - start_time
+            )
             self.user_known_words_cache[user_id] = list(known_word_ids)
             return list(known_word_ids)
 
-        except Exception as e:
-            print(f"Error fetching known words from Supabase: {str(e)}")
+        except Exception:
+            logger.error("Error fetching known words from Supabase", exc_info=True)
             return []
         
     async def recommend_videos(
@@ -482,14 +408,17 @@ class Recommender:
         
         try:
             self._ensure_language_loaded(language)
-        except ValueError as exc:
-            print(exc)
+        except ValueError:
+            logger.warning("recommend_videos: unsupported language %r", language)
             return []
-        
+
         user_known_words = await self.get_known_words(user_id)
         seen_videos = await self.get_seen_videos(user_id)
-        
-        print(f"User has {len(user_known_words)} known words and has seen {len(seen_videos)} videos.")
+
+        logger.debug(
+            "User has %d known words and has seen %d videos.",
+            len(user_known_words), len(seen_videos),
+        )
         
         # Get the document-term matrix and other data
         D = self.matrices[language]  # This is your CSR matrix
@@ -497,7 +426,9 @@ class Recommender:
         cats = self.categories[language]
         
         # Debug matrix dimensions
-        print(f"Matrix shape: {D.shape}, Max word ID: {self.max_word_ids[language]}")
+        logger.debug(
+            "Matrix shape: %s, Max word ID: %s", D.shape, self.max_word_ids[language]
+        )
         
         # Create user known words vector with same dimensions as matrix
         matrix_vocab_size = D.shape[1]  # Number of columns in the matrix
@@ -508,12 +439,18 @@ class Recommender:
         filtered_count = len(user_known_words) - len(valid_known_words)
         
         if filtered_count > 0:
-            print(f"Filtered {filtered_count} word IDs that exceed matrix dimensions (matrix has {matrix_vocab_size} columns)")
-        
+            logger.debug(
+                "Filtered %d word IDs that exceed matrix dimensions (matrix has %d columns)",
+                filtered_count, matrix_vocab_size,
+            )
+
         for word_id in valid_known_words:
             user_vector[word_id] = 1
-        
-        print(f"Using {len(valid_known_words)} known words out of {len(user_known_words)} total")
+
+        logger.debug(
+            "Using %d known words out of %d total",
+            len(valid_known_words), len(user_known_words),
+        )
         
         # Vectorized operations on the entire matrix
         # Calculate total words per document (row sums)
@@ -539,7 +476,9 @@ class Recommender:
         num_files = len(files)
         
         if num_docs != num_files:
-            print(f"Warning: Matrix has {num_docs} documents but files list has {num_files} entries")
+            logger.warning(
+                "Matrix has %d documents but files list has %d entries", num_docs, num_files
+            )
             # Use the smaller of the two to avoid index errors
             max_index = min(num_docs, num_files)
         else:
@@ -602,13 +541,18 @@ class Recommender:
                 
                 videos.append(video_info)
                 
-            except Exception as e:
-                print(f"Error loading video data from {file_path}: {e}")
+            except Exception:
+                # files[doc_index] rather than file_path: the latter is bound
+                # inside the try block, so referencing it here would raise
+                # NameError and mask the original failure.
+                logger.error(
+                    "Error loading video data from %s", files[doc_index], exc_info=True
+                )
                 continue
-        
+
         end_time = time.time()
-        print(f"Total recommendation time: {end_time - start_time:.2f} seconds")
-        
+        logger.debug("Total recommendation time: %.2f seconds", end_time - start_time)
+
         return videos
     
     def recommend_words_to_learn(
@@ -628,7 +572,7 @@ class Recommender:
         else:
             indices = [i for i, cat in enumerate(cats) if cat == filter_category]
             if not indices:
-                print(f"No documents found for category: {filter_category}")
+                logger.info("No documents found for category: %s", filter_category)
                 return []
             matrix = D[indices]
 
@@ -662,8 +606,8 @@ class Recommender:
         try:
             response = self.supabase.table("words").select("id").eq("language", language).limit(limit).execute()
             return response.data
-        except Exception as e:
-            print(f"Exception in get_ordered_words: {e}")
+        except Exception:
+            logger.error("Exception in get_ordered_words", exc_info=True)
             return []
         
     def get_random_words(self, language: str, limit: int = 1000) -> List[int]:
@@ -673,40 +617,26 @@ class Recommender:
         language = require_code(language)
         try:
             response = self.supabase.rpc('get_random_words', {'language_code': language, 'limit_words': limit}).execute()
-            print(response)
             ids = [word["id"] for word in response.data]
-            print(ids)
+            logger.debug("get_random_words(%s) -> %d ids", language, len(ids))
             return ids
-        except Exception as e:
-            print(f"Exception in get_random_words: {e}")
+        except Exception:
+            logger.error("Exception in get_random_words", exc_info=True)
             return []
         
     def recommend_videos_by_words(self, word_ids: List[int], language: str, filter_category: str = None, top_n: int = 60) -> List[Dict[str, Any]]:
         start_time = time.time()
 
         try:
-            self._ensure_language_loaded(language)
-        except ValueError as exc:
-            print(exc)
+            known_words_per_doc, ratios = self._score_documents_by_words(word_ids, language)
+        except ValueError:
+            logger.warning("recommend_videos_by_words: unsupported language %r", language)
             return []
 
         D = self.matrices[language]
         files = self.filenames[language]
         cats = self.categories[language]
         total_words_per_doc = self.total_words_per_doc[language]
-
-        word_vector = np.zeros(D.shape[1], dtype=np.int8)
-        valid_word_ids = [word_id for word_id in word_ids if 0 <= word_id < D.shape[1]]
-        if valid_word_ids:
-            word_vector[valid_word_ids] = 1
-
-        known_words_per_doc = D.dot(word_vector.astype(np.int32)).astype(np.int32)
-        ratios = np.divide(
-            known_words_per_doc,
-            total_words_per_doc,
-            out=np.zeros_like(known_words_per_doc, dtype=float),
-            where=total_words_per_doc != 0,
-        )
 
         valid_indices = []
         for doc_index in range(min(D.shape[0], len(files))):
@@ -735,9 +665,11 @@ class Recommender:
                     "newWords": max(total_words - known_words, 0),
                     "knownWords": known_words,
                 })
-            except Exception as e:
-                print(f"Error loading video data from {file_path}: {e}")
+            except Exception:
+                logger.error(
+                    "Error loading video data from %s", files[doc_index], exc_info=True
+                )
 
         end_time = time.time()
-        print(f"Total recommendation time: {end_time - start_time:.2f} seconds")
+        logger.debug("Total recommendation time: %.2f seconds", end_time - start_time)
         return videos[:top_n]
