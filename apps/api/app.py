@@ -18,7 +18,7 @@ from database import (
     initialize_cache
 )
 from nlp_processing import get_missing_words, parse_and_translate_word, translate_section, generate_word_examples
-from utils import get_video_words, ARTICLES_DIR
+from utils import get_video_words
 from languages import require_code
 import asyncio
 from fastapi import Query, Body
@@ -75,7 +75,7 @@ from supabase_client import supabase, SUPABASE_URL as supabase_url
 
 
 
-from paths import ARTICLES_DIR, PROCESSED_DIR
+from paths import PROCESSED_DIR
 from corpus_sync import ensure_corpus
 VIDEO_DIR = str(PROCESSED_DIR)
 
@@ -112,13 +112,6 @@ class MediaImportRequest(BaseModel):
     timebase: Optional[str] = None
     audio_seconds: Optional[confloat(gt=0)] = None
 
-class ArticleRecommendation(BaseModel):
-    id: str
-    percentUnderstood: int
-    title: str
-    source: str
-    date: str
-
 class RankBlendedVideoResponse(BaseModel):
     ids:          List[str]
     titles:       List[str]
@@ -130,10 +123,6 @@ class RankBlendedVideoResponse(BaseModel):
 class VideoRecommendation(BaseModel):
     id: str
     percentUnderstood: int
-
-class RecommendationResponse(BaseModel):
-    articles: List[ArticleRecommendation]
-    ratios: List[float]
 
 class VideoRecommendationResponse(BaseModel):
     ids: List[str]
@@ -177,7 +166,6 @@ async def startup_event():
 
     # now instantiate here, so import-time is fast
     app.state.recommender         = Recommender(base_folder=VIDEO_DIR)
-    app.state.article_recommender = Recommender(base_folder=ARTICLES_DIR)
 
 @app.post("/parse")
 async def parse_text(request: TextRequest):
@@ -364,29 +352,6 @@ async def get_video_recommendations(
     
     return VideoRecommendationResponse(ids=video_ids, ratios=ratios, newWords=new_words, titles=titles)
 
-# TODO: Generalize Recommendation Interface?
-@app.get("/recommendations/articles/", response_model=VideoRecommendationResponse)
-async def get_article_recommendations(
-    request: Request,
-    category: str = Query(None, description="Category for recommendations"),
-    language: str = Query("it", description="Language Country Code"),
-    current_user: dict = Depends(get_current_user)
-):
-    recommender = request.app.state.recommender
-    # TODO: Generalize recommender name
-    articles = await article_recommender.recommend_videos(
-        user_id=current_user.id,
-        language=language,
-        filter_category=category,
-        top_n=100
-    )
-    titles = [article["title"] for article in articles]
-    video_ids = [article["id"] for article in articles]
-    ratios = [article["percentUnderstood"] / 100 for article in articles]
-    new_words = [article["newWords"] for article in articles]
-    
-    return VideoRecommendationResponse(ids=video_ids, ratios=ratios, newWords=new_words, titles=titles)
-
 @app.post("/api/videos/{video_id}/missing-words")
 async def check_missing_words(
     video_id: str, 
@@ -426,14 +391,6 @@ async def get_video_categories(language: str = Query("es", description="Language
     
     return {"categories": language_categories_cache[language]}
 
-@app.get("/categories/articles")
-async def get_article_categories():
-    try:
-        categories = get_categories_with_icons(str(ARTICLES_DIR))
-        return {"categories": categories}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching article categories: {str(e)}")
-
 @app.get("/api/videos/{video_id}")
 async def get_video_info(video_id: str):
     try:
@@ -443,34 +400,6 @@ async def get_video_info(video_id: str):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/article/{article_id}")
-async def article(
-        article_id: str,
-        language: str = Query("es", description="Language Country Code")
-    ):
-    try:
-        # Does this concatenate language into the path?
-        article_file = os.path.join(ARTICLES_DIR, language, f"{article_id}.json")
-        with open(article_file, 'r') as f:
-            article_data = json.load(f)
-        print(article_data)
-        return {"article": article_data}
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Article not found: {article_id}")
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Failed to parse JSON file")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/articles")
-async def get_article_ids():
-    try:
-        files = os.listdir(str(ARTICLES_DIR))
-        article_ids = [f[:-5] for f in files if f.endswith('.json')]
-        return {"article_ids": article_ids}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing article IDs: {str(e)}")
 
 @app.post("/api/translate-word")
 async def translate_word(word: str = Body(...), language: str = Body(...)):
