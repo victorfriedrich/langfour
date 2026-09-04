@@ -850,3 +850,79 @@ def test_classify_survives_one_failing_channel(db, monkeypatch):
     assert db.execute("SELECT COUNT(classified_at) FROM channels").fetchone()[0] == 3
     assert db.execute("SELECT classified_at FROM channels WHERE channel_id='UC2'"
                       ).fetchone()[0] is None          # retried on the next run
+
+
+# ══════════════════════════════════════════════════════ channel ranking ══
+
+def test_percentiles_spreads_ties_and_neutralises_unknowns():
+    assert yp.percentiles([1, 2, 3]) == [0.0, 0.5, 1.0]
+    assert yp.percentiles([5, 5, 5]) == [0.5, 0.5, 0.5]      # no spread to give
+    # None is unmeasurable, not worst: a hidden subscriber count must not sink
+    # a channel the gates deliberately let through.
+    assert yp.percentiles([1, None, 3]) == [0.0, 0.5, 1.0]
+
+
+def test_ratio_returns_none_rather_than_zero_for_unknowns():
+    assert yp.ratio(10, 100) == 0.1
+    assert yp.ratio(10, None) is None and yp.ratio(10, 0) is None
+
+
+def test_rank_channels_reads_engagement_which_was_stored_but_unused():
+    """(likes + comments) / views carried the heaviest weight in the ranking
+    these gates replaced, and the columns were being written for nothing."""
+    rows = [
+        {"channel_id": "loved", "avg_views": 1_000, "avg_reactions": 200,
+         "subscribers": 10_000, "intellectuality": 0.5},
+        {"channel_id": "ignored", "avg_views": 1_000, "avg_reactions": 1,
+         "subscribers": 10_000, "intellectuality": 0.5},
+    ]
+    rank = yp.rank_channels(rows)
+    assert rank["loved"] > rank["ignored"]
+
+
+def test_queue_rows_are_comparable_across_channels(db):
+    """The regression this fixes: the per-video score is normalised against the
+    channel's own videos, so every channel's best video scored ~1.0 and the
+    queue drained in arbitrary order."""
+    videos, rank = [], {}
+    for cid, r in (("strong", 0.9), ("weak", 0.1)):
+        rank[cid] = r
+        videos += [(cid, f"{cid}{i}", "t", 1_000 * (i + 1), 600) for i in range(3)]
+    rows = yp.queue_rows("es", videos, rank, top_n=3)
+    assert [r["channel_id"] for r in rows[:3]] == ["strong"] * 3
+    assert (max(r["score"] for r in rows if r["channel_id"] == "weak")
+            < min(r["score"] for r in rows if r["channel_id"] == "strong"))
+
+
+def test_queue_rows_still_order_within_a_channel(db):
+    videos = [("c", "low", "t", 10, 600), ("c", "high", "t", 10_000, 600)]
+    rows = yp.queue_rows("es", videos, {"c": 0.5}, top_n=2)
+    assert [r["video_id"] for r in rows] == ["high", "low"]
+
+
+# ═════════════════════════════════════════════════════════════ stage: add ══
+
+@pytest.mark.parametrize("reference,expected", [
+    ("UCoyJ3DSiNZhuJgg0qNZC4yg", "UCoyJ3DSiNZhuJgg0qNZC4yg"),
+    ("https://www.youtube.com/channel/UCoyJ3DSiNZhuJgg0qNZC4yg", "UCoyJ3DSiNZhuJgg0qNZC4yg"),
+    ("https://www.youtube.com/channel/UCoyJ3DSiNZhuJgg0qNZC4yg/videos", "UCoyJ3DSiNZhuJgg0qNZC4yg"),
+])
+def test_resolve_channel_takes_a_uc_id_without_spending_a_unit(reference, expected):
+    class NoCalls:
+        def channel_by_handle(self, _):
+            raise AssertionError("should not need the API for a UC id")
+    assert yp.resolve_channel(NoCalls(), reference) == expected
+
+
+@pytest.mark.parametrize("reference", ["@unsympathischTV", "unsympathischTV",
+                                       "https://www.youtube.com/@unsympathischTV"])
+def test_resolve_channel_falls_back_to_forhandle(reference):
+    asked = []
+
+    class ByHandle:
+        def channel_by_handle(self, handle):
+            asked.append(handle)
+            return "UC" + "z" * 22
+
+    assert yp.resolve_channel(ByHandle(), reference) == "UC" + "z" * 22
+    assert asked == ["@unsympathischTV"]         # normalised, however it arrived

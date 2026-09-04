@@ -427,6 +427,12 @@ class YouTube:
         return self._call(self.api.videos, part=self.VIDEO_PARTS,
                           id=",".join(ids), maxResults=50)
 
+    def channel_by_handle(self, handle: str) -> Optional[str]:
+        """@name -> UC id, one unit. extend_scrapelist.py had to fetch the page
+        and regex its canonical link; forHandle does it directly."""
+        items = self._call(self.api.channels, part="id", forHandle=handle)
+        return items[0]["id"] if items else None
+
     def search(self, channel_id: str, n: int = 50) -> list[str]:
         """A channel's most-viewed videos. 100 units -- fifty playlist pages --
         so only spent on channels that cleared every other gate. The uploads
@@ -490,6 +496,14 @@ def batched(seq: Sequence[Any], n: int = 50) -> Iterable[list]:
 
 # ────────────────────────────────────────────────────── stage: enrich ──
 
+UPDATE_CHANNEL = """
+    UPDATE channels SET title=?, description=?, custom_url=?, country=?,
+        subscribers=?, views=?, video_count=?, topics=?, published_at=?,
+        uploads=?, raw=?, enriched_at=datetime('now'), lang=NULL, lang_conf=NULL,
+        note=CASE WHEN note='not_returned' THEN NULL ELSE note END
+    WHERE channel_id=?"""
+
+
 def enrich(db: sqlite3.Connection, yt: YouTube, stale_days: int) -> None:
     rows = db.execute("""SELECT channel_id FROM channels
                          WHERE enriched_at IS NULL
@@ -505,12 +519,7 @@ def enrich(db: sqlite3.Connection, yt: YouTube, stale_days: int) -> None:
             print(f"stopped at {n * 50:,}: {why or 'local budget reached'}"); break
         except RuntimeError as exc:
             print(f"  batch {n} failed: {str(exc)[:120]}"); continue
-        db.executemany("""
-            UPDATE channels SET title=?, description=?, custom_url=?, country=?,
-                subscribers=?, views=?, video_count=?, topics=?, published_at=?,
-                uploads=?, raw=?, enriched_at=datetime('now'), lang=NULL, lang_conf=NULL,
-                note=CASE WHEN note='not_returned' THEN NULL ELSE note END
-            WHERE channel_id=?""", [channel_row(i) for i in items])
+        db.executemany(UPDATE_CHANNEL, [channel_row(i) for i in items])
         # Absent from the response = deleted or terminated. Stamped so it is
         # skipped until it goes stale, not retried on every run.
         found = {i["id"] for i in items}
@@ -749,6 +758,7 @@ CHANNEL_STATS = """
     SELECT c.channel_id, c.title, c.subscribers, c.music_share,
            c.sensitivity, c.intellectuality, c.classified_at, c.expanded_at,
            COUNT(*) AS n, AVG(v.views) AS avg_views,
+           AVG(COALESCE(v.likes, 0) + COALESCE(v.comments, 0)) AS avg_reactions,
            COUNT(*) * 1.0 / MAX(1.0, julianday(MAX(v.published_at))
                                      - julianday(MIN(v.published_at))) AS per_day
     FROM channels c JOIN videos v USING (channel_id)
@@ -919,7 +929,106 @@ def expand(db: sqlite3.Connection, yt: YouTube, lang: str, g: Gates) -> None:
             print(f"  {n:,}/{len(todo):,}  [{yt.used}/{yt.budget} units]", flush=True)
 
 
+# ────────────────────────────────────────────────── channel ranking ──
+#
+# Gates say yes or no. They do not say which of the survivors deserves the
+# transcription budget first, and the per-video score cannot: it is normalised
+# against the channel's own videos, so 678 of 686 Spanish channels had a top
+# video scoring above 0.89. This is the old weighted_rankings, without pandas.
+
+
+def ratio(numerator: Optional[float], denominator: Optional[float]) -> Optional[float]:
+    """None when the denominator is unknown or zero -- not 0.0, which would
+    rank a channel last for something that simply cannot be measured."""
+    if not denominator or numerator is None:
+        return None
+    return numerator / denominator
+
+
+# Weighted after percentile-ranking, so the four can be compared at all.
+# Engagement and reach lead because they measure whether anyone actually
+# watches; subscriber count is a claim about the past.
+CHANNEL_SIGNALS: dict[str, tuple[Any, float]] = {
+    "engagement":      (lambda r: ratio(r["avg_reactions"], r["avg_views"]), 0.3),
+    "views_per_sub":   (lambda r: ratio(r["avg_views"], r["subscribers"]), 0.3),
+    "subscribers":     (lambda r: r["subscribers"], 0.2),
+    "intellectuality": (lambda r: r["intellectuality"], 0.2),
+}
+
+
+def percentiles(values: Sequence[Optional[float]]) -> list[float]:
+    """Each value's position in [0, 1] within the pool; ties share a position.
+
+    Percentile, not the raw number: subscribers run to millions and engagement
+    to thousandths, so weighting them directly would let subscriber count
+    decide everything. None scores 0.5 -- neither rewarded nor punished for
+    being unmeasurable, which is how the gates already treat a hidden count.
+    """
+    known = sorted({v for v in values if v is not None})
+    if len(known) < 2:
+        return [0.5] * len(values)
+    position = {v: i / (len(known) - 1) for i, v in enumerate(known)}
+    return [0.5 if v is None else position[v] for v in values]
+
+
+def rank_channels(rows: Sequence[dict]) -> dict[str, float]:
+    """channel_id -> 0-1 rank within this language pool."""
+    ranked = {name: percentiles([extract(r) for r in rows])
+              for name, (extract, _) in CHANNEL_SIGNALS.items()}
+    weights = {name: weight for name, (_, weight) in CHANNEL_SIGNALS.items()}
+    return {r["channel_id"]: sum(ranked[name][i] * weights[name] for name in ranked)
+            for i, r in enumerate(rows)}
+
+
 # ─────────────────────────────────────────────────────── stage: select ──
+
+# Usable at all: long enough to carry speech, short enough to sit through, not
+# live, and not music. Music is judged per video, not per channel, so an
+# artist's interview survives and their music videos do not.
+USABLE_VIDEO = """v.live = 'none' AND COALESCE(v.category_id, '') != ?
+                  AND v.duration_s BETWEEN 60 AND ?"""
+
+
+def usable_videos(db: sqlite3.Connection, lang: str,
+                  channel_id: Optional[str] = None) -> list[tuple]:
+    sql = f"""SELECT v.channel_id, v.video_id, v.title, COALESCE(v.views, 0), v.duration_s
+              FROM videos v JOIN channels c USING (channel_id)
+              WHERE COALESCE(c.audio_lang, c.lang) = ? AND {USABLE_VIDEO}"""
+    args: list[Any] = [lang, MUSIC_CATEGORY, MAX_MINUTES * 60]
+    if channel_id:
+        sql += " AND v.channel_id = ?"
+        args.append(channel_id)
+    return db.execute(sql, args).fetchall()
+
+
+def queue_rows(lang: str, videos: Sequence[tuple], rank: dict[str, float],
+               top_n: int) -> list[dict]:
+    """Per-channel top `top_n`, scored so the result is comparable across
+    channels: the channel's rank carries most of it, the video's own score
+    breaks ties within the channel."""
+    by_channel: dict[str, list[dict]] = {}
+    for cid, vid, title, views, dur in videos:
+        by_channel.setdefault(cid, []).append(
+            {"video_id": vid, "channel_id": cid, "lang": lang, "title": title,
+             "duration_s": dur, "views": views})
+    out = []
+    for cid, vids in by_channel.items():
+        lo, hi = min(v["views"] for v in vids), max(v["views"] for v in vids)
+        for v in vids:
+            within = score(v["duration_s"] // 60, v["views"], lo, hi)
+            v["score"] = round(CHANNEL_SHARE * rank.get(cid, 0.5)
+                               + (1 - CHANNEL_SHARE) * within, 4)
+        vids.sort(key=lambda v: -v["score"])
+        out.extend(vids[:top_n])
+    out.sort(key=lambda v: -v["score"])
+    return out
+
+# How much of a video's queue position comes from its channel rather than from
+# itself. Weighted to the channel because the queue's real question is which
+# creators to transcribe first -- within a channel only the top few are taken
+# anyway, so the video term is a tie-break.
+CHANNEL_SHARE = 0.7
+
 
 def score(minutes: int, views: int, lo: float, hi: float) -> float:
     short = 1 - min(1.0, max(0.0, (minutes - 8) / 17))     # 8-25 min preferred
@@ -928,33 +1037,14 @@ def score(minutes: int, views: int, lo: float, hi: float) -> float:
 
 
 def select(db: sqlite3.Connection, lang: str, g: Gates, top_n: int = TOP_N) -> list[dict]:
-    """The deliverable: ranked queue rows. Channels pass the gates; videos are
-    then filtered individually -- music by category_id, not by channel, so an
-    artist's interview survives and their music videos do not -- and ranked
-    within their channel over uploads and search results together."""
+    """The deliverable: queue rows for every channel that cleared the gates,
+    ordered so the transcription budget goes to the best creators first."""
     passed, funnel = qualified(db, lang, g, need_llm=True)
     keep = {r["channel_id"] for r in passed}
-    rows = db.execute("""SELECT v.channel_id, v.video_id, v.title, COALESCE(v.views, 0),
-                                v.duration_s
-                         FROM videos v JOIN channels c USING (channel_id)
-                         WHERE COALESCE(c.audio_lang, c.lang) = ? AND v.live = 'none'
-                           AND COALESCE(v.category_id, '') != ?
-                           AND v.duration_s BETWEEN 60 AND ?""",
-                      (lang, MUSIC_CATEGORY, MAX_MINUTES * 60)).fetchall()
-    by_channel: dict[str, list[dict]] = {}
-    for cid, vid, title, views, dur in rows:
-        if cid in keep:
-            by_channel.setdefault(cid, []).append(
-                {"video_id": vid, "channel_id": cid, "lang": lang, "title": title,
-                 "duration_s": dur, "views": views})
-    out = []
-    for vids in by_channel.values():
-        lo, hi = min(v["views"] for v in vids), max(v["views"] for v in vids)
-        for v in vids:
-            v["score"] = round(score(v["duration_s"] // 60, v["views"], lo, hi), 4)
-        vids.sort(key=lambda v: -v["score"])
-        out.extend(vids[:top_n])
-    print(f"{len(by_channel):,} channels, {len(out):,} videos selected")
+    rank = rank_channels(passed)
+    videos = [v for v in usable_videos(db, lang) if v[0] in keep]
+    out = queue_rows(lang, videos, rank, top_n)
+    print(f"{len({v['channel_id'] for v in out}):,} channels, {len(out):,} videos selected")
     return out
 
 
@@ -993,6 +1083,60 @@ def report(db: sqlite3.Connection) -> None:
         print(f"   {lang:5} {n:>7,}")
 
 
+# ────────────────────────────────────────────────────────── stage: add ──
+
+UC_ID = re.compile(r"(UC[A-Za-z0-9_-]{22})")
+
+
+def resolve_channel(yt: YouTube, reference: str) -> str:
+    """A channel id from whatever a person has to hand: a UC id, any URL
+    containing one, or an @handle."""
+    reference = reference.strip().rstrip("/")
+    found = UC_ID.search(reference)
+    if found:
+        return found.group(1)
+    handle = reference.rsplit("/", 1)[-1]
+    cid = yt.channel_by_handle(handle if handle.startswith("@") else "@" + handle)
+    if not cid:
+        sys.exit(f"no channel found for {reference!r}")
+    return cid
+
+
+def add(db: sqlite3.Connection, yt: YouTube, lang: str, reference: str,
+        top_n: int = TOP_N) -> list[dict]:
+    """Queue one creator's best videos, bypassing the gates.
+
+    The gates exist to decide where scarce quota goes during discovery. When a
+    person names a channel that decision is already made, so this walks the
+    same path -- resolve, enrich, search.list by viewCount, videos.list -- and
+    pushes at manual priority. Only the per-video rules still apply: a
+    40-minute stream or a music video is no more usable for being asked for.
+
+    This is what extend_scrapelist.py did, minus the separate JSON scrapelist.
+    """
+    cid = resolve_channel(yt, reference)
+    db.execute("INSERT OR IGNORE INTO channels (channel_id) VALUES (?)", (cid,))
+    found = yt.channels([cid])
+    if not found:
+        sys.exit(f"{cid}: channel not returned by the API")
+    db.execute(UPDATE_CHANNEL, channel_row(found[0]))
+    # The operator asserts the language; detect() would only see a description.
+    db.execute("UPDATE channels SET lang=?, lang_conf=1.0, videos_at=datetime('now'), "
+               "expanded_at=datetime('now') WHERE channel_id=?", (lang, cid))
+    items = yt.videos(yt.search(cid)) or []
+    db.executemany(INSERT_VIDEO.format("IGNORE"), video_rows(items, "search"))
+    db.commit()
+
+    title = found[0].get("snippet", {}).get("title") or cid
+    rows = queue_rows(lang, usable_videos(db, lang, cid), {cid: 1.0}, top_n)
+    from ingest import PRIORITY                  # one definition of the order
+    for r in rows:
+        r["source"], r["priority"] = "manual", PRIORITY["manual"]
+    print(f"{title}: {len(items):,} fetched, {len(rows):,} usable "
+          f"[{yt.used} units]")
+    return rows
+
+
 # ───────────────────────────────────────────────────────────────── cli ──
 
 def sample_size(value: str) -> int:
@@ -1009,7 +1153,8 @@ def sample_size(value: str) -> int:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("stage", choices="harvest enrich detect videos classify expand select report".split())
+    p.add_argument("stage",
+                   choices="harvest enrich detect videos classify expand select add report".split())
     p.add_argument("--db", type=Path, default=DB)
     p.add_argument("--budget", type=int, default=9000, help="quota units")
     p.add_argument("--lang", help="ISO 639-1, e.g. es")
@@ -1034,7 +1179,8 @@ def main() -> None:
                        help="sampled uploads needed before a channel can be judged")
     p.add_argument("--limit", type=int, default=10_000, help="classify: channels per run")
     p.add_argument("--top", type=int, default=TOP_N, help="select: videos per channel")
-    p.add_argument("--push", action="store_true", help="select: upsert into video_queue")
+    p.add_argument("--channel", help="add: a UC id, channel URL, or @handle")
+    p.add_argument("--push", action="store_true", help="select/add: upsert into video_queue")
     p.add_argument("--out", type=Path, help="select: also write the rows as JSON")
     a = p.parse_args()
     g = Gates(a.min_subs, a.min_views_per_sub, a.max_uploads_per_day, a.max_music,
@@ -1043,7 +1189,7 @@ def main() -> None:
     db = connect(a.db)
     if a.stage == "report":
         return report(db)
-    if a.stage in ("classify", "expand", "select") and not a.lang:
+    if a.stage in ("classify", "expand", "select", "add") and not a.lang:
         sys.exit(f"{a.stage} needs --lang")
     if a.stage == "select":
         rows = select(db, a.lang, g, a.top)
@@ -1058,6 +1204,19 @@ def main() -> None:
         return
 
     lock(a.db)
+    if a.stage == "add":
+        if not a.channel:
+            sys.exit("add needs --channel")
+        rows = add(db, YouTube(a.budget), a.lang, a.channel, a.top)
+        if a.out:
+            a.out.parent.mkdir(parents=True, exist_ok=True)
+            a.out.write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")
+            print(f"wrote {a.out}")
+        if a.push:
+            print(f"queued {push(rows):,} new rows")
+        elif not a.out:
+            print("dry run: pass --push to queue, --out to inspect")
+        return
     if a.stage == "harvest":
         harvest(db, a.crawls)
     elif a.stage == "detect":
