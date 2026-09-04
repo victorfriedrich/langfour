@@ -57,9 +57,9 @@ You can filter by category and preview a video inline. Videos you have already w
 
 ### Vocabulary-Based Content Discovery
 
-**Words Known → Add Common Words** runs the same index backwards: instead of scoring videos by the words you know, it scores words by how many videos contain them.
+Recommendations answer "what should I watch now?". **Words Known → Add Common Words** answers the opposite question: which words would open up the most videos if you learned them?
 
-Pick a category and Langfour lists the words you do not know yet, most widely used first, each with the percentage of that category's videos it appears in. Mark the ones you already recognise as known, or shift-click a range to add the rest at once.
+Pick a category and Langfour lists the words you do not know yet, ordered by how many of that category's videos they appear in — the percentage shown next to each word. Tick the ones you want, shift-clicking to select a range, and add them to your practice schedule in one go.
 
 ![Words Known → Add Common Words: unfamiliar words ranked by how many Travel videos they appear in](docs/images/vocabulary-frequency.png)
 
