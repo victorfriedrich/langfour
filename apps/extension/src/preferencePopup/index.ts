@@ -4,6 +4,7 @@ import { sendToActiveTab } from '../messages';
 import { getLanguageInfo, toLanguage, LanguageInfo } from '../languages';
 import type { Session } from '@supabase/supabase-js';
 import { getErrorMessage } from '../errors';
+import { WEB_APP_URL } from '../config';
 
 // --- DOM Elements for Logged In View ---
 const loggedInPane = document.getElementById('loggedInPane') as HTMLElement;
@@ -214,9 +215,7 @@ loginForm.addEventListener('submit', async (e) => {
 const signUpBtn = document.getElementById('signUpBtn') as HTMLButtonElement;
 
 signUpBtn.addEventListener('click', () => {
-  // Redirect to sign up page or open sign up URL
-  // You can modify this URL to point to your sign up page
-  window.open('https://lang-nine.vercel.app/', '_blank');
+  window.open(WEB_APP_URL, '_blank');
 });
 
 document.querySelectorAll('#version').forEach(el => {

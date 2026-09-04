@@ -15,6 +15,20 @@ export const BACKEND_URL = (configuredBackendUrl || DEFAULT_BACKEND_URL).replace
   '',
 );
 
+const DEFAULT_WEB_APP_URL = 'https://app.langfour.com';
+
+const configuredWebAppUrl = process.env.REACT_APP_WEB_APP_URL?.trim();
+
+/**
+ * Public web app origin, used for sign-up and any other link out of the
+ * popup. Resolved the same way as BACKEND_URL so a local build can point at
+ * a dev server without editing source.
+ */
+export const WEB_APP_URL = (configuredWebAppUrl || DEFAULT_WEB_APP_URL).replace(
+  /\/+$/,
+  '',
+);
+
 const DEBUG_ENABLED = process.env.REACT_APP_DEBUG === 'true';
 
 /** Keep routine diagnostics out of production consoles. */

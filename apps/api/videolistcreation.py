@@ -492,38 +492,30 @@ def filter_videos(filepath, language):
             print(f"Error: {e}")
             continue
 
-yt_data = "yt_fr.json"
+def main() -> None:
+    """Re-rank a scraped channel list. Run explicitly, never on import."""
+    yt_data = "yt_fr.json"
 
-weights = {
-    # 0.8
-    "metrics": {
-        "AvgEngagementRate": {"weight": 0.3, "reverse": True},
-        "AvgViewsPerSub": {"weight": 0.3, "reverse": True},
-        "Subscribers": {"weight": 0.2, "reverse": True}
-    },
-    "title_analysis": {
-        # 0.2
-        "sensitivityRating": {"weight": 0.04, "reverse": False},  # Higher value: High sensivity ranked low
-        "targetAgeInterest": {"weight": 0, "reverse": True},
-        "likelyMusic": {"weight": 0.08, "reverse": False},
-        "intellectuality": {"weight": 0.08, "reverse": True}
+    weights = {
+        # 0.8
+        "metrics": {
+            "AvgEngagementRate": {"weight": 0.3, "reverse": True},
+            "AvgViewsPerSub": {"weight": 0.3, "reverse": True},
+            "Subscribers": {"weight": 0.2, "reverse": True}
+        },
+        "title_analysis": {
+            # 0.2
+            "sensitivityRating": {"weight": 0.04, "reverse": False},  # Higher value: High sensivity ranked low
+            "targetAgeInterest": {"weight": 0, "reverse": True},
+            "likelyMusic": {"weight": 0.08, "reverse": False},
+            "intellectuality": {"weight": 0.08, "reverse": True}
+        }
     }
-}
 
-# calculate_youtuber_rankings(
-#     json_file_path=yt_data,
-#     engagement_weight=0.3,
-#     views_per_sub_weight=0.4,
-#     subscriber_weight=0.3,
-#     top_n=750,
-#     output_file_path=str(data_file('youtubers_german_top_reordered.json'))
-# )        
+    weighted_rankings(
+        yt_data, weights, top_n=750, output_file_path=str(data_file('yt_fr2.json'))
+    )
 
-# Step 1: sel.py
-#update_likes_comments(yt_data)
-#calculate_avg_engagement(yt_data)
-#filter_videos(yt_data, "French")
 
-weighted_rankings(
-    yt_data, weights, top_n=750, output_file_path=str(data_file('yt_fr2.json'))
-)
+if __name__ == "__main__":
+    main()
