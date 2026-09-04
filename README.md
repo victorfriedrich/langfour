@@ -4,11 +4,9 @@ Langfour is a language-learning platform that turns the content you already cons
 
 Its Chrome extension integrates with YouTube, Netflix, Prime Video and any article page, letting learners translate unfamiliar words in place, save them to a personal vocabulary collection, and discover videos that match their current level. The web app then turns that collection into spaced-repetition practice and vocabulary-aware video recommendations.
 
-[Website](https://www.langfour.com) · [Try the demo](https://app.langfour.com/get-started) (no sign-up needed) · [Chrome extension](https://app.langfour.com/extension) · [How recommendations work](#how-recommendations-are-calculated)
+<!-- TODO: add a 30–60 s demo video link once recorded. -->
 
-<!-- TODO: add a 30–60 s demo video link above once recorded. -->
-
-![Langfour overview: video recommendations ranked by how much of their vocabulary you already know](docs/images/overview.png)
+![The Videos page: YouTube videos ranked by how much of their vocabulary you already know, each card showing the share of known words and the number of new ones](docs/images/recommendations.png)
 
 [![Extension CI](https://github.com/victorfriedrich/langfour/actions/workflows/extension-ci.yml/badge.svg)](https://github.com/victorfriedrich/langfour/actions/workflows/extension-ci.yml)
 
@@ -36,7 +34,6 @@ Reader Mode:
 - Highlights every word that is not yet in your vocabulary
 - Translates a word when you click it, and lets you add it to your collection in one click
 - Translates any selected passage with a context-aware translation, not word by word
-- Updates highlights live as you add words, without reloading
 
 ![Reader Mode highlighting unfamiliar words in a Spanish news article](docs/images/reader-mode.webp)
 
@@ -67,15 +64,13 @@ Each recommendation shows:
 - How many new words it would teach you
 - How many of those new words are high-value, meaning they appear across many other videos
 
-You can filter by category (Cooking, Science, Politics, Gaming and others), preview a video inline before committing to it, and videos you have already watched are excluded. The ranking blends "videos you understand best" with "videos that teach the most useful words"; the exact formula is in [How recommendations are calculated](#how-recommendations-are-calculated).
-
-![The Videos page: each card shows the share of words you already know and the number of new words](docs/images/recommendations.png)
+You can filter by category (Cooking, Science, Politics, Gaming and others), preview a video inline before committing to it, and videos you have already watched are excluded. The ranking blends "videos you understand best" with "videos that teach the most useful words".
 
 ### Vocabulary-Based Content Discovery
 
 Under **Words Known**, Langfour lists the words you do not know yet, ordered by how many videos in your chosen category they appear in. Each word shows the share of the category it unlocks, so you can mark the ones you already recognise as known or add the rest to your collection with a shift-click range selection.
 
-This is the same document-term matrix the recommender uses, read column-wise instead of row-wise.
+This is the recommender's own index read the other way round: instead of scoring videos by the words you already know, it scores words by how many videos they would unlock.
 
 ![Words Known → Add Common Words: unfamiliar words ranked by how many Travel videos they appear in](docs/images/vocabulary-frequency.png)
 
@@ -131,68 +126,6 @@ Import notes:
 - Anki import currently supports Spanish and Italian decks.
 
 ![Anki import screen](docs/images/anki-import.png)
-
-## How It Works
-
-```mermaid
-flowchart LR
-    subgraph Browser
-        EXT["Chrome extension<br/>(subtitles, reader mode)"]
-        WEB["Next.js web app<br/>(practice, recommendations)"]
-    end
-    subgraph Backend
-        API["FastAPI<br/>recommender · NLP · import"]
-        M["Sparse document-term matrix<br/>per language"]
-    end
-    DB[("Supabase Postgres<br/>words · wordforms · userwords<br/>RLS + RPC")]
-    LLM["OpenRouter (DeepSeek)<br/>DeepInfra (Whisper)"]
-    R2["Cloudflare R2<br/>transcript corpus"]
-
-    EXT -- "translate, save word" --> API
-    EXT -- "known words, auth" --> DB
-    WEB -- "recommendations, examples" --> API
-    WEB -- "flashcards, progress" --> DB
-    API --> M
-    API --> DB
-    API -- "roots, translations, sentences" --> LLM
-    R2 -- "streamed at boot" --> M
-```
-
-Every word a user encounters is resolved to a **dictionary root ID** (`hablaba` → `hablar` → one integer). Videos and articles are stored as lists of those IDs, the user's vocabulary is a set of them, and everything else (highlighting, recommendations, coverage, word discovery) is set arithmetic over the same ID space.
-
-### How recommendations are calculated
-
-For each language the API holds a sparse binary document-term matrix **D** (10,231 videos × 205,062 root IDs for Spanish; IDs are global across languages, so the matrix is extremely sparse) in SciPy CSR format, built once from the transcript corpus and cached on disk as `.npz` with a metadata sidecar that is validated against the corpus on every boot.
-
-1. The user's known words become a 0/1 vector **u** over the same vocabulary.
-2. One sparse matrix-vector product, `D · u`, gives the number of known unique words in every video at once. Dividing by each row's total gives a **comprehension ratio** per video.
-3. Videos the user has already watched and videos with fewer than 100 unique words are dropped, and an optional category filter is applied.
-4. A second list is built the other way round: the unknown words that appear in the most videos of the chosen category are the **most useful words**, and `D · w` over that word set ranks videos by how many useful words they contain.
-5. The two rankings are blended by rank position with a tradeoff λ (`score = λ · rank_known + (1 − λ) · rank_useful`), and the top results are returned with their comprehension percentage, new-word count and useful-word count.
-
-Only the top candidates have their JSON metadata read from disk, so a request costs one sparse product plus a handful of file reads, not a scan of 10,000 transcripts.
-
-### Technology
-
-| Layer | Choice |
-|---|---|
-| Frontend | Next.js 16 (App Router), React 18, TypeScript, Tailwind CSS, Radix UI, Chart.js, Framer Motion |
-| Backend | Python 3.11, FastAPI, Pydantic v2, NumPy + SciPy sparse matrices |
-| Database and auth | Supabase Postgres with row-level security on every table, Postgres RPC functions for spaced repetition and progress queries, Supabase Auth with anonymous demo accounts |
-| Browser extension | Chrome Manifest V3, TypeScript, Parcel; `scripting`, `storage`, `activeTab` and `commands` APIs; Mozilla Readability, DOMPurify, wink-pos-tagger |
-| Language models | OpenRouter (DeepSeek V4 Pro for judgement, V4 Flash for bulk work) through the OpenAI SDK; Whisper large-v3-turbo on DeepInfra for transcription |
-| Content ingestion | youtube-transcript-api, pytubefix + ffmpeg fallback, Readability for articles |
-| Deployment | Web app on Vercel; API as a Docker image on Koyeb; transcript corpus in Cloudflare R2 |
-| CI and tests | GitHub Actions runs ESLint and `tsc --noEmit` for the extension on every push and pull request; pytest suites cover the Anki and media import pipelines |
-
-### Engineering Highlights
-
-- **Vocabulary normalization with a self-extending dictionary.** The API loads every root and inflected form for all four languages from Postgres into an in-memory map at boot, so identifying a word is a dictionary lookup. When a form is missing, a language model proposes the root and its inflections, the result is validated and written back, and the next lookup is a cache hit. If the cache loads empty, the service refuses to start: with row-level security on, a wrong key yields zero rows and HTTP 200, and an API that treats every word as unknown would look healthy while being useless.
-- **Reader Mode never touches the host page.** Readability runs inside the content script against a clone of the live DOM, the extracted HTML goes through DOMPurify, and the result renders in an extension-owned page (`chrome-extension://…/reader.html`). The original tab is untouched, site CSS and scripts cannot interfere, and known-word highlights update in place via `chrome.storage.onChanged` when the background worker refreshes the vocabulary cache.
-- **Subtitle interaction across four video players.** A `MutationObserver` on each player's caption container catches subtitle text nodes as they appear, tokenizes them with a Unicode-aware regex, and re-wraps each word in a span. Hovering pauses the player through a per-site adapter (YouTube, Netflix, Prime Video, kino.pub); Prime Video's caption DOM cannot be rewritten, so words there are masked with overlays positioned from `Range.getClientRects()`. Because the injected page script runs in the MAIN world without `chrome.*` access, preferences and the known-word set are relayed to it through `CustomEvent`s on `document`.
-- **A 2.2 GB corpus that never enters git or the container image.** The 11,800 transcripts compress 16× into one tarball per language (134 MB total) in object storage. At boot the API streams them straight from the HTTP body through a `tarfile` pipe reader into place, at 20 MB peak RSS for 1.99 GB extracted. Reading the body into memory first, the obvious approach, needs 130 MB. Each language directory gets a completion marker so an interrupted extraction is redone rather than trusted.
-- **Provider-agnostic structured output.** All chat completions go through OpenRouter using the unchanged OpenAI SDK, with model names in environment variables so swapping providers is a config change. Structured calls first try strict JSON-schema mode, fall back to plain JSON mode when the routed provider lacks it, and always validate the result with Pydantic, so the schema is the contract and `response_format` is only an optimisation.
-- **One trust boundary, enforced at boot.** The web app and extension ship the public `anon` key and are constrained by RLS; only the API holds the `service_role` key. The API decodes its own key's `role` claim at startup and refuses to serve with anything else, because a mis-deployed anon key on the server fails silently rather than loudly.
 
 ## Running Langfour Locally
 
