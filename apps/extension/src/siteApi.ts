@@ -16,21 +16,6 @@ interface SubtitleApiWithMask extends SubtitleApi {
 }
 
 const siteApiMap = {
-  'kino.pub': {
-    subtitleTransformType: 'replace',
-    subtitleSelector: '.jw-captions',
-    subtitlePopupSelector: '#player',
-    popupOffsetBottom: 4,
-    pause() {
-      if (document.querySelector<HTMLVideoElement>('video.jw-video')?.paused)
-        return false;
-      document.querySelector<HTMLVideoElement>('video.jw-video')?.pause();
-      return true;
-    },
-    play() {
-      document.querySelector<HTMLVideoElement>('video.jw-video')?.play();
-    },
-  },
   'www.netflix.com': {
     subtitleTransformType: 'replace',
     subtitleSelector: '.player-timedtext:not(.billboard .player-timedtext)',
@@ -53,21 +38,6 @@ const siteApiMap = {
     },
   },
   'www.youtube.com': {
-    subtitleTransformType: 'replace',
-    subtitleSelector: '#movie_player .ytp-caption-window-container',
-    subtitlePopupSelector: '#movie_player',
-    popupOffsetBottom: 8,
-    pause() {
-      if (document.querySelector<HTMLVideoElement>('#movie_player video')?.paused)
-        return false;
-      document.querySelector<HTMLVideoElement>('#movie_player video')?.pause();
-      return true;
-    },
-    play() {
-      document.querySelector<HTMLVideoElement>('#movie_player video')?.play();
-    },
-  },
-  'localhost:3000': {
     subtitleTransformType: 'replace',
     subtitleSelector: '#movie_player .ytp-caption-window-container',
     subtitlePopupSelector: '#movie_player',

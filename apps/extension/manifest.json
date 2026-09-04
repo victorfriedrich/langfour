@@ -34,11 +34,9 @@
   "content_scripts": [
     {
       "matches": [
-        "https://kino.pub/*",
         "https://www.netflix.com/*",
         "https://www.youtube.com/*",
-        "https://www.primevideo.com/*",
-        "http://localhost/*"
+        "https://www.primevideo.com/*"
       ],
       "js": [
         "src/contentScript.ts"
@@ -55,19 +53,15 @@
         "images/demo.webp"
       ],
       "matches": [
-        "https://kino.pub/*",
         "https://www.netflix.com/*",
         "https://www.youtube.com/*",
-        "https://www.primevideo.com/*",
-        "http://localhost/*"
+        "https://www.primevideo.com/*"
       ]
     },
     {
       "resources": [
         "src/auth_handler.html",
-        "src/auth_handler.ts",
-        "src/auth.html",
-        "src/auth.ts"
+        "src/auth_handler.ts"
       ],
       "matches": [
         "<all_urls>"
@@ -75,6 +69,8 @@
     },
     {
       "resources": [
+        "src/auth.html",
+        "src/auth.ts",
         "src/reader.html",
         "src/reader.ts",
         "src/reader.css"
@@ -86,7 +82,7 @@
   ],
   "host_permissions": [
     "https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app/*",
-    "https://*.supabase.co/*"
+    "https://xpovcmbrttmkhnrfspvo.supabase.co/*"
   ],
   "permissions": [
     "activeTab",
