@@ -425,60 +425,6 @@ async def get_missing_words(user_id: str, words: List[Dict], language: str) -> L
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching data from Supabase: {str(e)}")
 
-class VideoAnalysis(BaseModel):
-    conformsToLanguageCriteria: bool
-    sensitivityRating: float
-    targetAgeInterest: float  # Probability that a 21-30 year old would be interested
-    likelyMusic: float
-    intellectuality: float
-
-def analyze_titles(channel, titles, language):
-    """
-    Analyze a list of video titles for language conformity, sensitivity, 21-30 age interest,
-    likelihood of being music, and intellectuality.
-
-    :param titles: List of video titles.
-    :param language: The language to check against.
-    :return: A structured VideoAnalysis object with the analysis results.
-    """
-    combined_titles = "\n".join(titles)
-    
-    prompt = f"""
-    Analyze the following video titles of youtuber {channel} in terms of structured criteria:
-    
-    {{
-        "conformsToLanguageCriteria": boolean,  # True if videos are maybe in {language}, false if they are definitely not. Consider that titles may only contain anglicisms.
-        "sensitivityRating": float,             # Sensitivity (0-1 scale; 1 = very risky, risky meaning sensitive content related to drugs, sexual violence, prostitution, etc.).
-        "targetAgeInterest": float,             # Probability (0-1) that a 21-30 year old would be interested.
-        "likelyMusic": float,                   # Music likelihood (0-1 scale).
-        "intellectuality": float                # Intellectual content rating (0-1 scale).
-    }}
-
-    Titles:
-    \"\"\"{combined_titles}\"\"\"
-    """
-
-    try:
-        # Was client.beta.chat.completions.parse(), which is an OpenAI-SDK
-        # helper that assumes strict json_schema support. parse_structured()
-        # does the same job portably: strict schema first, plain JSON mode as
-        # a fallback, Pydantic validation either way.
-        # MODEL_FAST, and reasoning off: this is a bounded classification, not
-        # a judgement call. With reasoning on, the model spends the whole
-        # max_tokens budget thinking and returns an empty body.
-        return parse_structured(
-            model=MODEL_FAST,
-            messages=[{"role": "user", "content": prompt}],
-            schema_model=VideoAnalysis,
-            reasoning={"enabled": False},
-            max_tokens=400,
-            temperature=0.3,
-        )
-
-    except Exception as e:
-        print(f"Error in analyzing titles: {e}")
-        raise Exception("Could not complete title analysis")
-
 def summarize_text(text: str) -> str:
     prompt = INSTRUCTION_SUMMARIZE.format(text=text)
     
