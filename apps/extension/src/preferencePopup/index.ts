@@ -4,7 +4,6 @@ import { sendToActiveTab } from '../messages';
 import { getLanguageInfo, toLanguage, LanguageInfo } from '../languages';
 import type { Session } from '@supabase/supabase-js';
 import { getErrorMessage } from '../errors';
-import { WEB_APP_URL } from '../config';
 
 // --- DOM Elements for Logged In View ---
 const loggedInPane = document.getElementById('loggedInPane') as HTMLElement;
@@ -215,7 +214,7 @@ loginForm.addEventListener('submit', async (e) => {
 const signUpBtn = document.getElementById('signUpBtn') as HTMLButtonElement;
 
 signUpBtn.addEventListener('click', () => {
-  window.open(WEB_APP_URL, '_blank');
+  window.open('https://app.langfour.com/', '_blank');
 });
 
 document.querySelectorAll('#version').forEach(el => {

@@ -75,10 +75,13 @@ const MigrateLogin = () => {
 
     return (
         <div className="relative min-h-screen bg-gray-100 overflow-hidden">
+            {/* Brand gradient rather than a hosted photo -- see auth.css. The
+                previous signed URL expired 2025-09-19 and its Supabase project
+                no longer exists, so this rendered flat grey. */}
             <div
-                className="absolute inset-0 bg-cover bg-center"
+                className="absolute inset-0"
                 style={{
-                    backgroundImage: "url('https://teyjdjamdlguuezclsrq.supabase.co/storage/v1/object/sign/images/login.jpg?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1cmwiOiJpbWFnZXMvbG9naW4uanBnIiwiaWF0IjoxNzI2NzMwODYxLCJleHAiOjE3NTgyNjY4NjF9.G2lQx6hT9igfcrORAR7Gz5WkznoXZtgT8XQtZSSldVk&t=2024-09-19T07%3A27%3A41.855Z')",
+                    backgroundImage: "linear-gradient(135deg, #2563eb 0%, #4f46e5 50%, #6366f1 100%)",
                     maskImage: "linear-gradient(to bottom, rgba(0,0,0,0.4) 30%, rgba(0,0,0,0) 65%)",
                     WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 50%)"
                 }}
@@ -87,7 +90,7 @@ const MigrateLogin = () => {
                 <div className="w-full max-w-md space-y-8 pb-32">
                     <div>
                         <h1 className="text-center text-4xl font-extrabold text-gray-800">
-                            Join Learnfive
+                            Join Langfour
                         </h1>
                         <p className="mt-2 text-center text-lg text-gray-600">
                             Sign up and save your demo account progress

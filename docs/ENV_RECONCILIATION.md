@@ -56,7 +56,7 @@ clear error.
 | `ALLOWED_ORIGINS` | explicit list including any Vercel preview domains |
 
 `ALLOWED_ORIGINS` defaults to
-`http://localhost:3000,https://langfive.com,https://www.langfive.com`.
+`http://localhost:3000,https://app.langfour.com`.
 
 Two consequences of leaving it at the default:
 

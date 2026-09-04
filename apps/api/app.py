@@ -22,7 +22,7 @@ from utils import get_video_words, ARTICLES_DIR
 from languages import require_code
 import asyncio
 from fastapi import Query, Body
-from file_manager import get_categories_with_icons, language_categories_cache, initialize_categories
+from file_manager import get_categories_with_icons
 from flashcards import router as flashcards_router
 from media_import import get_media, import_media, list_media
 from nlp_processing import group_text, parse
@@ -47,7 +47,10 @@ app.add_middleware(AuthMiddleware)
 # CORS spec -- browsers reject a wildcard origin on credentialed requests, so
 # the previous config was not doing what it appeared to. Origins are now
 # explicit and configured per environment.
-_default_origins = "http://localhost:3000,https://langfive.com,https://www.langfive.com"
+# The deployed web app is app.langfour.com. Keep the built-in allowlist to
+# origins that actually call the API; the apex and www hosts serve the public
+# marketing site.
+_default_origins = "http://localhost:3000,https://app.langfour.com"
 ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()
 ]
@@ -173,7 +176,6 @@ async def startup_event():
     ensure_corpus()
 
     initialize_cache()
-    initialize_categories()
 
     # now instantiate here, so import-time is fast
     app.state.recommender         = Recommender(base_folder=VIDEO_DIR)
@@ -409,22 +411,27 @@ async def check_missing_words(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/categories")
-async def get_categories():
+async def get_categories(request: Request):
     try:
-        categories = get_categories_with_icons(str(PROCESSED_DIR / "de"))
+        categories = request.app.state.recommender.get_categories("de")
         return {"categories": categories}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching categories: {str(e)}")
 
 @app.get("/categories/videos")
-async def get_video_categories(language: str = Query("es", description="Language Country Code")):
+async def get_video_categories(
+    request: Request,
+    language: str = Query("es", description="Language Country Code"),
+):
     if (not language.isalnum()) or len(language) > 2:
         raise HTTPException(status_code=400, detail="Invalid language code")
-    
-    if language not in language_categories_cache:
+
+    try:
+        return {"categories": request.app.state.recommender.get_categories(language)}
+    except ValueError:
         raise HTTPException(status_code=404, detail="Language not supported")
-    
-    return {"categories": language_categories_cache[language]}
 
 @app.get("/categories/articles")
 async def get_article_categories():
@@ -677,35 +684,14 @@ async def vocabulary_coverage(
     """Calculate average percent understood for the top and bottom 30% of videos."""
     recommender = request.app.state.recommender
 
-    # Fetch known words for the provided vocabulary/user ID
-    known_words = await recommender.get_known_words(vocab_id)
-
     try:
         recommender._ensure_language_loaded(language)
     except ValueError:
         raise HTTPException(status_code=404, detail="Language not supported")
-    matrix = recommender.matrices[language]
 
-    # Evaluate comprehension for all available videos for this language
-    all_videos = recommender.recommend_videos_by_words(
-        word_ids=known_words,
-        language=language,
-        top_n=matrix.shape[0],
-    )
-
-    if not all_videos:
-        return VocabCoverageResponse(top30_avg=0.0, bottom30_avg=0.0)
-
-    count = max(1, int(len(all_videos) * 0.3))
-    top_segment = all_videos[:count]
-    bottom_segment = all_videos[-count:]
-
-    def avg_percent(videos):
-        return sum(v["percentUnderstood"] for v in videos) / len(videos) if videos else 0.0
-
+    known_words = await recommender.get_known_words(vocab_id)
     return VocabCoverageResponse(
-        top30_avg=avg_percent(top_segment),
-        bottom30_avg=avg_percent(bottom_segment),
+        **recommender.calculate_vocabulary_coverage(known_words, language)
     )
 
 # @app.on_event("startup")

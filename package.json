@@ -1,8 +1,8 @@
 {
-  "name": "langfive",
+  "name": "langfour",
   "version": "1.0.0",
   "private": true,
-  "description": "Langfive monorepo — web app, Chrome extension, and API.",
+  "description": "Langfour monorepo — web app, Chrome extension, and API.",
   "packageManager": "npm@10.9.0",
   "engines": { "node": ">=20" },
   "workspaces": [
