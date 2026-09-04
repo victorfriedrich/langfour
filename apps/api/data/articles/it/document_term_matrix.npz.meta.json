@@ -7,5 +7,9 @@
     "Unknown",
     "Unknown"
   ],
-  "max_word_id": 58725
+  "max_word_id": 58725,
+  "titles": [
+    "italian_vocabulary",
+    "parole_italiane"
+  ]
 }
