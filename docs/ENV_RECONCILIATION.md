@@ -124,14 +124,6 @@ survived this long.
 `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` — all three are read by the code.
 
-### Not fixable with an env var
-
-`src/app/components/UrlParser.tsx` reads `process.env.REACT_APP_API_URL`.
-Next.js only inlines `NEXT_PUBLIC_*` into the browser bundle, so that read is
-`undefined` no matter what you configure in Vercel, and the component falls
-back to `http://localhost:8000` in production. Adding `REACT_APP_API_URL` to
-Vercel will not help. The one-word fix is in the component.
-
 ---
 
 ## apps/extension
