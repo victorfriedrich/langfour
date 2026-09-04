@@ -278,7 +278,3 @@ Langfour is a working prototype that I use daily. It is deployed and usable, but
 **Memory is a first-class constraint on small hosts.** The first recommender held both the Python list-of-lists corpus and the sparse matrix, nearly doubling memory, and the first corpus loader read a 118 MB archive into RAM before extracting it. Profiling with `tracemalloc` and switching to CSR-only storage and streaming tar extraction brought the API well under the limits of a small container, and taught me to measure peak RSS rather than assume.
 
 **One source of truth for identifiers.** Languages were represented as ISO codes in some places and English names in others, across six independent mapping tables. Two of them were missing French, so French learners were silently served Spanish vocabulary. Collapsing them into a single `languages` module in each app, with conversion only at the boundary and `None` instead of a default on unknown input, removed a whole class of bugs. In a production version I would also generate shared TypeScript types from the database schema so the extension, web app and API could not drift.
-
-## License
-
-MIT
