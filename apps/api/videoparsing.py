@@ -92,7 +92,11 @@ def main(url, language: str, use_transcript_api=True):
     # scope is how the wrong one gets picked up later.
     language = require_code(language)
     
-    video_id = url.split('v=')[-1]
+    # split('&')[0] too: a watch URL often carries more than v=, and keeping
+    # the tail produced 46 transcripts named '<id>&pp=0gcJ..._processed.json'.
+    # The recommender derives the video id from the filename, so that junk was
+    # served straight to clients.
+    video_id = url.split('v=')[-1].split('&')[0]
 
     # Ensure the 'transcripts' directory exists
     os.makedirs("transcripts", exist_ok=True)

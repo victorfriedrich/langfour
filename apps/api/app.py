@@ -438,7 +438,7 @@ async def process_video_endpoint(request: VideoRequest):
         await loop.run_in_executor(None, process_video, request.url, request.language)
         
         # Extract video_id from the URL
-        video_id = request.url.split('v=')[-1]
+        video_id = request.url.split('v=')[-1].split('&')[0]
         
         return {"message": f"Video processing started for ID: {video_id}", "video_id": video_id}
     except Exception as e:
