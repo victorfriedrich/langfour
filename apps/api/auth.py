@@ -1,5 +1,5 @@
 """
-Authentication for the Langfive backend.
+Authentication for the Langfour backend.
 
 Design note: this is deliberately a *deny-by-default* middleware rather than a
 per-endpoint dependency. The previous approach attached `Depends(get_current_user)`

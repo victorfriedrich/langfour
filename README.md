@@ -1,10 +1,18 @@
-# Langfive
+# Langfour
 
-Monorepo for Langfive: a Next.js web app, a Chrome extension, and a FastAPI
-backend.
+Monorepo for Langfour: a Next.js web app, a Chrome extension, and a FastAPI
+backend. Deployed at [langfour.com](https://langfour.com).
+
+> **A note on the name.** The product is Langfour everywhere it is
+> user-visible. Internal identifiers still carry an earlier `langfive`
+> prefix — the `LANGFIVE_*` environment variables, the `langfive-corpus`
+> bucket, the `langfive-corpus-api-readonly` role and the `langfive-api`
+> image tag. Those are load-bearing: renaming them means changing the
+> deployed environment, the bucket and the IAM role in lockstep, which
+> buys nothing. They are left alone deliberately.
 
 ```
-langfive/
+langfour/
 ├── apps/
 │   ├── web/          Next.js 14 app          (npm workspace: lang-frontend)
 │   ├── extension/    Chrome extension        (npm workspace: spotlight-lingo)

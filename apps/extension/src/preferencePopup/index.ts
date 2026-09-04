@@ -214,9 +214,7 @@ loginForm.addEventListener('submit', async (e) => {
 const signUpBtn = document.getElementById('signUpBtn') as HTMLButtonElement;
 
 signUpBtn.addEventListener('click', () => {
-  // Redirect to sign up page or open sign up URL
-  // You can modify this URL to point to your sign up page
-  window.open('https://lang-nine.vercel.app/', '_blank');
+  window.open('https://app.langfour.com/', '_blank');
 });
 
 document.querySelectorAll('#version').forEach(el => {

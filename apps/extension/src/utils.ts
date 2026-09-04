@@ -2,7 +2,7 @@ import { popupHeight, popupVerticalOffset, popupWidth } from './markup';
 import debounce from 'lodash-es/debounce';
 import { sanitizeHTML } from './sanitizeHTML';
 
-export const logPrefix = 'Langfive ';
+export const logPrefix = 'Langfour ';
 
 export function createElementFromHTML(htmlString: string) {
   const div = document.createElement('div');
