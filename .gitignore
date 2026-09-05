@@ -100,7 +100,9 @@ apps/api/media/
 # Agent settings and the sandbox git/gh bootstrap helpers. Machine-specific,
 # and gh-bootstrap.sh carries a personal email and session notes.
 .claude/
-scripts/
+# Anchored: this is the repo-root scripts/ dir. Unanchored, it also swallowed
+# apps/api/scripts/, so anything added there needed `git add -f` to be tracked.
+/scripts/
 
 # ---- node ----------------------------------------------------------------
 node_modules/

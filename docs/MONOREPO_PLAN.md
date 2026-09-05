@@ -363,6 +363,18 @@ apps/api/
 The `2`-suffixed pairs are worth a look before moving anything — one of each is
 probably superseded, and this is the moment to find out.
 
+**Resolved 5 Sep 2026**, ahead of the restructure. The pairs were superseded, as
+suspected: `wordconverter2.py` (batched and resumable) and `language_flagging.py`
+(the developed prompt) survived under unsuffixed names, and their counterparts
+were deleted. Also deleted: `quickfix.py`, `italian_beginner.py` and
+`spanishparser2.py`, all of which ran their work at import time against input
+files no longer in the tree, and `test_script.py`, a scratch REPL file that
+pytest collected as 11 assertion-free tests. `backup_tables.py` moved to
+`scripts/`. The counts above are from the 16 Aug audit and predate this;
+`sel.py` and the scrapers named there are gone too, removed with the ingestion
+pipeline rewrite. What remains unimported at the top level is eight one-off
+maintenance scripts, still awaiting the `src/` + `scripts/` split below.
+
 Even without the `src/` move, three cheap wins:
 
 - **Split the requirements.** `pytest==8.3.2` is in `requirements.txt`, so it
