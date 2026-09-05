@@ -2,6 +2,7 @@
   "name": "langfour",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Langfour monorepo — web app, Chrome extension, and API.",
   "packageManager": "npm@10.9.0",
   "engines": { "node": ">=20" },
