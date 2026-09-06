@@ -1,11 +1,31 @@
+"""Push a JSON word list through the parser and into the dictionary, in batches.
+
+    python3 scripts/wordconverter.py [start_batch]
+
+Long-running and resumable: progress is checkpointed to data/processing_progress.txt
+after every batch, and Ctrl+C finishes the batch in flight before exiting. With no
+argument it resumes from the checkpoint.
+
+Stage 0 of the dictionary pipeline: it creates the rows that
+scripts/language_updating.py then translates.
+
+This replaces an earlier one-shot converter that read the whole list in a single
+pass with no way to resume. That one tagged the rows it created source = "CREA";
+this passes "WORD_LIST" through parse(), so nothing writes "CREA" any more --
+see the note on fetch_words in scripts/language_flagging.py, which still filters
+on it.
+"""
 import json
-import time
 import os
 import signal
 import sys
-from nlp_processing import parse
-from database import initialize_cache
-from paths import data_file
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from database import initialize_cache  # noqa: E402
+from nlp_processing import parse  # noqa: E402
+from paths import data_file  # noqa: E402
 
 # Global variable to track the last processed batch
 last_processed_batch = 0
@@ -35,7 +55,7 @@ def save_progress(start_batch, current_batch, file_path=str(data_file("processin
         f.write(f"timestamp={time.time()}\n")
     print(f"Progress saved: completed through batch {current_batch}")
 
-def load_progress(file_path="processing_progress.txt"):
+def load_progress(file_path=str(data_file("processing_progress.txt"))):
     """Load the last processing progress from a file"""
     if not os.path.exists(file_path):
         return None

@@ -1,19 +1,28 @@
-import os
+#!/usr/bin/env python3
+"""Dump whole Supabase tables to CSV. Read-only.
+
+    python3 scripts/backup_tables.py words wordforms
+
+Writes ./csv/<table>.csv relative to the working directory, one file per
+table, paging through in 10k-row batches.
+"""
 import csv
-import time
+import os
 import sys
+import time
+
 from dotenv import load_dotenv
-from supabase import create_client, Client
 from postgrest.exceptions import APIError
 
-# Load credentials
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 load_dotenv()
-from supabase_client import supabase, SUPABASE_URL as url, SUPABASE_KEY as key
+from supabase_client import supabase, SUPABASE_URL as url, SUPABASE_KEY as key  # noqa: E402
+
 if not url or not key:
     print("ERROR: SUPABASE_URL and SUPABASE_KEY must be set in your .env file.")
     sys.exit(1)
 
-os.makedirs("csv", exist_ok=True)
 PAGE_SIZE = 10000
 
 def export_table_to_csv(table_name: str):
@@ -62,7 +71,8 @@ def export_table_to_csv(table_name: str):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python export_supabase.py <table1> [<table2> ...]")
+        print("Usage: python3 scripts/backup_tables.py <table1> [<table2> ...]")
         sys.exit(1)
+    os.makedirs("csv", exist_ok=True)
     for tbl in sys.argv[1:]:
         export_table_to_csv(tbl)

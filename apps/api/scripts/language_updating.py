@@ -1,17 +1,28 @@
-import os
-from dotenv import load_dotenv
-from supabase import create_client, Client
+#!/usr/bin/env python3
+"""Fill in words.translation for rows that have none.
+
+    python3 scripts/language_updating.py [language]
+
+Stage 1 of the dictionary pipeline: everything downstream reads the translation,
+including language_flagging.py, which shows it to the model as evidence.
+Defaults to Spanish. Idempotent — it selects only rows where translation IS NULL,
+so it can be re-run after an interruption.
+"""
 import json
-from typing import List, Dict
+import os
+import sys
+from typing import Dict, List
+
+from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
 
-from llm_client import client
-from models import MODEL_SMART, MODEL_FAST
-
-# Initialize Supabase client
-from supabase_client import supabase
-from languages import require_code
+from languages import require_code  # noqa: E402
+from llm_client import client  # noqa: E402
+from models import MODEL_FAST, MODEL_SMART  # noqa: E402
+from supabase_client import supabase  # noqa: E402
 
 
 def fetch_words_without_translation(batch_size: int = 40, offset: int = 0, language: str = "es") -> List[Dict]:
@@ -52,13 +63,12 @@ def update_translations(translations: List[Dict]):
         supabase.table("words").update({"translation": translation['translation']}).eq("id", translation['id']).execute()
         print(f"Updated translation for word: {translation['root']}")
 
-def main():
-    offset = 0
+def main(language: str = "es", offset: int = 0):
     batch_size = 40
 
     while True:
-        print(f"Fetching words without translation (offset: {offset})...")
-        words = fetch_words_without_translation(batch_size, offset)
+        print(f"Fetching words without translation ({language}, offset: {offset})...")
+        words = fetch_words_without_translation(batch_size, offset, language)
         
         if not words:
             print("No more words to process.")
@@ -74,4 +84,4 @@ def main():
         offset += batch_size
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1] if len(sys.argv) > 1 else "es")

@@ -12,10 +12,10 @@
 -- where a video came from. Transcript bodies stay on disk / in object storage;
 -- this table holds metadata and state only.
 --
--- HOW THIS GETS APPLIED: by hand, through the Supabase connector, exactly like
--- docs/language-iso-migration.sql. The deployed database is the source of
--- truth; this file is the runbook and the review artifact. Idempotent: safe to
--- re-run.
+-- HOW THIS GETS APPLIED: by hand, through the Supabase connector. The deployed
+-- database is the source of truth; this file is the runbook and the review
+-- artifact. See sql/supabase_schema.md for the full inventory. Idempotent:
+-- safe to re-run.
 
 create table if not exists public.video_queue (
     video_id     text primary key,

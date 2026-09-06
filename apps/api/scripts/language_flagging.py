@@ -1,22 +1,45 @@
-import os
-from dotenv import load_dotenv
-from supabase import create_client, Client
+#!/usr/bin/env python3
+"""Mark words that are probably not real words, for human review.
+
+    python3 scripts/language_flagging.py [language]
+
+Stage 2 of four. This writes cognate = "invalid" as a review flag; the web app's
+WordValidation component lists those rows, and you either delete them or clear
+the flag. Deleting is what makes reparse.py necessary: transcripts on disk still
+carry the deleted word ids, and reparse.py re-resolves them.
+
+An earlier variant of this script gave the model each root's first six wordforms
+instead of its translation. That is arguably better evidence and is worth porting
+back; it was dropped because it cost one query per word and ran a loose prompt at
+temperature 0.7.
+"""
 import json
-from typing import List, Dict
+import os
+import sys
+from typing import Dict, List
+
+from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
 
-from llm_client import client
-from models import MODEL_SMART, MODEL_FAST
-
-# Initialize Supabase client
-from supabase_client import supabase
+from languages import require_code  # noqa: E402
+from llm_client import client  # noqa: E402
+from models import MODEL_FAST, MODEL_SMART  # noqa: E402
+from supabase_client import supabase  # noqa: E402
 
 
 def fetch_words(language: str, batch_size: int = 40, offset: int = 0) -> List[Dict]:
-    # Fetches words that need to be verified for the specified language
-    # For new channels: Find all words with ID > 93831
-    response = supabase.table("words").select("id, root").eq("language", language).neq("source", "CREA").range(offset, offset + batch_size - 1).execute()
+    """Words to check, skipping the ones that came from a trusted reference list.
+
+    source = "CREA" marks rows seeded from the CREA frequency corpus, which is
+    vetted and does not need an LLM opinion. Nothing writes that value any more:
+    it was set by the one-shot importer that seeded the original 50k Spanish
+    words, and the current importer tags its rows "WORD_LIST". So this filter now
+    excludes historical rows only. It is still correct — do not delete it as dead.
+    """
+    response = supabase.table("words").select("id, root").eq("language", require_code(language)).neq("source", "CREA").range(offset, offset + batch_size - 1).execute()
     return response.data
 
 def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
@@ -84,16 +107,19 @@ def flag_non_language_words(non_language_words: List[str], all_words: List[Dict]
         supabase.table("words").update({"cognate": "invalid"}).eq("id", word_id).execute()
         #supabase.table("words").update({"flagged": True}).eq("id", word_id).execute()
 
-def main(language: str):
-    offset = 45680
-    # Last: 31700
-    # Italian, Source != ROBERT: 3840
+def main(language: str, offset: int = 0):
     batch_size = 40
 
     while True:
         try:
             print(f"Fetching words to verify language ({language}, offset: {offset})...")
             words = fetch_words(language, batch_size, offset)
+
+            # Without this the loop ran past the end of the table forever,
+            # spending a model call on every empty batch.
+            if not words:
+                print("No more words to check.")
+                break
 
             print(f"Verifying {len(words)} words in {language}...")
             non_language_words = verify_language(words, language)
@@ -104,16 +130,14 @@ def main(language: str):
             else:
                 print(f"No non-{language} or misspelled words found in this batch.")
         except Exception as e:
-            print(f"Error filtering non-Spanish words: {str(e)}")
-        
+            print(f"Error filtering non-{language} words: {str(e)}")
+
         offset += batch_size
         print(offset)
 
 if __name__ == "__main__":
-    language_to_check = "spanish"  # Replace with any language you'd like to verify
-    main(language_to_check)
-
-# Features a validation site should have:
-# Delete all invalid words
-# Edit remaining
-# Next will unflag all marked words
+    # Second argument resumes a long run: the batch loop prints the offset it
+    # reached, and passing that back picks up from there.
+    language_to_check = sys.argv[1] if len(sys.argv) > 1 else "spanish"
+    start_offset = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+    main(language_to_check, start_offset)

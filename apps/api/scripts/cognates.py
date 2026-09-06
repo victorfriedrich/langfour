@@ -1,15 +1,26 @@
-import os
-from dotenv import load_dotenv
-from supabase import create_client, Client
-from llm_client import client
-from models import MODEL_SMART
+#!/usr/bin/env python3
+"""Fill in words.cognate — how close a word is to its English counterpart.
+
+    python3 scripts/cognates.py
+
+Pages the words table, asks the model to classify each root, and writes the
+answer back in batches. Distinct from language_flagging.py, which writes the
+sentinel value "invalid" into the same column to mark a word for review.
+"""
 import json
-from typing import List, Dict
+import os
+import sys
+from typing import Dict, List
+
+from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
 
-# Initialize Supabase client
-from supabase_client import supabase
+from llm_client import client  # noqa: E402
+from models import MODEL_SMART  # noqa: E402
+from supabase_client import supabase  # noqa: E402
 
 
 def fetch_words(batch_size: int = 50, offset: int = 0) -> List[Dict]:
@@ -79,8 +90,7 @@ def update_cognates(cognate_data: List[Dict]):
     print(f"Updated cognate status for {len(updates)} words.")
 
 
-def main():
-    offset = 2350
+def main(offset: int = 0):
     batch_size = 50
 
     while True:
@@ -101,4 +111,5 @@ def main():
         offset += batch_size
 
 if __name__ == "__main__":
-    main()
+    # Optional argument resumes a long run from the offset the loop last printed.
+    main(int(sys.argv[1]) if len(sys.argv) > 1 else 0)
