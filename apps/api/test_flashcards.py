@@ -6,6 +6,7 @@ import os
 # database.py constructs the client at import time but these unit tests never
 # make a network request.
 os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
+os.environ.setdefault("REQUIRE_SERVICE_ROLE", "0")
 os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 os.environ.setdefault("DEEPINFRA_API_KEY", "test-key")
 os.environ.setdefault(
