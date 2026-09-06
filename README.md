@@ -1,159 +1,137 @@
 # Langfour
 
-Monorepo for Langfour: a Next.js web app, a Chrome extension, and a FastAPI
-backend. Deployed at [langfour.com](https://langfour.com).
+Langfour turns the content you already watch and read into personalized vocabulary practice.
 
-> **A note on the name.** The product is Langfour everywhere it is
-> user-visible. Internal identifiers still carry an earlier `langfive`
-> prefix — the `LANGFIVE_*` environment variables, the `langfive-corpus`
-> bucket, the `langfive-corpus-api-readonly` role and the `langfive-api`
-> image tag. Those are load-bearing: renaming them means changing the
-> deployed environment, the bucket and the IAM role in lockstep, which
-> buys nothing. They are left alone deliberately.
+Its Chrome extension translates unfamiliar words in place on YouTube, Netflix, Prime Video and any article page, saving them to a vocabulary collection. The web app turns that collection into spaced-repetition practice, and ranks 11,800 YouTube videos by how much of each one you can already understand.
 
+![Langfour: find videos tailored to your vocabulary, and add words to flashcards from YouTube, Netflix and news sites](docs/images/overview.png)
+
+[![Extension CI](https://github.com/victorfriedrich/langfour/actions/workflows/extension-ci.yml/badge.svg)](https://github.com/victorfriedrich/langfour/actions/workflows/extension-ci.yml)
+
+**Contents**
+
+- [Why Langfour?](#why-langfour)
+- [What it does](#what-it-does)
+- [By the numbers](#by-the-numbers)
+- [How it works](#how-it-works)
+- [Five decisions worth defending](#five-decisions-worth-defending)
+- [Running it locally](#running-it-locally)
+- [Project status](#project-status)
+
+Deeper reading: **[Architecture](docs/architecture.md)** · **[Configuration](docs/configuration.md)** · **[Database schema](apps/api/sql/supabase_schema.md)**
+
+## Why Langfour?
+
+Learners are stuck choosing between authentic content that is too hard and graded material that is not interesting. Research on extensive reading puts the sweet spot around 95% known words — but nothing tells you which video that is.
+
+Langfour tracks your vocabulary as dictionary root forms rather than raw strings, highlights and translates unfamiliar words while you browse, scores 11,800 transcripts against what you know, and turns saved words into flashcards and example sentences.
+
+## What it does
+
+**Reader Mode** (`Cmd/Ctrl + Shift + Y`) rebuilds the current article with Mozilla Readability, highlights every word not yet in your vocabulary, and translates a word on click or a passage in context. **Subtitle integration** does the same inside YouTube, Netflix and Prime Video: unfamiliar words turn orange, hovering pauses playback and shows a translation, and words save without leaving the video.
+
+![Reader Mode highlighting unfamiliar words in a Spanish news article](docs/images/reader-mode.webp)
+
+**Recommendations** rank categorized videos by the share of their vocabulary you already know, showing how many new words each would teach. **Add Common Words** inverts the question: which words would unlock the most videos in a category if you learned them next?
+
+![The Videos page, ranking YouTube videos by the share of known words in each](docs/images/recommendations.png)
+
+**Practice** is a spaced-repetition session over the words due today, with a typing mode and a generated "words in context" exercise. Existing decks come in through **Anki import**, reading `.apkg` files straight from the bundled SQLite collection and matching words against the dictionary including inflections, so `hablaba` imports as `hablar`.
+
+## By the numbers
+
+| | |
+|---|---|
+| Transcript corpus | 11,798 videos, 2.3 GB raw, 137 MB shipped as gzipped tarballs |
+| Dictionary | 179,353 root words across four languages, plus inflections |
+| Vocabulary tracked | 316,802 user-word rows |
+| Discovery queue | 13,434 videos selected out of a multi-million-channel crawl |
+| Database | 11 tables, ~50 Postgres functions, RLS on every table |
+| Tests | ~160 API cases, no network, about two seconds |
+
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph clients
+        W["web (Next.js)"]
+        X["extension (MV3)"]
+    end
+    SB[("Supabase<br/>Postgres + Auth<br/>~50 RPCs, RLS on")]
+    API["api (FastAPI)<br/>recommender in memory"]
+    R2[("R2 bucket<br/>corpus tarballs")]
+    OR["OpenRouter<br/>chat completions"]
+    DI["DeepInfra<br/>Whisper"]
+    YT["YouTube Data API<br/>+ Common Crawl"]
+
+    W -- "anon key, RPCs" --> SB
+    X -- "anon key, RPCs" --> SB
+    W -- "bearer JWT" --> API
+    X -- "bearer JWT" --> API
+    API -- "service_role" --> SB
+    API -- "boot" --> R2
+    API --> OR
+    API -. "ingest.py" .-> DI
+    API -. "ytpipeline.py" .-> YT
 ```
-langfour/
-├── apps/
-│   ├── web/          Next.js 14 app          (npm workspace: lang-frontend)
-│   ├── extension/    Chrome extension        (npm workspace: spotlight-lingo)
-│   └── api/          FastAPI + NLP pipeline  (Python)
-│       ├── corpus_sync.py  fetches the transcript corpus at boot
-│       ├── paths.py        all filesystem locations
-│       ├── scripts/        one-off and maintenance scripts
-│       └── data/           corpora & reference datasets (see below)
-├── docs/
-└── package.json      npm workspaces
-```
 
-All three talk to a hosted Supabase project. There is no `supabase/` directory:
-the schema is managed in the dashboard, not as migrations in this repo.
+Supabase owns user state and both clients reach it directly through RPCs under row-level security. The API owns everything needing the whole corpus in memory or a language model, so it alone holds the `service_role` key. A separate offline pipeline decides which YouTube videos are worth transcribing at all, and feeds them to workers through a queue.
 
-## Quick start
+Full walkthrough in **[docs/architecture.md](docs/architecture.md)**.
+
+## Five decisions worth defending
+
+**Recommendations are one matrix-vector product.** Each language is a binary CSR matrix with a row per transcript and a column per dictionary root, so scoring every video for a user is `D · known` followed by a division. Storing only the sparse form, after first holding both it and the Python lists, halved resident memory. → [details](docs/architecture.md#comprehension-ranked-recommendations)
+
+**The backend refuses to boot with the wrong database key.** With RLS on, an `anon` key does not raise: PostgREST returns `[]` with HTTP 200, the dictionary cache loads empty, and every word silently becomes unknown. That shipped once, so the API now decodes its own key's `role` claim at import and exits unless it is `service_role`. → [details](docs/architecture.md#auth-and-the-two-supabase-keys)
+
+**Auth denies by default.** It is a middleware rather than a per-route dependency, because the per-route version had left 15 of 22 endpoints open, including the ones that spend model credits and whose URL ships inside the extension bundle. A new route is protected unless someone adds it to a five-entry public list. → [details](docs/architecture.md#auth-and-the-two-supabase-keys)
+
+**The corpus streams into the container.** Two gigabytes of transcripts belong in neither git nor an image, so they ship as one gzipped tarball per language and unpack at boot in 20 MB of peak RSS, against 130 MB for the obvious buffered version. Three details do that work, and the module docstring names them so nobody simplifies them away. → [details](docs/architecture.md#the-transcript-corpus)
+
+**The discovery pipeline spends late.** Channel IDs come from range-requested Common Crawl indexes rather than the quota-metered YouTube API, every stage is resumable behind a durable marker, and the two stages that cost real money run only on channels that cleared every cheaper gate. Selection reads cached rows only, so re-tuning a threshold is free. → [details](docs/architecture.md#finding-videos-worth-transcribing)
+
+## Running it locally
+
+Requires Node.js 20+, Python 3.11+ with `venv`, a [Supabase](https://supabase.com) project and an [OpenRouter](https://openrouter.ai) key. `ffmpeg` is only needed to transcribe videos that have no subtitles.
 
 ```bash
+git clone git@github.com:victorfriedrich/langfour.git
+cd langfour
 npm install
-pip install -r apps/api/requirements-dev.txt
+npm run api:install
 
 cp apps/web/.env.sample       apps/web/.env
 cp apps/extension/.env.sample apps/extension/.env
-cp apps/api/.env.sample       apps/api/.env    # then fill in the blanks
+cp apps/api/.env.sample       apps/api/.env
 
-npm run dev                  # web on :3000 + api on :8000
-npm run dev:ext              # extension watch build, when you need it
+npm run dev          # web on :3000, API on :8000
+npm run api:test     # API tests
+npm run build:ext    # writes apps/extension/dist, load it unpacked
 ```
 
-## Environment variables
+Each app gets its own environment file because the three ship with different trust levels: everything in the web and extension files reaches users, and only the API file may hold a secret. What you need accounts for:
 
-Two different keys, and the distinction matters:
+| Service | Needed for | What it costs |
+|---|---|---|
+| Supabase | everything | free tier |
+| OpenRouter | API boot, translation, dictionary growth | fractions of a cent per transcript |
+| DeepInfra | transcribing videos with no captions | $0.0002 per minute of audio |
+| Cloudflare R2 | serving the corpus in production | free; egress is never billed |
+| YouTube Data API | the discovery pipeline only | free, 10,000 units per day |
 
-| Key | Used by | Ships to users? | Bypasses RLS? |
-|---|---|---|---|
-| `anon` | web, extension | **Yes** — in the JS bundle and the extension zip | No |
-| `service_role` | api only | No — server-side only | **Yes** |
+Only the first two are needed to run the app. Every variable, and where to find it, is in **[docs/configuration.md](docs/configuration.md)**.
 
-The `anon` key is public by design. The `service_role` key is not: it ignores
-row-level security completely and must never appear in `apps/web` or
-`apps/extension`.
+> **On the name.** The product is Langfour everywhere it is user-visible, but internal identifiers keep an earlier `langfive` prefix: the `LANGFIVE_*` variables, the `langfive-corpus` bucket, the read-only IAM role and the image tag. Renaming them means changing the deployed environment, bucket and role in lockstep, so they are left alone deliberately.
 
-`apps/api/supabase_client.py` reads the key's own `role` claim at startup and
-refuses to boot if it is not `service_role`, because the failure mode otherwise
-is silent — with RLS on, an `anon` key makes every query return zero rows with
-HTTP 200 and no error anywhere.
+## Project status
 
-Each app has its own `.env.sample` documenting exactly what it needs and
-where to get it. There is no root `.env` — the three apps have different
-trust levels, and one shared file is how they drift out of sync.
+A working prototype I use daily — deployed and usable, not a polished product.
 
-## LLM providers
+- **Browsers:** Chrome only (Manifest V3), distributed as a zip rather than through the Web Store.
+- **Languages:** Spanish, German, Italian and French are supported in code, but the hosted app enables Spanish only, and the corpus is 10,650 Spanish videos out of 11,798. Anki import covers Spanish and Italian.
+- **Recommendations:** ranked on unique-word coverage alone — not word frequency within a video, grammar or speaking speed.
+- **Setup:** the database schema lives in the hosted Supabase project rather than as migrations here, so a from-scratch install needs it applied by hand. [`supabase_schema.md`](apps/api/sql/supabase_schema.md) is the inventory of what that means.
+- **Tests:** heavy on the discovery pipeline, absent on the NLP layer and both clients. CI lints and type-checks the extension only.
 
-Chat completions go through **OpenRouter**; speech-to-text goes to
-**DeepInfra**. Neither OpenAI nor Azure is called any more.
-
-Both speak the OpenAI wire protocol, so there is one SDK (`openai`) pointed at
-two base URLs. `apps/api/llm_client.py` is the only place a client is
-constructed; `apps/api/models.py` is the only place a model is named.
-
-| | Provider | Default model | Env |
-|---|---|---|---|
-| Judgement / structured output | OpenRouter | `deepseek/deepseek-v4-pro` | `LLM_MODEL_SMART` |
-| High-volume mechanical work | OpenRouter | `deepseek/deepseek-v4-flash` | `LLM_MODEL_FAST` |
-| Transcription | DeepInfra | `openai/whisper-large-v3-turbo` | `LLM_MODEL_TRANSCRIBE` |
-
-Swapping models is a config change, not a code change — every call site refers
-to `MODEL_SMART` or `MODEL_FAST`, never to a literal.
-
-Two things worth knowing before you touch this:
-
-- **OpenRouter cannot transcribe.** It proxies chat completions only, with no
-  `/audio/transcriptions` route. That is the entire reason DeepInfra is here.
-  Only `videoparsing.py` needs it, and its client is built lazily, so the API
-  starts without a DeepInfra key.
-- **Structured output support varies by model and by whichever provider
-  OpenRouter routes you to.** `llm_client.parse_structured()` tries strict
-  `json_schema` first, falls back to plain JSON mode, and validates with
-  Pydantic either way. The validation is the actual contract; the
-  `response_format` is an optimisation. It replaced
-  `client.beta.chat.completions.parse()`, which is OpenAI-SDK-specific and
-  assumes strict schema support that DeepSeek does not reliably have.
-
-## The transcript corpus
-
-`apps/api/data/processed/{de,es,fr,it}/` is the video transcript corpus:
-**~2.2 GB across ~11.8k JSON files**. It is deliberately **not in git** and
-**not baked into the container image**. It compresses ~16×, so it ships as one
-gzipped tarball per language — **134 MB total** — in an S3-compatible bucket.
-
-```bash
-apps/api/scripts/pack_corpus.sh                  # processed/ -> data/archives/*.tar.gz
-apps/api/scripts/upload_corpus.sh <bucket> [endpoint] [prefix]
-```
-
-At startup `corpus_sync.py` pulls each language onto local disk, skipping any
-that is already there. Configure it with `LANGFIVE_CORPUS_BASE_URL` (plain
-HTTPS, public or presigned) or `LANGFIVE_CORPUS_BUCKET` + friends (any
-S3-compatible store: Cloudflare R2, AWS S3, Supabase Storage). With neither
-set, an existing `data/processed/` is used as-is and nothing is downloaded —
-which is the normal case in local development.
-
-The extraction is streaming by design: **20 MB peak RSS to unpack 1.99 GB**.
-`corpus_sync.py` documents which three details keep it flat; read that
-docstring before changing it.
-
-The split is lopsided — Spanish is 10,651 of the files and 118 MB of the
-134 MB. A deployment that serves fewer languages should set
-`LANGFIVE_CORPUS_LANGUAGES`.
-
-### The rest of `data/`
-
-- `articles/` — parsed articles, 1.7 MB, tracked in git, read at runtime.
-- Loose reference datasets (`yt_*.json`, `germanfrequency.json`, `german.txt`,
-  `spanish50k.json`, …) used by the parsing and scraping scripts. Tracked.
-- `archives/`, `downloaded_files/`, `youtube_thumbnails/` — regenerable,
-  gitignored.
-
-Nothing reads these by relative path. Everything resolves through
-`apps/api/paths.py`, so the API runs correctly from any working directory. Set
-`LANGFIVE_DATA_DIR` to relocate the corpus onto a volume.
-
-## Deployment
-
-The API image builds from the **repository root**, not `apps/api`:
-
-```bash
-docker build -f apps/api/Dockerfile -t langfive-api .
-```
-
-The root `.dockerignore` is what keeps that context small — without it the
-build context is ~2.4 GB.
-
-## Row-level security
-
-RLS is currently **off**. The migrations that previously lived in `supabase/`
-were written against a schema this project does not run and have been removed;
-do not resurrect them. `docs/GO_LIVE_RLS.md` and `docs/RLS_RUNBOOK.md` are kept
-as background reading, but they describe that removed schema — treat them as
-notes on the problem, not as instructions to follow.
-
-Whenever the rollout happens, it needs to start from the live schema, and the
-API must be running with the `service_role` key before policies go on. That
-ordering is not optional.
+Planned: export the schema as migrations; weight the recommender by in-video frequency and target ~5% new words rather than raw coverage; enable the other three languages once their corpora justify it; ship on the Chrome Web Store; add Firefox support; end-to-end extension tests against recorded pages.
