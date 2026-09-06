@@ -81,9 +81,10 @@ export async function ensureSupabaseSession(authData?: AuthData | null): Promise
         // after a sign-out, since `signOut()` defaults to global scope and
         // revokes the session server-side.
         //
-        // `supabaseSession` is a write-once snapshot: only AUTH_SUCCESS writes
-        // it, and only the content script's `logout` DOM listener removes it.
-        // Nothing clears it when the popup signs out, so without this the
+        // `supabaseSession` is a snapshot: AUTH_SUCCESS writes it, the
+        // background rewrites it after a token refresh, and only the content
+        // script's `logout` DOM listener and the popup's sign-out remove it.
+        // Nothing else clears it, so without this the
         // service worker replays the same dead tokens on every wake-up and
         // logs the same error forever. Drop it so the extension fails as
         // "signed out" rather than "permanently broken".
@@ -93,4 +94,25 @@ export async function ensureSupabaseSession(authData?: AuthData | null): Promise
     }
 
     return true;
+}
+/**
+ * Returns an access token the backend will accept, or null when the user is
+ * signed out. Restores the session from chrome.storage first (the service
+ * worker's client keeps its session in memory only, so a worker restart
+ * loses it), then relies on auth-js to refresh: both `setSession` and
+ * `getSession` exchange the refresh token for a new access token when the
+ * current one is expired or about to expire.
+ */
+export async function getAccessToken(): Promise<string | null> {
+    const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+    if (!(await ensureSupabaseSession(supabaseSession))) {
+        return null;
+    }
+
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) {
+        console.error('Error fetching session for backend call:', error.message);
+        return null;
+    }
+    return session?.access_token ?? null;
 }
