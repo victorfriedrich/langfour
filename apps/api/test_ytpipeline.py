@@ -423,11 +423,13 @@ def add_channel(db, cid, subs=50_000, lang="es", **extra):
 
 
 def add_videos(db, cid, n, views=5_000, days_apart=7, duration=600, category="27",
-               source="uploads", prefix="v"):
+               source="uploads", prefix="v", fetched_at="2026-09-01 00:00:00"):
     rows = [(f"{prefix}{cid}{i}", cid, f"{prefix}{i}", "",
              (date(2025, 1, 1) + timedelta(days=i * days_apart)).isoformat(),
-             views, 10, 1, duration, category, "es", "false", "none", source)
+             views, 10, 1, duration, category, "es", "false", "none", source,
+             fetched_at)
             for i in range(n)]
+    assert len(rows[0]) == yp.VIDEO_COLUMNS, "helper drifted from VIDEO_COLS"
     db.executemany(INSERT_VIDEO, rows)
     db.commit()
     return [r[0] for r in rows]
@@ -449,7 +451,8 @@ def test_store_upgrades_in_place(tmp_path):
         db = yp.connect(path)
         cols = {r[1] for r in db.execute("PRAGMA table_info(channels)")}
         assert {"expanded_at", "classified_at", "sensitivity"} <= cols
-        assert db.execute("SELECT source FROM videos").fetchone() == ("uploads",)
+        assert db.execute("SELECT source, fetched_at FROM videos").fetchone() \
+            == ("uploads", None)
         db.close()
 
 
@@ -782,7 +785,7 @@ def test_insert_names_its_columns_so_order_cannot_silently_shift(db):
     add_channel(db, "UC1")
     db.execute(yp.INSERT_VIDEO.format("REPLACE"),
                ("v1", "UC1", "t", "", "2025-01-01", 5, 1, 1, 600, "27", "es",
-                "false", "none", "uploads"))
+                "false", "none", "uploads", "2026-09-01 00:00:00"))
     db.commit()
     assert db.execute("SELECT title, duration_s, source FROM videos").fetchone() == \
         ("t", 600, "uploads")
@@ -809,7 +812,8 @@ def test_an_item_without_a_channel_id_is_dropped_by_both_stages():
               "statistics": {}, "contentDetails": {"duration": "PT10M"}}
     for source in ("uploads", "search"):
         rows = yp.video_rows([good, orphan], source)
-        assert [r[0] for r in rows] == ["v1"] and rows[0][-1] == source
+        assert [r[0] for r in rows] == ["v1"]
+        assert rows[0][yp.VIDEO_COLS.index("source")] == source
 
 
 def test_both_insert_verbs_survive_an_orphan_item(db):
@@ -926,3 +930,226 @@ def test_resolve_channel_falls_back_to_forhandle(reference):
 
     assert yp.resolve_channel(ByHandle(), reference) == "UC" + "z" * 22
     assert asked == ["@unsympathischTV"]         # normalised, however it arrived
+
+
+
+# ══════════════════════════════════════════════════ expand: the cheaper route ══
+
+class BranchingYouTube:
+    used, budget = 0, 100_000
+
+    def __init__(self, pages=1):
+        self.pages, self.searched, self.paged = pages, 0, 0
+
+    def search(self, cid, n=50):
+        self.searched += 1
+        self.used += 100
+        return ["s1"]
+
+    def playlist(self, playlist_id, n, page_token=None):
+        self.paged += 1
+        self.used += 1
+        token = f"p{self.paged}" if self.paged < self.pages else None
+        return [f"c{self.paged}_{i}" for i in range(n)], token
+
+    def videos(self, ids):
+        self.used += 1
+        return [{"id": i, "snippet": {"channelId": "UC1", "title": i,
+                                      "publishedAt": "2025-06-01", "categoryId": "27"},
+                 "statistics": {"viewCount": "999"},
+                 "contentDetails": {"duration": "PT10M"}} for i in ids]
+
+
+def test_expand_pages_the_uploads_playlist_below_the_break_even(db):
+    add_channel(db, "UC1", uploads="UU1", video_count=200, **classified())
+    add_videos(db, "UC1", 6)
+    yt = BranchingYouTube(pages=4)
+    yp.expand(db, yt, "es", yp.Gates())
+    assert yt.searched == 0 and yt.paged == 4
+    assert yt.used < 101                      # the whole point of the branch
+    assert db.execute(
+        "SELECT COUNT(*) FROM videos WHERE source='catalog'").fetchone()[0] > 0
+
+
+def test_expand_still_searches_a_catalogue_too_deep_to_page(db):
+    """Above the break-even, order=viewCount is the only way to reach an old
+    channel's best work without paying to page all of it."""
+    add_channel(db, "UC1", uploads="UU1", video_count=yp.ENUMERATE_MAX + 1, **classified())
+    add_videos(db, "UC1", 6)
+    yt = BranchingYouTube()
+    yp.expand(db, yt, "es", yp.Gates())
+    assert yt.searched == 1 and yt.paged == 0
+    assert db.execute(
+        "SELECT source FROM videos WHERE video_id='s1'").fetchone() == ("search",)
+
+
+def test_expand_searches_when_the_catalogue_size_is_unknown(db):
+    """A NULL video_count cannot bound the cost of paging, so it must not try."""
+    add_channel(db, "UC1", uploads="UU1", **classified())
+    add_videos(db, "UC1", 6)
+    yt = BranchingYouTube()
+    yp.expand(db, yt, "es", yp.Gates())
+    assert yt.searched == 1 and yt.paged == 0
+
+
+def test_expand_buys_nothing_for_a_catalogue_already_held(db):
+    add_channel(db, "UC1", uploads="UU1", video_count=6, **classified())
+    add_videos(db, "UC1", 6)
+    yt = BranchingYouTube()
+    yp.expand(db, yt, "es", yp.Gates())
+    assert yt.used == 0
+    assert db.execute("SELECT expanded_at FROM channels").fetchone()[0]
+
+
+def test_enumerated_videos_never_join_the_statistical_sample(db):
+    """CHANNEL_STATS is computed from the recency sample alone. A full-catalogue
+    pull spans years, so counting it would rewrite every ratio the channel was
+    already gated on."""
+    add_channel(db, "UC1", uploads="UU1", video_count=200, **classified())
+    add_videos(db, "UC1", 6)
+    before, _ = yp.qualified(db, "es", yp.Gates(), need_llm=True)
+    yp.expand(db, BranchingYouTube(), "es", yp.Gates())
+    after, _ = yp.qualified(db, "es", yp.Gates(), need_llm=True)
+    assert before[0]["n"] == after[0]["n"] == 6
+
+
+# ═══════════════════════════════════════════ absent statistics are not zeroes ══
+
+def stat_video(**stats):
+    return {"id": "v1", "snippet": {"channelId": "UC1", "title": "t"},
+            "statistics": stats, "contentDetails": {"duration": "PT10M"}}
+
+
+def test_absent_like_and_comment_counts_stay_null():
+    """Omitted means hidden or disabled, which is not a real zero -- the same
+    distinction channel_row already makes for hiddenSubscriberCount."""
+    row = yp.video_row(stat_video(viewCount="100"))
+    assert row[6] is None and row[7] is None
+    real = yp.video_row(stat_video(viewCount="100", likeCount="0", commentCount="0"))
+    assert real[6] == 0 and real[7] == 0
+
+
+def test_disabled_reactions_do_not_drag_a_channel_down(db):
+    """A channel with comments switched off is unmeasurable, not unengaging."""
+    add_channel(db, "UC1", **classified())
+    add_videos(db, "UC1", 6)
+    db.execute("UPDATE videos SET likes=NULL, comments=NULL")
+    db.commit()
+    rows, _ = yp.qualified(db, "es", yp.Gates(), need_llm=True)
+    assert rows[0]["avg_reactions"] is None
+    assert yp.percentiles([rows[0]["avg_reactions"]]) == [0.5]
+
+
+# ════════════════════════════════════ refresh: the 30-day retention ceiling ══
+
+class RefreshingYouTube:
+    """Serves a fixed uploads playlist and video metadata, counting units."""
+
+    used, budget = 0, 10_000
+
+    def __init__(self, playlist=(), missing=()):
+        # Not self.playlist: the attribute would shadow the method below.
+        self.uploads_page, self.missing = list(playlist), set(missing)
+        self.paged = self.detail = 0
+
+    def channels(self, ids):
+        self.used += 1
+        return [{"id": i, "snippet": {"title": i},
+                 "statistics": {"subscriberCount": "50000"}} for i in ids]
+
+    def playlist(self, playlist_id, n, page_token=None):
+        self.paged += 1
+        self.used += 1
+        return self.uploads_page[:n], None
+
+    def videos(self, ids):
+        self.detail += 1
+        self.used += 1
+        return [{"id": i, "snippet": {"channelId": "UC1", "title": i,
+                                      "publishedAt": "2025-06-01", "categoryId": "27"},
+                 "statistics": {"viewCount": "999"},
+                 "contentDetails": {"duration": "PT10M"}}
+                for i in ids if i not in self.missing]
+
+
+def test_prune_drops_what_no_run_could_ever_use(db):
+    db.executemany("""INSERT INTO channels (channel_id, uploads, subscribers,
+                      videos_at, note, enriched_at)
+                      VALUES (?,?,?,?,?, datetime('now'))""", [
+        ("UC_dead",   None,   None,   None, "not_returned"),   # gone from YouTube
+        ("UC_small",  "UU_s",   500,   None, None),            # below the gate
+        ("UC_noup",   None,   90_000,  None, None),            # no uploads playlist
+        ("UC_keep",   "UU_k", 90_000,  None, None),            # a live candidate
+        ("UC_hidden", "UU_h",   None,  None, None),            # hidden != small
+        ("UC_spent",  "UU_p",    500, "2026-01-01", None),     # already sampled
+    ])
+    db.commit()
+    yp.prune(db, 10_000)
+    left = {c for (c,) in db.execute("SELECT channel_id FROM channels")}
+    assert left == {"UC_keep", "UC_hidden", "UC_spent"}
+
+
+def test_prune_takes_orphaned_videos_with_the_channel(db):
+    """Video rows outlive their channel otherwise, and they are API data too."""
+    add_channel(db, "UC_small", subs=500, videos_at=None)
+    add_videos(db, "UC_small", 3)
+    yp.prune(db, 10_000)
+    assert db.execute("SELECT COUNT(*) FROM videos").fetchone()[0] == 0
+
+
+def test_overdue_counts_a_missing_timestamp_as_past_the_ceiling(db):
+    """The 239,704 rows written before fetched_at existed carry NULL. They
+    cannot be shown to be inside the window, so they are treated as outside it."""
+    add_channel(db, "UC1", enriched_at="2026-09-05 00:00:00")
+    add_videos(db, "UC1", 2, fetched_at=None)
+    assert yp.overdue(db, 30) == (0, 2)
+
+
+def test_overdue_is_clear_for_a_freshly_written_row(db):
+    add_channel(db, "UC1", enriched_at=yp.now_utc())
+    add_videos(db, "UC1", 2, fetched_at=yp.now_utc())
+    assert yp.overdue(db, 30) == (0, 0)
+
+
+def test_new_uploads_stops_at_the_first_video_already_held(db):
+    """Newest-first, so one known id ends the walk -- which is what makes
+    keeping a deep catalogue current cost one unit instead of dozens."""
+    add_channel(db, "UC1", uploads="UU1")
+    add_videos(db, "UC1", 1, prefix="old")        # id: oldUC10
+    yt = RefreshingYouTube(playlist=["new1", "new2", "oldUC10", "new3"])
+    assert yp.new_uploads(db, yt, "UC1", "UU1") == ["new1", "new2"]
+    assert yt.paged == 1
+
+
+def test_refresh_deletes_a_video_the_api_no_longer_returns(db):
+    """Deleted or made private. Under the literal reading of the retention rule
+    there is no 'keep the stale copy' option."""
+    add_channel(db, "UC1", uploads="UU1")
+    kept, gone = add_videos(db, "UC1", 2)[0], add_videos(db, "UC1", 1, prefix="x")[0]
+    yt = RefreshingYouTube(missing=[gone])
+    refreshed, deleted = yp.refresh_videos(db, yt, [kept, gone])
+    assert (refreshed, deleted) == (1, 1)
+    assert {c for (c,) in db.execute("SELECT video_id FROM videos WHERE video_id IN (?,?)",
+                                     (kept, gone))} == {kept}
+
+
+def test_refresh_stamps_rows_so_they_leave_the_overdue_set(db):
+    add_channel(db, "UC1", uploads="UU1", enriched_at=yp.now_utc())
+    vids = add_videos(db, "UC1", 3, fetched_at=None)
+    assert yp.overdue(db, 30)[1] == 3
+    yp.refresh_videos(db, RefreshingYouTube(), vids)
+    assert yp.overdue(db, 30)[1] == 0
+
+
+def test_refresh_preserves_the_source_of_the_row_it_rewrites(db):
+    """A refreshed search result must not become part of the uploads sample,
+    or CHANNEL_STATS would start counting top-viewed videos as a recency sample."""
+    add_channel(db, "UC1", uploads="UU1")
+    vids = add_videos(db, "UC1", 2, source="search", prefix="s")
+    yp.refresh_videos(db, RefreshingYouTube(), vids)
+    assert {s for (s,) in db.execute("SELECT DISTINCT source FROM videos")} == {"search"}
+
+
+def test_retention_default_is_the_policy_ceiling():
+    """Non-Authorized Data may not be stored longer than 30 calendar days."""
+    assert yp.RETENTION_DAYS == 30
