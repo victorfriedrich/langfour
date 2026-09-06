@@ -20,6 +20,10 @@ process.env.REACT_APP_SUPABASE_ANON_KEY ||= 'test-anon-key-not-a-real-credential
  */
 type AnyFn = (...args: any[]) => any;
 
+// Derived from the public key in manifest.json, so extension-page code follows
+// the same runtime branch in tests as it does in Chrome.
+const TEST_EXTENSION_ID = 'kjelgcbodejjpnidjflelanlbhbpkagb';
+
 function dual(impl: AnyFn) {
   return vi.fn((...args: any[]) => {
     const callback = typeof args[args.length - 1] === 'function' ? (args.pop() as AnyFn) : undefined;
@@ -71,10 +75,11 @@ export function createChromeStub() {
       onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
     },
     runtime: {
+      id: TEST_EXTENSION_ID,
       // Code checks `if (chrome.runtime.lastError)` in dozens of places;
       // undefined is the success path. Set it in a test to hit the error branches.
       lastError: undefined as chrome.runtime.LastError | undefined,
-      getURL: vi.fn((path: string) => `chrome-extension://test-extension-id/${path}`),
+      getURL: vi.fn((path: string) => `chrome-extension://${TEST_EXTENSION_ID}/${path}`),
       getManifest: vi.fn(() => ({ version: '1.1.1', manifest_version: 3 })),
       sendMessage: dual(() => undefined),
       onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
