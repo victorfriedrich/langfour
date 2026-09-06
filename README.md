@@ -4,100 +4,94 @@ Langfour turns the content you already watch and read into personalized vocabula
 
 Its Chrome extension translates unfamiliar words in place on YouTube, Netflix, Prime Video and any article page, saving them to a vocabulary collection. The web app turns that collection into spaced-repetition practice, and ranks 11,800 YouTube videos by how much of each one you can already understand.
 
-<!-- TODO: add a 30–60 s demo video link once recorded. -->
-
-![The Videos page: YouTube videos ranked by how much of their vocabulary you already know, each card showing the share of known words and the number of new ones](docs/images/recommendations.png)
+![Langfour: find videos tailored to your vocabulary, and add words to flashcards from YouTube, Netflix and news sites](docs/images/overview.png)
 
 [![Extension CI](https://github.com/victorfriedrich/langfour/actions/workflows/extension-ci.yml/badge.svg)](https://github.com/victorfriedrich/langfour/actions/workflows/extension-ci.yml)
+
+**Contents**
+
+- [Why Langfour?](#why-langfour)
+- [What it does](#what-it-does)
+- [By the numbers](#by-the-numbers)
+- [How it works](#how-it-works)
+- [Five decisions worth defending](#five-decisions-worth-defending)
+- [Running it locally](#running-it-locally)
+- [Project status](#project-status)
+
+Deeper reading: **[Architecture](docs/architecture.md)** · **[Configuration](docs/configuration.md)** · **[Database schema](apps/api/sql/supabase_schema.md)**
 
 ## Why Langfour?
 
 Learners are stuck choosing between authentic content that is too hard and graded material that is not interesting. Research on extensive reading puts the sweet spot around 95% known words — but nothing tells you which video that is.
 
-Langfour:
+Langfour tracks your vocabulary as dictionary root forms rather than raw strings, highlights and translates unfamiliar words while you browse, scores 11,800 transcripts against what you know, and turns saved words into flashcards and example sentences.
 
-- Tracks your vocabulary as dictionary root forms rather than raw strings
-- Highlights and translates unfamiliar words while you browse
-- Scores 11,800 YouTube transcripts against that vocabulary
-- Turns saved words into flashcards, example sentences and matching exercises
+## What it does
 
-## Features
-
-### Reader Mode
-
-`Command + Shift + Y` (`Ctrl + Shift + Y` on Windows and Linux, rebindable at `chrome://extensions/shortcuts`) converts the current article into a focused reading view.
-
-- Extracts the article body with Mozilla Readability, dropping navigation, ads and comments
-- Highlights every word not yet in your vocabulary
-- Click a word to translate it and add it in one step
-- Select a passage for a context-aware translation, not word by word
+**Reader Mode** (`Cmd/Ctrl + Shift + Y`) rebuilds the current article with Mozilla Readability, highlights every word not yet in your vocabulary, and translates a word on click or a passage in context. **Subtitle integration** does the same inside YouTube, Netflix and Prime Video: unfamiliar words turn orange, hovering pauses playback and shows a translation, and words save without leaving the video.
 
 ![Reader Mode highlighting unfamiliar words in a Spanish news article](docs/images/reader-mode.webp)
 
-> **Limitations:** any page Readability can parse — most news sites and blogs, but not paywalled or heavily scripted ones. Spanish, German, Italian and French.
+**Recommendations** rank categorized videos by the share of their vocabulary you already know, showing how many new words each would teach. **Add Common Words** inverts the question: which words would unlock the most videos in a category if you learned them next?
 
-### YouTube Subtitle Integration
+![The Videos page, ranking YouTube videos by the share of known words in each](docs/images/recommendations.png)
 
-Langfour enhances the platform's own captions rather than replacing them.
+**Practice** is a spaced-repetition session over the words due today, with a typing mode and a generated "words in context" exercise. Existing decks come in through **Anki import**, reading `.apkg` files straight from the bundled SQLite collection and matching words against the dictionary including inflections, so `hablaba` imports as `hablar`.
 
-- Unfamiliar words are highlighted in orange
-- Hovering pauses playback and shows a translation; moving away resumes it
-- Words save to your collection without leaving the video
-- Works on Netflix and Prime Video too
+## By the numbers
 
-![YouTube subtitles with unfamiliar words highlighted and a translation popup on hover](docs/images/youtube-subtitles.webp)
+| | |
+|---|---|
+| Transcript corpus | 11,798 videos, 2.3 GB raw, 137 MB shipped as gzipped tarballs |
+| Dictionary | 179,353 root words across four languages, plus inflections |
+| Vocabulary tracked | 316,802 user-word rows |
+| Discovery queue | 13,434 videos selected out of a multi-million-channel crawl |
+| Database | 11 tables, ~50 Postgres functions, RLS on every table |
+| Tests | ~160 API cases, no network, about two seconds |
 
-> **Limitations:** the video needs real subtitles in your target language; auto-translated captions are not supported.
+## How it works
 
-### Personalized Video Recommendations
+```mermaid
+flowchart LR
+    subgraph clients
+        W["web (Next.js)"]
+        X["extension (MV3)"]
+    end
+    SB[("Supabase<br/>Postgres + Auth<br/>~50 RPCs, RLS on")]
+    API["api (FastAPI)<br/>recommender in memory"]
+    R2[("R2 bucket<br/>corpus tarballs")]
+    OR["OpenRouter<br/>chat completions"]
+    DI["DeepInfra<br/>Whisper"]
+    YT["YouTube Data API<br/>+ Common Crawl"]
 
-The **Videos** page ranks categorized YouTube videos by how much of their vocabulary you already know. Each card shows the share of words you already understand and how many new words the video would teach.
+    W -- "anon key, RPCs" --> SB
+    X -- "anon key, RPCs" --> SB
+    W -- "bearer JWT" --> API
+    X -- "bearer JWT" --> API
+    API -- "service_role" --> SB
+    API -- "boot" --> R2
+    API --> OR
+    API -. "ingest.py" .-> DI
+    API -. "ytpipeline.py" .-> YT
+```
 
-You can filter by category and preview a video inline. Videos you have already watched are excluded, as is anything under 100 unique words.
+Supabase owns user state and both clients reach it directly through RPCs under row-level security. The API owns everything needing the whole corpus in memory or a language model, so it alone holds the `service_role` key. A separate offline pipeline decides which YouTube videos are worth transcribing at all, and feeds them to workers through a queue.
 
-### Vocabulary-Based Content Discovery
+Full walkthrough in **[docs/architecture.md](docs/architecture.md)**.
 
-Recommendations answer "what should I watch now?". **Words Known → Add Common Words** answers the opposite question: which words would open up the most videos if you learned them?
+## Five decisions worth defending
 
-Pick a category and Langfour lists the words you do not know yet, ordered by how many of that category's videos they appear in — the percentage shown next to each word. Tick the ones you want, shift-clicking to select a range, and add them to your practice schedule in one go.
+**Recommendations are one matrix-vector product.** Each language is a binary CSR matrix with a row per transcript and a column per dictionary root, so scoring every video for a user is `D · known` followed by a division. Storing only the sparse form, after first holding both it and the Python lists, halved resident memory. → [details](docs/architecture.md#comprehension-ranked-recommendations)
 
-![Words Known → Add Common Words: unfamiliar words ranked by how many Travel videos they appear in](docs/images/vocabulary-frequency.png)
+**The backend refuses to boot with the wrong database key.** With RLS on, an `anon` key does not raise: PostgREST returns `[]` with HTTP 200, the dictionary cache loads empty, and every word silently becomes unknown. That shipped once, so the API now decodes its own key's `role` claim at import and exits unless it is `service_role`. → [details](docs/architecture.md#auth-and-the-two-supabase-keys)
 
-### Practice
+**Auth denies by default.** It is a middleware rather than a per-route dependency, because the per-route version had left 15 of 22 endpoints open, including the ones that spend model credits and whose URL ships inside the extension bundle. A new route is protected unless someone adds it to a five-entry public list. → [details](docs/architecture.md#auth-and-the-two-supabase-keys)
 
-#### Flashcards
+**The corpus streams into the container.** Two gigabytes of transcripts belong in neither git nor an image, so they ship as one gzipped tarball per language and unpack at boot in 20 MB of peak RSS, against 130 MB for the obvious buffered version. Three details do that work, and the module docstring names them so nobody simplifies them away. → [details](docs/architecture.md#the-transcript-corpus)
 
-A spaced-repetition session over the words due today; each answer updates the word's next review date. A writing mode asks you to type the word instead of flipping the card.
+**The discovery pipeline spends late.** Channel IDs come from range-requested Common Crawl indexes rather than the quota-metered YouTube API, every stage is resumable behind a durable marker, and the two stages that cost real money run only on channels that cleared every cheaper gate. Selection reads cached rows only, so re-tuning a threshold is free. → [details](docs/architecture.md#finding-videos-worth-transcribing)
 
-- `Space` — flip
-- `Right Arrow` — correct, or next card
-- `Left Arrow` — incorrect
-
-#### Words in Context
-
-For five words at a time, the backend generates short A1–A2 sentences with the targets highlighted, followed by a word-to-translation matching game over the same five. Results feed the same schedule as the flashcards.
-
-### Progress
-
-**Words Known** charts your vocabulary size over time, lets you search, edit and remove saved words, and shows which content categories your vocabulary already covers.
-
-### Imported Media
-
-The **Media** page imports your own episode transcripts as timestamped JSON. They are parsed into the same vocabulary model and become recommendable, so you can learn an episode's words before watching it.
-
-## Importing from Anki
-
-Export your deck as an **`.apkg` package** or as **Notes in Plain Text** (`.csv`, tab-separated, no header) and upload it from **Words Known → Import**; pasting tab-separated lines works too. Front should hold the word, Back the translation, and other fields are ignored.
-
-- `.apkg` files are read straight from the bundled SQLite collection, including recent Anki's compressed `collection.anki21b`
-- HTML, `[sound:...]` tags and media references are stripped; RemNote's nested folder lists are reduced to the leaf item
-- Words are matched against the dictionary including inflections, so `hablaba` imports as `hablar`; unmatched words are resolved by a language-model lookup you review first
-- You choose whether imports land as *learning* (they enter the practice schedule) or *known* (they only affect recommendations)
-- Spanish and Italian decks only
-
-![Anki import screen](docs/images/anki-import.png)
-
-## Running Langfour Locally
+## Running it locally
 
 Requires Node.js 20+, Python 3.11+ with `venv`, a [Supabase](https://supabase.com) project and an [OpenRouter](https://openrouter.ai) key. `ffmpeg` is only needed to transcribe videos that have no subtitles.
 
@@ -106,50 +100,38 @@ git clone git@github.com:victorfriedrich/langfour.git
 cd langfour
 npm install
 npm run api:install
-```
 
-Each app gets its own environment file, because the three ship with different trust levels:
-
-```bash
 cp apps/web/.env.sample       apps/web/.env
 cp apps/extension/.env.sample apps/extension/.env
 cp apps/api/.env.sample       apps/api/.env
-```
 
-Fill in the Supabase and OpenRouter values — each sample documents where to find them — then:
-
-```bash
 npm run dev          # web on :3000, API on :8000
 npm run api:test     # API tests
+npm run build:ext    # writes apps/extension/dist, load it unpacked
 ```
 
-> **On the name.** The product is Langfour everywhere it is user-visible, but internal identifiers keep an earlier `langfive` prefix: the `LANGFIVE_*` variables, the `langfive-corpus` bucket, the `langfive-corpus-api-readonly` role and the `langfive-api` image tag. Renaming them means changing the deployed environment, bucket and IAM role in lockstep, so they are left alone deliberately.
+Each app gets its own environment file because the three ship with different trust levels: everything in the web and extension files reaches users, and only the API file may hold a secret. What you need accounts for:
 
-> **Setup gaps.** The database schema lives in the hosted Supabase project rather than as migrations here, so a from-scratch setup needs it applied by hand. Without `LANGFIVE_CORPUS_*` configured, the recommender starts with whatever is in `apps/api/data/processed/`.
+| Service | Needed for | What it costs |
+|---|---|---|
+| Supabase | everything | free tier |
+| OpenRouter | API boot, translation, dictionary growth | fractions of a cent per transcript |
+| DeepInfra | transcribing videos with no captions | $0.0002 per minute of audio |
+| Cloudflare R2 | serving the corpus in production | free; egress is never billed |
+| YouTube Data API | the discovery pipeline only | free, 10,000 units per day |
 
-### Chrome extension
+Only the first two are needed to run the app. Every variable, and where to find it, is in **[docs/configuration.md](docs/configuration.md)**.
 
-```bash
-npm run build:ext    # writes apps/extension/dist
-```
+> **On the name.** The product is Langfour everywhere it is user-visible, but internal identifiers keep an earlier `langfive` prefix: the `LANGFIVE_*` variables, the `langfive-corpus` bucket, the read-only IAM role and the image tag. Renaming them means changing the deployed environment, bucket and role in lockstep, so they are left alone deliberately.
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked** and select `apps/extension/dist`. Or download the prebuilt extension from the [live app](https://app.langfour.com/extension).
-
-## Project Status
+## Project status
 
 A working prototype I use daily — deployed and usable, not a polished product.
 
 - **Browsers:** Chrome only (Manifest V3), distributed as a zip rather than through the Web Store.
-- **Languages:** Spanish, German, Italian and French are supported in code, but the hosted app enables Spanish only, and the corpus is 10,650 Spanish videos out of 11,800. Anki import covers Spanish and Italian.
+- **Languages:** Spanish, German, Italian and French are supported in code, but the hosted app enables Spanish only, and the corpus is 10,650 Spanish videos out of 11,798. Anki import covers Spanish and Italian.
 - **Recommendations:** ranked on unique-word coverage alone — not word frequency within a video, grammar or speaking speed.
-- **Setup:** the database schema is not versioned here.
+- **Setup:** the database schema lives in the hosted Supabase project rather than as migrations here, so a from-scratch install needs it applied by hand. [`supabase_schema.md`](apps/api/sql/supabase_schema.md) is the inventory of what that means.
+- **Tests:** heavy on the discovery pipeline, absent on the NLP layer and both clients. CI lints and type-checks the extension only.
 
 Planned: export the schema as migrations; weight the recommender by in-video frequency and target ~5% new words rather than raw coverage; enable the other three languages once their corpora justify it; ship on the Chrome Web Store; add Firefox support; end-to-end extension tests against recorded pages.
-
-## What I Learned
-
-**Silent failures are worse than crashes.** The most expensive bug here was a backend deployed with the wrong database key after row-level security went on. Nothing errored — every query returned an empty list with HTTP 200, and the app quietly treated all words as unknown. The fix was not a better test but a boot-time check that inspects the key's own role claim and refuses to start, plus a rule that an empty dictionary cache is never legitimate.
-
-**Memory is a first-class constraint on small hosts.** The first recommender held both the list-of-lists corpus and the sparse matrix; the first corpus loader read a 118 MB archive into RAM before extracting it. `tracemalloc`, CSR-only storage and streaming tar extraction brought the API well under a small container's limits, and taught me to measure peak RSS rather than assume it.
-
-**One source of truth for identifiers.** Languages were ISO codes in some places and English names in others, across six independent mapping tables — two of which were missing French, so French learners were silently served Spanish vocabulary. Collapsing them into one `languages` module per app, converting only at the boundary and returning `None` rather than a default on unknown input, removed the whole class of bug.
