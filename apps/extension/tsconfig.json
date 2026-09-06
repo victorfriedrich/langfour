@@ -2,11 +2,12 @@
   "compilerOptions": {
     "baseUrl": ".",
     "experimentalDecorators": true,
+    "skipLibCheck": true,
     "lib": [ "es2019", "dom"],
     "jsx": "react",
     "target": "ES6",
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "strictNullChecks": true,

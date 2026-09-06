@@ -22,6 +22,11 @@
     "build:ext": "npm run build --workspace=spotlight-lingo",
     "lint": "npm run lint --workspaces --if-present",
 
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:web": "vitest run --project web",
+    "test:ext": "vitest run --project extension",
+
     "api:install": "python3 -m venv apps/api/.venv && apps/api/.venv/bin/pip install -r apps/api/requirements-dev.txt",
     "api:test": "apps/api/.venv/bin/pytest apps/api",
 
@@ -29,6 +34,7 @@
     "corpus:upload": "apps/api/scripts/upload_corpus.sh"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "vitest": "^5.0.0"
   }
 }
