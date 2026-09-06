@@ -372,8 +372,22 @@ files no longer in the tree, and `test_script.py`, a scratch REPL file that
 pytest collected as 11 assertion-free tests. `backup_tables.py` moved to
 `scripts/`. The counts above are from the 16 Aug audit and predate this;
 `sel.py` and the scrapers named there are gone too, removed with the ingestion
-pipeline rewrite. What remains unimported at the top level is eight one-off
-maintenance scripts, still awaiting the `src/` + `scripts/` split below.
+pipeline rewrite.
+
+The `scripts/` half of the split below is now done. `frenchparser.py` and
+`germanparser.py` were deleted — inputs gone, outputs either already committed or
+never used — and the remaining six moved into `scripts/`, each with a docstring
+placing it in the corpus workflow: `wordconverter.py` seeds the dictionary,
+`language_updating.py` translates, `language_flagging.py` marks suspects for the
+WordValidation review UI, `reparse.py` repairs transcripts after a delete,
+`highleveltags.py` categorises, `cognates.py` classifies. Two of those turned out
+not to be spent one-shots at all: `reparse.py` is the only thing that heals word
+ids orphaned by a deletion, and `highleveltags.py` is the only writer of the
+`category` field `file_manager.py` reads.
+
+So `apps/api/` at the top level is now the service and its tests. The remaining
+work here is the `src/langfive_api/` move and `pyproject.toml`, neither of which
+this touched.
 
 Even without the `src/` move, three cheap wins:
 
