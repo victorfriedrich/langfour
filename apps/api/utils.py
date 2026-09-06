@@ -4,7 +4,7 @@ import uuid
 from fastapi import HTTPException
 from typing import List, Dict
 
-from paths import ARTICLES_DIR, PROCESSED_DIR
+from paths import PROCESSED_DIR
 VIDEOS_DIR = str(PROCESSED_DIR)
 SPECIAL_CHARACTERS = '.,!?¿¡\'"""''1234567890()«»%: -_[]{}#@$&*+=|\\<>/~`^“”…;\n\r\t'
 

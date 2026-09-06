@@ -125,11 +125,10 @@ The split is lopsided — Spanish is 10,651 of the files and 118 MB of the
 
 ### The rest of `data/`
 
-- `articles/` — parsed articles, 1.7 MB, tracked in git, read at runtime.
-- Loose reference datasets (`yt_*.json`, `germanfrequency.json`, `german.txt`,
-  `spanish50k.json`, …) used by the parsing and scraping scripts. Tracked.
-- `archives/`, `downloaded_files/`, `youtube_thumbnails/` — regenerable,
-  gitignored.
+- `yt_es.json` and `french.json` — the two reference datasets still read by
+  code: an ingestion ledger and the dictionary seed list. Tracked.
+- `articles/`, `archives/`, `downloaded_files/`, `youtube_thumbnails/` —
+  runtime output, regenerable, gitignored.
 
 Nothing reads these by relative path. Everything resolves through
 `apps/api/paths.py`, so the API runs correctly from any working directory. Set
@@ -148,12 +147,14 @@ build context is ~2.4 GB.
 
 ## Row-level security
 
-RLS is currently **off**. The migrations that previously lived in `supabase/`
-were written against a schema this project does not run and have been removed;
-do not resurrect them. `docs/GO_LIVE_RLS.md` and `docs/RLS_RUNBOOK.md` are kept
-as background reading, but they describe that removed schema — treat them as
-notes on the problem, not as instructions to follow.
+RLS is **on** for every table in `public`, and the API is the only component
+holding a `service_role` key. Each client reaches its own rows through the
+RPCs, which run as the caller.
 
-Whenever the rollout happens, it needs to start from the live schema, and the
-API must be running with the `service_role` key before policies go on. That
-ordering is not optional.
+The rollout ordering was not optional: the API had to be running with
+`service_role` before the policies went on, for the reason above — an `anon`
+key under RLS returns zero rows with HTTP 200 rather than an error.
+
+`apps/api/sql/supabase_schema.md` inventories every table, policy and function
+with the client that calls it. The schema itself lives in the Supabase project,
+not in this repo.

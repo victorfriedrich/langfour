@@ -81,9 +81,10 @@ apps/api/transcripts/
 apps/api/media/
 
 # ---- scraper output: TRACKED, but handle with care -----------------------
-# The scrape lists (yt_*.json, videos_*.json, youtuber_videos.json,
-# germany_top_youtubers.json) are deliberately NOT ignored -- they are inputs
-# to the one-off scripts and are kept in the repo for now.
+# Two data files are still inputs to code and stay tracked: data/yt_es.json
+# (ingest.py seed-done reads it as a ledger) and data/french.json
+# (scripts/wordconverter.py seeds the dictionary from it). The rest of the
+# loose scrape lists were dropped with the scripts that consumed them.
 #
 # The hazard worth knowing: when the YouTube Data API returns 403 it echoes
 # the *entire request URL* in the error body, &key=<api key> included. A
@@ -91,10 +92,10 @@ apps/api/media/
 # to commit a live credential. videolistcreation.redact_api_key() scrubs it at
 # the write site; anything new that stores an API error here must do the same.
 
-# data/articles/ is 1.7 MB and the recommender reads it at runtime, so it IS
-# tracked. It is called out here because an `articles/` rule in
-# apps/api/.gitignore used to exclude it by accident.
-!apps/api/data/articles/
+# data/articles/ is runtime output, not a tracked corpus: text_article_parsing
+# writes one JSON per parsed article and nothing reads them back. The article
+# recommender that used to read them was removed with the web article surface.
+apps/api/data/articles/
 
 # ---- local tooling, not part of the project ------------------------------
 # Agent settings and the sandbox git/gh bootstrap helpers. Machine-specific,
