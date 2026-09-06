@@ -37,7 +37,7 @@ def initialize_categories():
         print(language)
         language_categories_cache[language] = load_categories_for_language(language)
 
-def load_documents(base_folder: str) -> Tuple[List[List[int]], List[str], List[str]]:
+def load_documents(base_folder: str) -> Tuple[List[List[int]], List[str], List[str], List[str]]:
     """
     Load all documents from the base_folder. Extract category from each JSON file.
     Instead of loading full JSON content (which contains dictionaries for each word),
@@ -47,10 +47,12 @@ def load_documents(base_folder: str) -> Tuple[List[List[int]], List[str], List[s
         documents (List[List[int]]): Each document is now a list of word IDs.
         filenames (List[str]): List of filenames corresponding to the documents.
         categories (List[str]): List of categories corresponding to each document.
+        titles (List[str]): Display titles corresponding to each document.
     """
     documents = []
     filenames = []
     categories = []
+    titles = []
     
     for filename in os.listdir(base_folder):
         if filename.endswith('.json') and not filename.endswith('.npz.meta.json'):
@@ -75,10 +77,12 @@ def load_documents(base_folder: str) -> Tuple[List[List[int]], List[str], List[s
                     
                     filenames.append(filename)
                     categories.append(category)
+                    title = data.get('title', '')
+                    titles.append(title if isinstance(title, str) else '')
             except Exception as e:
                 print(f"Error loading {file_path}: {e}")
     
-    return documents, filenames, categories
+    return documents, filenames, categories, titles
 
 def get_category_icon(base_folder: str, category: str) -> str:
     icon_path = os.path.join(base_folder, 'icons', f'{category}.svg')  # Assuming icons are stored in a separate 'icons' folder
@@ -90,7 +94,7 @@ def get_categories_with_icons(base_folder: str = None) -> List[Dict[str, str]]:
     categories = []
     if base_folder is None:
         base_folder = str(PROCESSED_DIR)
-    documents, _, categories_list = load_documents(base_folder)
+    documents, _, categories_list, _ = load_documents(base_folder)
     unique_categories = set(categories_list)
     for category in unique_categories:
         icon = get_category_icon(base_folder, category)

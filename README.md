@@ -108,6 +108,10 @@ apps/api/scripts/pack_corpus.sh                  # processed/ -> data/archives/*
 apps/api/scripts/upload_corpus.sh <bucket> [endpoint] [prefix]
 ```
 
+Each matrix manifest contains row-aligned filenames, categories, and titles.
+The pack script fills in titles for older manifests before archiving, so the
+API can return recommendations without reopening transcript JSON files.
+
 At startup `corpus_sync.py` pulls each language onto local disk, skipping any
 that is already there. Configure it with `LANGFIVE_CORPUS_BASE_URL` (plain
 HTTPS, public or presigned) or `LANGFIVE_CORPUS_BUCKET` + friends (any
