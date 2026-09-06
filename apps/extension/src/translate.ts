@@ -1,5 +1,6 @@
 import { Language } from './languages';
-import { BACKEND_URL, debugLog } from './config';
+import { debugLog } from './config';
+import { requestBackend } from './api-service';
 
 interface BackendTranslationResponse {
   id: string;
@@ -22,13 +23,7 @@ export async function translate(
   language: Language
 ): Promise<Translation | null> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/translate-word`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ word, language }),
-    });
+    const response = await requestBackend('/api/translate-word', { word, language });
 
     debugLog('Translation response status:', response.status);
 
@@ -36,7 +31,7 @@ export async function translate(
       throw new Error(`Error: ${response.statusText}`);
     }
 
-    const data: BackendTranslationResponse = await response.json();
+    const data: BackendTranslationResponse = JSON.parse(response.body);
     return {
       id: parseInt(data.id),
       root: data.root,
