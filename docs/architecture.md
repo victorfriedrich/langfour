@@ -103,10 +103,13 @@ highest remaining counts are the words that unlock the most content
 against "videos dense in the words I am targeting" with a single λ.
 
 The matrix is cached as `document_term_matrix.npz` next to the transcripts,
-with a manifest of filenames and the max word ID. It is rebuilt when the file
-list or the largest ID changes, or when `blacklist.txt` (420 hand-curated
-exclusions) is newer than the cache. Startup logs the resident matrix size,
-which is the number that sizes the container.
+with a `.npz.meta.json` manifest holding the max word ID and row-aligned
+filenames, categories and titles, so serving a recommendation never reopens a
+transcript file. `scripts/pack_corpus.sh` runs `build_corpus_metadata.py`
+first, filling titles into older manifests before archiving. The cache is
+rebuilt when the file list or the largest ID changes, or when `blacklist.txt`
+(420 hand-curated exclusions) is newer than the cache. Startup logs the
+resident matrix size, which is the number that sizes the container.
 
 ## From text to dictionary IDs
 
