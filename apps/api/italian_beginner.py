@@ -1,9 +1,11 @@
 import json
+
 from paths import ARTICLES_DIR
+
 
 def extract_ids_from_file(file_path):
     try:
-        with open(file_path, 'r') as file:
+        with open(file_path) as file:
             data = json.load(file)
             ids = [item['id'] for item in data['content'] if 'id' in item]
             return ids

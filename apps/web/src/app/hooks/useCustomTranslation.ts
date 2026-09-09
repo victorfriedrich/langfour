@@ -26,7 +26,7 @@ export const useCustomTranslation = () => {
     setError(null);
 
     try {
-      let { data, error } = await supabase.rpc('add_custom_translation', {
+      const { data, error } = await supabase.rpc('add_custom_translation', {
         _custom_translation: customTranslation, 
         _word_id: wordId
       });

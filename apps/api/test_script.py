@@ -1,15 +1,12 @@
-import os
-from nlp_processing import get_word_root, generate_alternatives, parse, group_text, filter_entities, get_tags
-from database import save_to_supabase, identify_word_id, get_missing_words_from_db
-from app import get_video_words, get_missing_words
-from utils import is_special_character
-from supabase import create_client, Client
-import json
 from fastapi import HTTPException
-import pytest
+
+from app import get_missing_words, get_video_words
+from database import save_to_supabase
+from nlp_processing import filter_entities, get_tags, get_word_root, group_text, parse
 
 # Set up environment variables or hard-code your test database connection parameters
-from supabase_client import supabase, SUPABASE_URL, SUPABASE_KEY
+from supabase_client import supabase
+from utils import is_special_character
 
 # Create Supabase client
 
@@ -43,8 +40,8 @@ def test_generate_alternatives():
         #"other": ["sus", "en"]
     }
     
-    for key in testvalues.keys():
-        for value in testvalues[key]:
+    for key in testvalues:
+        for _value in testvalues[key]:
             #print(generate_alternatives(value, key))
             pass
 
@@ -154,7 +151,7 @@ def test_filter_non_spanish_words_from_file():
     file_path = "/Users/victorfriedrich/lang/backend/tAyghTk40Mk.txt"
     
     try:
-        with open(file_path, 'r', encoding='utf-8') as file:
+        with open(file_path, encoding='utf-8') as file:
             original_text = file.read()
         
         original_length = len(original_text.split())

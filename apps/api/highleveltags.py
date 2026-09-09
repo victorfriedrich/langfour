@@ -1,8 +1,9 @@
-import os
 import json
-from typing import List
+import os
+
 from nlp_processing import get_high_level_tag
 from paths import processed_dir
+
 
 def update_files_with_high_level_tag(base_folder: str):
     """(Re)assign a high-level category to every *_processed.json file that
@@ -16,7 +17,7 @@ def update_files_with_high_level_tag(base_folder: str):
             file_path = os.path.join(root, file)
 
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     data = json.load(f)
 
                 # Skip files that already have a *different* category

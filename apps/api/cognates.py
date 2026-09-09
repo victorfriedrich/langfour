@@ -1,10 +1,9 @@
-import os
+import json
+
 from dotenv import load_dotenv
-from supabase import create_client, Client
+
 from llm_client import client
 from models import MODEL_SMART
-import json
-from typing import List, Dict
 
 load_dotenv()
 
@@ -12,7 +11,7 @@ load_dotenv()
 from supabase_client import supabase
 
 
-def fetch_words(batch_size: int = 50, offset: int = 0) -> List[Dict]:
+def fetch_words(batch_size: int = 50, offset: int = 0) -> list[dict]:
     """Fetch words from the database with given batch size and offset."""
     response = supabase.table("words").select("id, root").range(offset, offset + batch_size - 1).execute()
     return response.data
@@ -28,7 +27,7 @@ def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
     json_content = output[start:end+1]
     return json_content
 
-def analyze_cognates(words: List[Dict]) -> List[Dict]:
+def analyze_cognates(words: list[dict]) -> list[dict]:
     """Analyze the words to determine their cognates using ChatGPT."""
     word_list = [word['root'] for word in words]
     prompt = f"""Analyze the following Spanish words and determine if they are similar to an English or French word with the same meaning. 
@@ -56,7 +55,7 @@ def analyze_cognates(words: List[Dict]) -> List[Dict]:
 
     return [{"id": word['id'], "root": word['root'], "cognate": cognates.get(word['root'], None)} for word in words]
 
-def update_cognates(cognate_data: List[Dict]):
+def update_cognates(cognate_data: list[dict]):
     """Update the cognate information in the database for existing words."""
     word_ids = [data['id'] for data in cognate_data]
     

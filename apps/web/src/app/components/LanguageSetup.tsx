@@ -176,7 +176,7 @@ const LanguageSetup: React.FC<LanguageSetupProps> = ({
             <>
               <h2 className="text-2xl font-bold mb-2">Add a New Language</h2>
               <p className="mb-5 text-gray-500">
-                Choose which language you'd like to add to your learning journey.
+                Choose which language you&apos;d like to add to your learning journey.
               </p>
               <div className="flex flex-col gap-4">
                 {languageOptions.map((language) => (
@@ -216,7 +216,7 @@ const LanguageSetup: React.FC<LanguageSetupProps> = ({
           {step === 2 && (
             <>
               <h2 className="text-2xl font-bold mb-4">How good is your {selectedLanguage?.name}?</h2>
-              <p className="text-gray-600 mb-6">Based on your selection, we'll customize your experience. You can always adjust this later.</p>
+              <p className="text-gray-600 mb-6">Based on your selection, we&apos;ll customize your experience. You can always adjust this later.</p>
               <div className="space-y-3">
                 {levels.map(level => (
                   <button

@@ -1,13 +1,15 @@
 import json
-from utils import is_special_character
+
 from paths import data_file
+from utils import is_special_character
+
 
 def parse_frequency_list(file_path):
     # Use an ordered dictionary to maintain frequency order while tracking unique words
     unique_words = []
     seen_words = set()
     
-    with open(file_path, 'r', encoding='utf-8') as file:
+    with open(file_path, encoding='utf-8') as file:
         for line in file:
             # Split the line into parts
             parts = line.strip().split('\t')

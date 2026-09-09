@@ -1,7 +1,7 @@
+import os
 import sqlite3
 import zipfile
 from io import BytesIO
-import os
 
 # database.py constructs the client at import time but these unit tests never
 # make a network request.
@@ -28,7 +28,8 @@ def _make_apkg(notes):
         connection.executemany("INSERT INTO notes VALUES (?)", [(note,) for note in notes])
         connection.commit()
         connection.close()
-        database.write(open(db_file.name, "rb").read())
+        with open(db_file.name, "rb") as fh:
+            database.write(fh.read())
 
     deck = BytesIO()
     with zipfile.ZipFile(deck, "w") as archive:

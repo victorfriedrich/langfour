@@ -1,14 +1,17 @@
-import os
 import csv
-import time
+import os
 import sys
+import time
+
 from dotenv import load_dotenv
-from supabase import create_client, Client
 from postgrest.exceptions import APIError
 
 # Load credentials
 load_dotenv()
-from supabase_client import supabase, SUPABASE_URL as url, SUPABASE_KEY as key
+from supabase_client import SUPABASE_KEY as key
+from supabase_client import SUPABASE_URL as url
+from supabase_client import supabase
+
 if not url or not key:
     print("ERROR: SUPABASE_URL and SUPABASE_KEY must be set in your .env file.")
     sys.exit(1)

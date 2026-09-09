@@ -1,14 +1,16 @@
-import os
 import json
 import logging
-from scipy.sparse import csr_matrix, lil_matrix, save_npz, load_npz
+import os
+import time
+from typing import Any
+
 import numpy as np
 from dotenv import load_dotenv
-from supabase import create_client, Client
-from typing import List, Dict, Any
+from scipy.sparse import csr_matrix, lil_matrix, load_npz, save_npz
+from supabase import Client
+
 from file_manager import load_documents
 from languages import require_code
-import time
 
 load_dotenv()
 
@@ -73,7 +75,7 @@ class Recommender:
             return False
 
         try:
-            with open(meta_path, "r", encoding="utf-8") as fh:
+            with open(meta_path, encoding="utf-8") as fh:
                 meta = json.load(fh)
 
             filenames = meta.get("filenames")
@@ -130,9 +132,9 @@ class Recommender:
 
         logger.info("Initializing data for language: %s", language)
         docs, files, cats = load_documents(os.path.join(self.base_folder, language))
-        triple = sorted(zip(files, docs, cats))
+        triple = sorted(zip(files, docs, cats, strict=False))
         if triple:
-            files, docs, cats = map(list, zip(*triple))
+            files, docs, cats = map(list, zip(*triple, strict=False))
         else:
             files, docs, cats = [], [], []
 
@@ -147,7 +149,7 @@ class Recommender:
         # the Python list-of-lists and CSR matrix nearly doubles dataset memory.
         self.documents[language] = None
 
-    def get_categories(self, language: str) -> List[Dict[str, Any]]:
+    def get_categories(self, language: str) -> list[dict[str, Any]]:
         """Return stable category metadata without reopening transcript files."""
         self._ensure_language_loaded(language)
         categories = sorted({
@@ -159,7 +161,7 @@ class Recommender:
 
     def _score_documents_by_words(
         self,
-        word_ids: List[int],
+        word_ids: list[int],
         language: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Return known-word counts and comprehension ratios for every row."""
@@ -185,9 +187,9 @@ class Recommender:
 
     def calculate_vocabulary_coverage(
         self,
-        word_ids: List[int],
+        word_ids: list[int],
         language: str,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Calculate top/bottom coverage from matrix scores only.
 
         Empty rows are cache artifacts rather than useful videos and are excluded.
@@ -215,7 +217,7 @@ class Recommender:
         
         if os.path.exists(blacklist_path):
             try:
-                with open(blacklist_path, 'r', encoding='utf-8') as file:
+                with open(blacklist_path, encoding='utf-8') as file:
                     for line in file:
                         filename = line.strip()
                         if filename:  # Skip empty lines
@@ -255,7 +257,7 @@ class Recommender:
         
         return filtered_docs, filtered_files, filtered_cats
     
-    def _determine_max_word_id(self, documents: List[List[int]]) -> int:
+    def _determine_max_word_id(self, documents: list[list[int]]) -> int:
         """
         Determine the maximum word ID across all documents.
         Documents now are lists of integer IDs.
@@ -270,7 +272,7 @@ class Recommender:
     def _create_document_term_matrix(
         self, 
         language: str, 
-        documents: List[List[int]]
+        documents: list[list[int]]
     ) -> csr_matrix:
         """
         Build (or load) the CSR document-term matrix for one language and
@@ -290,7 +292,7 @@ class Recommender:
         if os.path.exists(matrix_path) and os.path.exists(meta_path):
             D = load_npz(matrix_path)
 
-            with open(meta_path, "r", encoding="utf-8") as fh:
+            with open(meta_path, encoding="utf-8") as fh:
                 meta = json.load(fh)
 
             # Current dataset facts
@@ -359,7 +361,7 @@ class Recommender:
 
         return D
     
-    async def get_seen_videos(self, user_id: str) -> List[str]:
+    async def get_seen_videos(self, user_id: str) -> list[str]:
         try:
             seen_video_ids = set()
             page = 0
@@ -370,11 +372,11 @@ class Recommender:
                 seen_video_ids.update(word['video_id'] for word in response.data)
                 page += 1
             return list(seen_video_ids)
-        except Exception as e:
+        except Exception:
             logger.error("Error fetching seen videos from Supabase", exc_info=True)
             return []
     
-    async def get_known_words(self, user_id: str) -> List[int]:
+    async def get_known_words(self, user_id: str) -> list[int]:
         start_time = time.time()
         try:
             known_word_ids = set()
@@ -401,9 +403,9 @@ class Recommender:
         self, 
         user_id: str, 
         language: str, 
-        filter_category: str = None, 
+        filter_category: str | None = None, 
         top_n: int = 150
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         start_time = time.time()
         
         try:
@@ -523,7 +525,7 @@ class Recommender:
                 video_id = files[doc_index].replace("_processed.json", "")
                 file_path = os.path.join(self.base_folder, language, files[doc_index])
                 
-                with open(file_path, 'r', encoding='utf-8') as file:
+                with open(file_path, encoding='utf-8') as file:
                     data = json.load(file)
                 
                 # Calculate new words (total - known)
@@ -558,10 +560,10 @@ class Recommender:
     def recommend_words_to_learn(
             self,
             language: str,
-            known_word_ids: List[int],
-            filter_category: str = None,
+            known_word_ids: list[int],
+            filter_category: str | None = None,
             n_words: int = 100
-        ) -> List[Dict[str, Any]]:
+        ) -> list[dict[str, Any]]:
         self._ensure_language_loaded(language)
 
         D = self.matrices[language]
@@ -600,7 +602,7 @@ class Recommender:
             for word_id in candidate_ids[order]
         ]
 
-    def get_ordered_words(self, language: str, limit: int = 1000) -> List[int]:
+    def get_ordered_words(self, language: str, limit: int = 1000) -> list[int]:
         # Was `language = "spanish"`, discarding the argument entirely.
         language = require_code(language)
         try:
@@ -610,7 +612,7 @@ class Recommender:
             logger.error("Exception in get_ordered_words", exc_info=True)
             return []
         
-    def get_random_words(self, language: str, limit: int = 1000) -> List[int]:
+    def get_random_words(self, language: str, limit: int = 1000) -> list[int]:
         # Was `language = "spanish"`, discarding the argument entirely -- which
         # is why the ISO migration alone did not fix this RPC despite the RPC
         # itself already taking a code.
@@ -624,7 +626,7 @@ class Recommender:
             logger.error("Exception in get_random_words", exc_info=True)
             return []
         
-    def recommend_videos_by_words(self, word_ids: List[int], language: str, filter_category: str = None, top_n: int = 60) -> List[Dict[str, Any]]:
+    def recommend_videos_by_words(self, word_ids: list[int], language: str, filter_category: str | None = None, top_n: int = 60) -> list[dict[str, Any]]:
         start_time = time.time()
 
         try:
@@ -650,7 +652,7 @@ class Recommender:
             try:
                 video_id = files[doc_index].replace("_processed.json", "")
                 file_path = os.path.join(self.base_folder, language, files[doc_index])
-                with open(file_path, 'r', encoding='utf-8') as file:
+                with open(file_path, encoding='utf-8') as file:
                     data = json.load(file)
 
                 known_words = int(known_words_per_doc[doc_index])

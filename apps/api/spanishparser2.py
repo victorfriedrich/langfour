@@ -1,10 +1,12 @@
 import json
+
 from paths import data_file
+
 
 def parse_frequency_list(file_path):
     words = []
     
-    with open(file_path, 'r', encoding='utf-8') as file:
+    with open(file_path, encoding='utf-8') as file:
         for line in file:
             parts = line.strip().split('\t')
             words.append(parts[0])

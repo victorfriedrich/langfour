@@ -1,13 +1,16 @@
-import os
 import json
+import os
 import time
 import traceback
+
 from dotenv import load_dotenv
-from nlp_processing import parse, group_text, summarize_text
+
+from nlp_processing import group_text, parse, summarize_text
 
 load_dotenv()
 
 from paths import ARTICLES_DIR as _ARTICLES_PATH
+
 ARTICLES_DIR = str(_ARTICLES_PATH)
 
 def process_text(text, article_id, language: str):

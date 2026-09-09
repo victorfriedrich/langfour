@@ -12,16 +12,13 @@ With a middleware, a newly added endpoint is protected unless someone
 deliberately adds it to PUBLIC_PATHS.
 """
 
-import os
-import time
 import logging
-from typing import Optional
+import time
 
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +93,7 @@ def verify_token(token: str):
     return user
 
 
-def _extract_bearer(request: Request) -> Optional[str]:
+def _extract_bearer(request: Request) -> str | None:
     header = request.headers.get("authorization") or request.headers.get("Authorization")
     if not header:
         return None

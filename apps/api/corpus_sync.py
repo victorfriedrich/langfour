@@ -45,8 +45,9 @@ import logging
 import os
 import shutil
 import tarfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import IO, Iterable
+from typing import IO
 
 from paths import DATA_DIR, PROCESSED_DIR
 
@@ -73,7 +74,7 @@ def _open_stream(name: str) -> IO[bytes]:
 
         url = f"{base_url.rstrip('/')}/{name}"
         log.info("corpus: fetching %s", url)
-        return urlopen(url, timeout=60)  # noqa: S310 - operator-supplied URL
+        return urlopen(url, timeout=60)
 
     bucket = os.getenv("LANGFIVE_CORPUS_BUCKET")
     if bucket:
@@ -200,4 +201,4 @@ def _configured_languages() -> tuple[str, ...]:
     return LANGUAGES
 
 
-__all__ = ["ensure_corpus", "ensure_language", "LANGUAGES"]
+__all__ = ["LANGUAGES", "ensure_corpus", "ensure_language"]

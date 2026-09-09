@@ -1,13 +1,15 @@
 import json
-from nlp_processing import add_to_dictionary, identify_word_id
+
 from database import initialize_cache
+from nlp_processing import add_to_dictionary, identify_word_id
 from paths import data_file
+
 
 def convert_txt_to_json(file_path):
     words = []
     
     try:
-        with open(file_path, 'r') as file:
+        with open(file_path) as file:
             content = file.read()
             if content:
                 print("File content:")
@@ -18,7 +20,7 @@ def convert_txt_to_json(file_path):
         print(f"Failed to read the file: {e}")
 
     
-    with open(file_path, 'r', encoding='utf-8') as file:
+    with open(file_path, encoding='utf-8') as file:
         lines = file.readlines()
         print(lines)
         # Start processing from the line after the header
@@ -41,7 +43,7 @@ def convert_txt_to_json(file_path):
     return words_json
 
 def load_json_file(file_path):
-    with open(file_path, 'r', encoding='utf-8') as json_file:
+    with open(file_path, encoding='utf-8') as json_file:
         data = json.load(json_file)
     return data
 
