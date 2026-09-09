@@ -83,7 +83,7 @@ export const FlashCardInteraction: React.FC<FlashCardInteractionProps> = ({
             {isDesktop && !waitForNextButton && !isNextCard && (
                 <div className="mt-4 flex justify-between items-center w-full">
                     <Button onClick={() => handleButtonClick('left')} variant="outline" className="w-[35%]">
-                        Don't Know
+                        Don&apos;t Know
                     </Button>
                     <div className="w-[10%]"></div>
                     <Button onClick={() => handleButtonClick('right')} className="w-[35%]">

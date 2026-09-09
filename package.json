@@ -20,7 +20,10 @@
     "build": "npm run build --workspaces --if-present",
     "build:web": "npm run build --workspace=lang-frontend",
     "build:ext": "npm run build --workspace=spotlight-lingo",
-    "lint": "npm run lint --workspaces --if-present",
+    "lint": "npm run lint:web && npm run lint:ext && npm run lint:api",
+    "lint:web": "npm run lint --workspace=lang-frontend",
+    "lint:ext": "npm run lint --workspace=spotlight-lingo",
+    "lint:api": "apps/api/.venv/bin/ruff check apps/api",
 
     "api:install": "python3 -m venv apps/api/.venv && apps/api/.venv/bin/pip install -r apps/api/requirements-dev.txt",
     "api:test": "apps/api/.venv/bin/pytest apps/api",

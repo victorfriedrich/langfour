@@ -26,7 +26,7 @@ import os
 import sys
 
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 load_dotenv()
 
@@ -110,4 +110,4 @@ _verify_key()
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-__all__ = ["supabase", "SUPABASE_URL", "SUPABASE_KEY"]
+__all__ = ["SUPABASE_KEY", "SUPABASE_URL", "supabase"]

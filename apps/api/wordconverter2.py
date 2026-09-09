@@ -1,10 +1,11 @@
 import json
-import time
 import os
 import signal
 import sys
-from nlp_processing import parse
+import time
+
 from database import initialize_cache
+from nlp_processing import parse
 from paths import data_file
 
 # Global variable to track the last processed batch
@@ -23,7 +24,7 @@ signal.signal(signal.SIGINT, signal_handler)
 
 def load_json_file(file_path):
     """Load a JSON file containing a list of words."""
-    with open(file_path, 'r', encoding='utf-8') as json_file:
+    with open(file_path, encoding='utf-8') as json_file:
         data = json.load(json_file)
     return data
 
@@ -42,7 +43,7 @@ def load_progress(file_path="processing_progress.txt"):
     
     try:
         progress = {}
-        with open(file_path, 'r') as f:
+        with open(file_path) as f:
             for line in f:
                 key, value = line.strip().split('=', 1)
                 progress[key] = value
@@ -74,7 +75,7 @@ def process_batch(words, batch_number, batch_size, sub_batch_size, language):
         sub_batch = words_to_process[i:i+sub_batch_size]
         
         try:
-            result = parse(sub_batch, "WORD_LIST", language)
+            parse(sub_batch, "WORD_LIST", language)
             processed_words += len(sub_batch)
             print(f"Processed sub-batch {i//sub_batch_size + 1}, words {i+1} to {min(i+sub_batch_size, total_words)}")
         except Exception as e:

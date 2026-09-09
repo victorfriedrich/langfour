@@ -27,10 +27,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Type, TypeVar
+from typing import Any, TypeVar
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AuthenticationError, OpenAI, PermissionDeniedError
 from pydantic import BaseModel
 
 # Self-loading, exactly as supabase_client.py does. This module is imported
@@ -42,6 +42,11 @@ load_dotenv()
 log = logging.getLogger(__name__)
 
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+# The SDK default is 600s. These calls sit on the request path (a word lookup
+# blocks a user), so a stalled connection there is indistinguishable from a
+# hang. A minute is far above the ~11s a slow classification takes.
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "60"))
 
 _api_key = os.getenv("OPENROUTER_API_KEY")
 if not _api_key:
@@ -63,6 +68,7 @@ client = OpenAI(
     base_url=OPENROUTER_BASE_URL,
     api_key=_api_key,
     default_headers=_headers or None,
+    timeout=LLM_TIMEOUT_SECONDS,
 )
 
 
@@ -81,17 +87,27 @@ def transcription_client() -> OpenAI:
             "DEEPINFRA_API_KEY is not set. It is needed only for audio "
             "transcription (videoparsing.py); OpenRouter cannot do this."
         )
-    return OpenAI(base_url=DEEPINFRA_BASE_URL, api_key=key)
+    return OpenAI(base_url=DEEPINFRA_BASE_URL, api_key=key, timeout=LLM_TIMEOUT_SECONDS)
 
+
+class ModelRefusal(RuntimeError):
+    """The model declined to answer. Re-asking the same thing will not help."""
+
+
+# Retrying these is pure latency: a bad key, a blocked account and a refusal
+# all fail identically on the next attempt. Only malformed, empty or
+# schema-violating output is worth a second try with a different
+# response_format.
+NON_RETRYABLE = (AuthenticationError, PermissionDeniedError, ModelRefusal)
 
 T = TypeVar("T", bound=BaseModel)
 
 
-def parse_structured(
+def parse_structured[T: BaseModel](
     *,
     model: str,
     messages: list[dict[str, Any]],
-    schema_model: Type[T],
+    schema_model: type[T],
     reasoning: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> T:
@@ -144,7 +160,7 @@ def parse_structured(
             choice = resp.choices[0]
             msg = choice.message
             if getattr(msg, "refusal", None):
-                raise RuntimeError(f"Model refused: {msg.refusal}")
+                raise ModelRefusal(f"Model refused: {msg.refusal}")
 
             content = (msg.content or "").strip()
             if not content:
@@ -157,7 +173,9 @@ def parse_structured(
                 content = content[start : end + 1]
             return schema_model.model_validate(json.loads(content))
 
-        except Exception as exc:  # noqa: BLE001 - deliberately broad, we retry
+        except NON_RETRYABLE:
+            raise
+        except Exception as exc:
             last_error = exc
             if i + 1 < len(attempts):
                 log.warning(
@@ -169,9 +187,10 @@ def parse_structured(
 
 
 __all__ = [
-    "client",
-    "transcription_client",
-    "parse_structured",
-    "OPENROUTER_BASE_URL",
     "DEEPINFRA_BASE_URL",
+    "OPENROUTER_BASE_URL",
+    "ModelRefusal",
+    "client",
+    "parse_structured",
+    "transcription_client",
 ]

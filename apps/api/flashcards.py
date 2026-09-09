@@ -1,20 +1,21 @@
-import csv
-import io
+import glob  # For flexible database search
+import html
 import os
+import re
 import sqlite3
 import tempfile
 import zipfile
-import glob  # For flexible database search
-import html
-import re
 from html.parser import HTMLParser
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Body, Form
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import List, Dict, Any
+
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 # Import functions from your modules
 from database import identify_word_id, supabase  # Use supabase directly from database.py
-from nlp_processing import identify_word_id, verify_language, get_word_root  # For processing missing words
+from nlp_processing import (  # For processing missing words
+    get_word_root,
+    verify_language,
+)
 
 router = APIRouter()
 security = HTTPBearer()
@@ -102,7 +103,7 @@ def clean_anki_field(value: str) -> str:
     return _collapse_whitespace("".join(parser.parts))
 
 
-def _extract_anki_pair(fields: List[str]) -> Dict[str, str]:
+def _extract_anki_pair(fields: list[str]) -> dict[str, str]:
     """Return the vocabulary pair represented by an Anki note's fields.
 
     RemNote exports the prompt and answer of some concept cards together in a
@@ -128,10 +129,10 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     try:
         user = supabase.auth.get_user(token)
         return user.user
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials") from exc
 
-def extract_from_csv(file_bytes: bytes) -> List[Dict[str, str]]:
+def extract_from_csv(file_bytes: bytes) -> list[dict[str, str]]:
     """
     Extract word/translation pairs from a CSV file.
     Handles tab-delimited files without headers.
@@ -167,12 +168,12 @@ def extract_from_csv(file_bytes: bytes) -> List[Dict[str, str]]:
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"CSV parsing error: {str(e)}\n{error_details}")
-        raise HTTPException(status_code=400, detail=f"CSV parsing error: {str(e)}")
+        print(f"CSV parsing error: {e!s}\n{error_details}")
+        raise HTTPException(status_code=400, detail=f"CSV parsing error: {e!s}") from e
 
     return pairs
 
-def extract_from_apkg(file_bytes: bytes) -> List[Dict[str, str]]:
+def extract_from_apkg(file_bytes: bytes) -> list[dict[str, str]]:
     """
     Extract word/translation pairs from an Anki deck (.apkg file).
     Handles both legacy and newer Anki formats (including compressed databases).
@@ -215,11 +216,11 @@ def extract_from_apkg(file_bytes: bytes) -> List[Dict[str, str]]:
             if os.path.basename(db_path) == "collection.anki21b":
                 try:
                     import zstandard as zstd
-                except ImportError:
+                except ImportError as exc:
                     raise HTTPException(
                         status_code=500,
                         detail="zstandard library required for decompressing the Anki deck."
-                    )
+                    ) from exc
                 with open(db_path, "rb") as comp_file:
                     compressed_data = comp_file.read()
                 dctx = zstd.ZstdDecompressor()
@@ -237,7 +238,7 @@ def extract_from_apkg(file_bytes: bytes) -> List[Dict[str, str]]:
                 if "newer version" in str(e).lower():
                     raise ValueError(
                         "The Anki deck requires a newer version of Anki than supported by the current extraction tool."
-                    )
+                    ) from e
                 else:
                     raise
 
@@ -256,13 +257,13 @@ def extract_from_apkg(file_bytes: bytes) -> List[Dict[str, str]]:
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        raise HTTPException(status_code=400, detail=f"Error processing Anki deck: {e}\n{error_details}")
+        raise HTTPException(status_code=400, detail=f"Error processing Anki deck: {e}\n{error_details}") from e
     return pairs
 
 @router.post("/check-words")
 async def check_words(
-    payload: Dict = Body(...),
-    current_user: Dict = Depends(get_current_user)
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
 ):
     words = payload.get("words")
     language = payload.get("language")
@@ -291,7 +292,7 @@ async def upload_flashcards(
     file: UploadFile = File(...),
     language: str = Form("es"),
     source: str = Form("flashcards_upload"),
-    current_user: Dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Securely uploads a flashcards file (.csv or .apkg), extracts word/translation pairs,
@@ -330,8 +331,8 @@ async def upload_flashcards(
 
 @router.post("/process-missing")
 async def process_missing_words(
-    payload: Dict = Body(...),
-    current_user: Dict = Depends(get_current_user)
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Processes missing words (using add_to_dictionary) when the user chooses to add them.
@@ -344,7 +345,9 @@ async def process_missing_words(
     """
     missing = payload.get("missing")
     language = payload.get("language")
-    source = payload.get("source", "flashcards_upload")
+    # NOTE: "source" is accepted (and documented above) but not yet threaded
+    # through to nlp_processing.add_to_dictionary(word, source, language);
+    # this endpoint resolves ids via identify_word_id instead.
 
     if not missing or not isinstance(missing, list):
         raise HTTPException(status_code=400, detail="Missing or invalid 'missing' words list.")
@@ -361,13 +364,15 @@ async def process_missing_words(
         word = item.get("word")
         if not word:
             continue
-        words_for_verification.append({"root": word.lower()})
+        # Plain strings: verify_language() formats each into a bullet list, so
+        # passing dicts here rendered "- {'root': 'ciao'}" into the prompt.
+        words_for_verification.append(word.lower())
 
     try:
         problematic_words = verify_language(words_for_verification, language)
         problematic_words = [w.lower() for w in problematic_words]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error verifying language: {e}")
+        raise HTTPException(status_code=500, detail=f"Error verifying language: {e}") from e
 
     # 2. Process each word that passed language verification.
     for item in missing:
@@ -379,7 +384,7 @@ async def process_missing_words(
             continue
 
         root_info = get_word_root(word, language)
-        if not root_info or "key" not in root_info:
+        if not root_info:
             continue
 
         try:

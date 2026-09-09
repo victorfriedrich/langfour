@@ -1,33 +1,29 @@
-import os
-from fastapi import FastAPI, Query, Depends, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from pydantic import conint, confloat
-from typing import List, Dict, Optional
-from types import SimpleNamespace
-import json
-from videoparsing import main as process_video
-from text_article_parsing import parse_article
-from recommender import Recommender
+import asyncio
 import logging
-from dotenv import load_dotenv
-from supabase import create_client, Client
-from auth import AuthMiddleware, get_current_user, security
-from database import (
-    initialize_cache
-)
-from nlp_processing import get_missing_words, parse_and_translate_word, translate_section, generate_word_examples
-from utils import get_video_words
-from languages import require_code
-import asyncio
-from fastapi import Query, Body
-from file_manager import get_categories_with_icons
-from flashcards import router as flashcards_router
-from media_import import get_media, import_media, list_media
-from nlp_processing import group_text, parse
-import asyncio
+import os
 
+from dotenv import load_dotenv
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, confloat, conint
+
+from auth import AuthMiddleware, get_current_user
+from database import initialize_cache
+from flashcards import router as flashcards_router
+from languages import require_code
+from media_import import get_media, import_media, list_media
+from nlp_processing import (
+    generate_word_examples,
+    get_missing_words,
+    group_text,
+    parse,
+    parse_and_translate_word,
+    translate_section,
+)
+from recommender import Recommender
+from text_article_parsing import parse_article
+from utils import get_video_words
+from videoparsing import main as process_video
 
 app = FastAPI()
 
@@ -74,21 +70,19 @@ app.include_router(flashcards_router, prefix="/flashcards", tags=["flashcards"])
 
 # Client now comes from supabase_client, which verifies the key is
 # service_role before the app is allowed to start.
-from supabase_client import supabase, SUPABASE_URL as supabase_url
-
-
-
-from paths import PROCESSED_DIR
 from corpus_sync import ensure_corpus
+from paths import PROCESSED_DIR
+from supabase_client import supabase
+
 VIDEO_DIR = str(PROCESSED_DIR)
 
 class ExampleRequest(BaseModel):
-    words: List[str] = Field(..., description="Array of words / phrases")
+    words: list[str] = Field(..., description="Array of words / phrases")
     language: str   = Field("es", description="Target language (e.g. 'es', 'en')")
 
 class ExampleEntry(BaseModel):
-    sentences:  List[str] = Field(..., min_items=2, max_items=2)
-    highlights: List[str] = Field(..., min_items=2, max_items=2)
+    sentences:  list[str] = Field(..., min_items=2, max_items=2)
+    highlights: list[str] = Field(..., min_items=2, max_items=2)
 
 class TextRequest(BaseModel):
     text: str
@@ -99,53 +93,53 @@ class VideoRequest(BaseModel):
     language: str
 
 class TranscriptChunk(BaseModel):
-    timestamp: List[float] = Field(..., min_length=2, max_length=2)
+    timestamp: list[float] = Field(..., min_length=2, max_length=2)
     text: str = Field(..., min_length=1)
 
 class MediaImportRequest(BaseModel):
     series: str = Field(..., min_length=1)
     language: str = Field(..., description="Language name or ISO code")
-    chunks: List[TranscriptChunk] = Field(..., min_length=1)
-    title: Optional[str] = None
-    season: Optional[conint(ge=0)] = None
-    episode: Optional[conint(ge=0)] = None
-    media_id: Optional[str] = None
+    chunks: list[TranscriptChunk] = Field(..., min_length=1)
+    title: str | None = None
+    season: conint(ge=0) | None = None
+    episode: conint(ge=0) | None = None
+    media_id: str | None = None
     media_type: str = "series"
-    model: Optional[str] = None
-    timebase: Optional[str] = None
-    audio_seconds: Optional[confloat(gt=0)] = None
+    model: str | None = None
+    timebase: str | None = None
+    audio_seconds: confloat(gt=0) | None = None
 
 class RankBlendedVideoResponse(BaseModel):
-    ids:          List[str]
-    titles:       List[str]
-    scores:       List[float]
-    ratios:       List[float]  # fraction of words understood (0.0–1.0)
-    newWords:     List[int]    # count of truly new words (user doesn’t know)
-    usefulWords:  List[int]    # count of prioritized words present
+    ids:          list[str]
+    titles:       list[str]
+    scores:       list[float]
+    ratios:       list[float]  # fraction of words understood (0.0–1.0)
+    newWords:     list[int]    # count of truly new words (user doesn’t know)
+    usefulWords:  list[int]    # count of prioritized words present
 
 class VideoRecommendation(BaseModel):
     id: str
     percentUnderstood: int
 
 class VideoRecommendationResponse(BaseModel):
-    ids: List[str]
-    titles: List[str]
-    ratios: List[float]
-    newWords: List[int]
+    ids: list[str]
+    titles: list[str]
+    ratios: list[float]
+    newWords: list[int]
     
 class WordRecommendationResponse(BaseModel):
-    word_ids: List[int]
-    improvements: List[float]
-    frequencies: List[int]
+    word_ids: list[int]
+    improvements: list[float]
+    frequencies: list[int]
 
 class MissingWordsRequest(BaseModel):
     language_code: str
     
 class ChartDataResponse(BaseModel):
-    n_values: List[int]  # List of n values
-    ordered_by_id: List[float]  # Percent understood corresponding to each n
-    random_selection: List[float]  # Percent understood corresponding to each n
-    category_top: List[float]  # Percent understood corresponding to each n (if category is provided)
+    n_values: list[int]  # List of n values
+    ordered_by_id: list[float]  # Percent understood corresponding to each n
+    random_selection: list[float]  # Percent understood corresponding to each n
+    category_top: list[float]  # Percent understood corresponding to each n (if category is provided)
 
 class VocabCoverageResponse(BaseModel):
     top30_avg: float
@@ -316,7 +310,7 @@ async def get_rank_blended_recommendations(
 
     # 4) Sort & unpack
     scored.sort(key=lambda x: x[0], reverse=True)
-    scores, ids, titles, ratios, newWords, usefulWords = map(list, zip(*scored))
+    scores, ids, titles, ratios, newWords, usefulWords = map(list, zip(*scored, strict=False))
 
     return RankBlendedVideoResponse(
         ids=ids,
@@ -373,7 +367,7 @@ async def check_missing_words(
         return {"missing_words": missing_words}
     except Exception as e:
         logger.exception("💥 unhandled error in /missing-words")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 @app.get("/categories")
 async def get_categories(request: Request):
@@ -381,9 +375,9 @@ async def get_categories(request: Request):
         categories = request.app.state.recommender.get_categories("de")
         return {"categories": categories}
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching categories: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching categories: {e!s}") from e
 
 @app.get("/categories/videos")
 async def get_video_categories(
@@ -395,8 +389,8 @@ async def get_video_categories(
 
     try:
         return {"categories": request.app.state.recommender.get_categories(language)}
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Language not supported")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Language not supported") from exc
 
 @app.get("/api/videos/{video_id}")
 async def get_video_info(video_id: str):
@@ -406,7 +400,7 @@ async def get_video_info(video_id: str):
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 @app.post("/api/translate-word")
 async def translate_word(word: str = Body(...), language: str = Body(...)):
@@ -414,9 +408,9 @@ async def translate_word(word: str = Body(...), language: str = Body(...)):
         result = parse_and_translate_word(word, language)
         return result
     except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
+        raise HTTPException(status_code=404, detail=str(ve)) from ve
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error translating word: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error translating word: {e!s}") from e
 
 # Language is the ISO code, e.g. 'es'. require_code() also accepts the legacy
 # long name, so older callers keep working.
@@ -426,9 +420,9 @@ async def translate(section: str = Body(...), language: str = Body(...)):
         result = translate_section(section, language)
         return result
     except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
+        raise HTTPException(status_code=404, detail=str(ve)) from ve
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error translating section: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error translating section: {e!s}") from e
 
 @app.post("/api/process-video")
 async def process_video_endpoint(request: VideoRequest):
@@ -442,7 +436,7 @@ async def process_video_endpoint(request: VideoRequest):
         
         return {"message": f"Video processing started for ID: {video_id}", "video_id": video_id}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing video: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing video: {e!s}") from e
 
 @app.post("/api/media/import", status_code=201)
 async def import_media_endpoint(request: MediaImportRequest):
@@ -451,12 +445,12 @@ async def import_media_endpoint(request: MediaImportRequest):
         payload = request.model_dump()
         return await asyncio.to_thread(import_media, payload, parse, group_text)
     except FileExistsError as error:
-        raise HTTPException(status_code=409, detail=str(error))
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
+        raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         logger.exception("Failed to import media transcript")
-        raise HTTPException(status_code=500, detail=f"Failed to import media: {error}")
+        raise HTTPException(status_code=500, detail=f"Failed to import media: {error}") from error
 
 @app.get("/api/media")
 async def get_imported_media(
@@ -466,7 +460,7 @@ async def get_imported_media(
     try:
         return {"media": list_media(language)}
     except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 @app.get("/api/media/{media_id}")
 async def get_imported_media_item(
@@ -476,10 +470,10 @@ async def get_imported_media_item(
     """Return metadata and timestamped chunks for one imported item."""
     try:
         return {"media": get_media(media_id, language)}
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Media not found: {media_id}")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Media not found: {media_id}") from exc
     except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.get("/recommendations/words/chart-data", response_model=ChartDataResponse)
@@ -602,7 +596,7 @@ async def get_chart_data(
         raise he
     except Exception as e:
         print(f"Unexpected error in /recommendations/words/chart-data: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(status_code=500, detail="Internal Server Error") from e
 
 @app.get("/vocabulary/{vocab_id}/coverage", response_model=VocabCoverageResponse)
 async def vocabulary_coverage(
@@ -615,8 +609,8 @@ async def vocabulary_coverage(
 
     try:
         recommender._ensure_language_loaded(language)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Language not supported")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Language not supported") from exc
 
     known_words = await recommender.get_known_words(vocab_id)
     return VocabCoverageResponse(
@@ -628,7 +622,7 @@ async def vocabulary_coverage(
     
 @app.post(
     "/api/example-sentences",
-    response_model=Dict[str, ExampleEntry],
+    response_model=dict[str, ExampleEntry],
     summary="Generate A1–A2 example sentences for each supplied word",
     tags=["nlp"],
 )
@@ -657,7 +651,7 @@ async def example_sentences_endpoint(
         return result
     except Exception as e:
         logger.exception("💥 Error generating example sentences")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 if __name__ == "__main__":
     import uvicorn

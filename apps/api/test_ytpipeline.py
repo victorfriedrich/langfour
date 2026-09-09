@@ -4,21 +4,20 @@ Deliberately not tested: the API client and the Common Crawl fetch. Both are
 thin wrappers over network calls, and mocking them would test the mock.
 """
 
-from datetime import date, timedelta
 import gzip
 import json
-from pathlib import Path
 import sqlite3
 import subprocess
 import sys
 import textwrap
+from datetime import date, timedelta
+from pathlib import Path
 from types import SimpleNamespace
+
 import pytest
 
-from conftest import FakeSupabase, queued
-
 import ytpipeline as yp
-
+from conftest import FakeSupabase, queued
 
 # ─────────────────────────────────────────────────────────── duration ──
 
@@ -444,7 +443,8 @@ def test_store_upgrades_in_place(tmp_path):
     old = sqlite3.connect(path)
     old.executescript(PRE_UPGRADE_SCHEMA + """
         INSERT INTO videos (video_id, channel_id, live) VALUES ('v1', 'UC1', 'none');""")
-    old.commit(); old.close()
+    old.commit()
+    old.close()
     for _ in range(2):                          # idempotent
         db = yp.connect(path)
         cols = {r[1] for r in db.execute("PRAGMA table_info(channels)")}
@@ -453,8 +453,8 @@ def test_store_upgrades_in_place(tmp_path):
         db.close()
 
 
-BASE = dict(n=10, music_share=0.1, subscribers=100_000, avg_views=5_000, per_day=0.5,
-            classified_at="2026-01-01", sensitivity=0.1, intellectuality=0.5)
+BASE = {"n": 10, "music_share": 0.1, "subscribers": 100_000, "avg_views": 5_000, "per_day": 0.5,
+            "classified_at": "2026-01-01", "sensitivity": 0.1, "intellectuality": 0.5}
 
 
 @pytest.mark.parametrize("override,need_llm,expected", [
@@ -763,7 +763,8 @@ def test_video_cols_match_the_schema_in_a_fresh_and_an_upgraded_store(tmp_path):
 
     old = sqlite3.connect(tmp_path / "old.sqlite")
     old.executescript(PRE_UPGRADE_SCHEMA)
-    old.commit(); old.close()
+    old.commit()
+    old.close()
     upgraded = yp.connect(tmp_path / "old.sqlite")
     assert tuple(r[1] for r in upgraded.execute("PRAGMA table_info(videos)")) == yp.VIDEO_COLS
     # channels is additive-only: an upgraded store keeps latest_upload, which a

@@ -170,7 +170,7 @@ const LanguageAppOnboarding: React.FC<LanguageAppOnboardingProps> = ({
           How good is your {selectedLanguage?.name}?
         </h2>
         <p className="text-gray-600 mb-6">
-          Based on your selection, we'll customize your experience and add the most common words. You can always adjust this later.
+          Based on your selection, we&apos;ll customize your experience and add the most common words. You can always adjust this later.
         </p>
         <div className="space-y-3">
           {levels.map(level => (

@@ -27,9 +27,10 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any
 
 from languages import require_code
 from paths import processed_dir, processed_file
@@ -46,7 +47,7 @@ STATUSES = ("pending", "processing", "done", "failed", "skipped")
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def batched(seq: Iterable[Any], n: int = 500) -> Iterable[list]:
@@ -90,7 +91,7 @@ def claim(sb, lang: str, limit: int, max_attempts: int = MAX_ATTEMPTS) -> list[d
     return claimed
 
 
-def finish(sb, video_id: str, status: str, error: Optional[str] = None) -> None:
+def finish(sb, video_id: str, status: str, error: str | None = None) -> None:
     fields: dict[str, Any] = {"status": status, "error": error}
     if status == "done":
         fields["done_at"] = now()
@@ -99,7 +100,7 @@ def finish(sb, video_id: str, status: str, error: Optional[str] = None) -> None:
 
 def reclaim(sb, lang: str, older_than_minutes: int) -> int:
     """A worker that died mid-video leaves 'processing' behind forever."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(minutes=older_than_minutes)).isoformat()
     rows = (sb.table(TABLE).update({"status": "pending"})
             .eq("lang", lang).eq("status", "processing").lt("claimed_at", cutoff)
             .execute().data)
@@ -107,7 +108,7 @@ def reclaim(sb, lang: str, older_than_minutes: int) -> int:
 
 
 def submit(sb, lang: str, video_id: str, source: str,
-           priority: Optional[int] = None, submitted_by: Optional[str] = None) -> bool:
+           priority: int | None = None, submitted_by: str | None = None) -> bool:
     """False when the video was already queued (or done) -- not an error."""
     row = {"video_id": video_id, "lang": lang, "source": source,
            "priority": PRIORITY[source] if priority is None else priority,
@@ -117,7 +118,7 @@ def submit(sb, lang: str, video_id: str, source: str,
     return bool(res.data)
 
 
-def counts(sb, lang: Optional[str]) -> dict[str, int]:
+def counts(sb, lang: str | None) -> dict[str, int]:
     """limit(1), not head=True: `head` only exists in postgrest >= 0.17, and
     requirements.txt pins supabase==2.7.4, which resolves to 0.16.x. The exact
     count rides on the Content-Range header either way; limit(1) just means one
@@ -154,14 +155,14 @@ def prepare_cache() -> None:
     initialize_cache()
 
 
-def transcribe(video_id: str, lang: str) -> tuple[str, Optional[str]]:
+def transcribe(video_id: str, lang: str) -> tuple[str, str | None]:
     """('done'|'failed', error). videoparsing is imported here because it drags
     in Whisper, spaCy and moviepy; the queue commands should not."""
     import videoparsing
     url = f"https://www.youtube.com/watch?v={video_id}"
     try:
         videoparsing.main(url, lang)
-    except Exception as exc:                     # noqa: BLE001 - recorded, not hidden
+    except Exception as exc:
         return "failed", f"{type(exc).__name__}: {str(exc)[:400]}"
     if processed_file(lang, video_id).exists():
         return "done", None
@@ -198,7 +199,7 @@ def run(sb, lang: str, limit: int, dry_run: bool = False) -> dict[str, int]:
 UC_IN_LINK = re.compile(r"/channel/(UC[A-Za-z0-9_-]{22})")
 
 
-def channel_id_of(channel: dict) -> Optional[str]:
+def channel_id_of(channel: dict) -> str | None:
     """The legacy ledgers never had a ChannelId -- only a ChannelLink, which is
     a /channel/UC... URL for most rows and a /@handle for the rest. A handle
     cannot be resolved without an API call, so those stay NULL."""
@@ -206,7 +207,7 @@ def channel_id_of(channel: dict) -> Optional[str]:
     return match.group(1) if match else None
 
 
-def seed_done(sb, lang: str, ledger: Optional[Path]) -> tuple[int, int]:
+def seed_done(sb, lang: str, ledger: Path | None) -> tuple[int, int]:
     """One-off migration off the JSON worklist: every transcript on disk is
     'done'; every 'failedrec' the old scraper recorded is 'failed' at the
     attempt cap so it is never retried. Returns (done, failed) rows written."""
@@ -243,7 +244,7 @@ def seed_done(sb, lang: str, ledger: Optional[Path]) -> tuple[int, int]:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices="run seed-done submit reclaim status".split())
+    p.add_argument("command", choices=["run", "seed-done", "submit", "reclaim", "status"])
     p.add_argument("video_id", nargs="?", help="submit only")
     p.add_argument("--lang", help="ISO 639-1 or English name")
     p.add_argument("--limit", type=int, default=20, help="run: videos per invocation")
@@ -258,7 +259,7 @@ def main() -> None:
                    help="reclaim: minutes a row may sit in 'processing'")
     a = p.parse_args()
 
-    from supabase_client import supabase as sb   # verifies service_role at import
+    from supabase_client import supabase as sb  # verifies service_role at import
 
     if a.command == "status":
         lang = require_code(a.lang) if a.lang else None

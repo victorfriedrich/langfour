@@ -1,38 +1,53 @@
-from videothumbnailcreation import create_thumbnail_collage
-from pydantic import BaseModel
-import os
-import time
-import logging
-from dotenv import load_dotenv
 import json
-from typing import List, Dict
-from fastapi import HTTPException
-import traceback
-from database import (
-    save_to_supabase,
-    identify_word_id,
-    get_missing_words_from_db,
-    add_and_flag_wordform,
-    get_or_create_translation,
-    find_root_by_wordform_id
-)
+import logging
+import time
 from itertools import groupby
-from utils import is_special_character, parse_chatgpt_output, SPECIAL_CHARACTERS
-from languages import require_code
-from instructionmanager import INSTRUCTION_VERBS, INSTRUCTION_NOUNS, INSTRUCTION_ADJECTIVE, INSTRUCTION_SUMMARIZE, INSTRUCTION_FILTER_LANGUAGE, INSTRUCTION_ROOT_FORM, INSTRUCTION_CATEGORIZE, INSTRUCTION_HIGH_LEVEL_TAG, INSTRUCTION_VERIFY_LANGUAGE, INSTRUCTION_TRANSLATE, INSTRUCTION_VERIFY_NEW_WORD
-from models import MODEL_SMART, MODEL_FAST
-from llm_client import client, parse_structured
-from pydantic import BaseModel
-from typing import Literal, Optional, Tuple
+from typing import Literal, get_args
 
-VALID_CATEGORIES: List[str] = [
+from dotenv import load_dotenv
+from fastapi import HTTPException
+from pydantic import BaseModel
+
+from database import (
+    add_and_flag_wordform,
+    find_root_by_wordform_id,
+    get_missing_words_from_db,
+    get_or_create_translation,
+    identify_word_id,
+    save_to_supabase,
+)
+from instructionmanager import (
+    INSTRUCTION_ADJECTIVE,
+    INSTRUCTION_CATEGORIZE,
+    INSTRUCTION_FILTER_LANGUAGE,
+    INSTRUCTION_NOUNS,
+    INSTRUCTION_ROOT_FORM,
+    INSTRUCTION_SUMMARIZE,
+    INSTRUCTION_TRANSLATE,
+    INSTRUCTION_VERBS,
+    INSTRUCTION_VERIFY_LANGUAGE,
+    INSTRUCTION_VERIFY_NEW_WORD,
+)
+from languages import require_code
+from llm_client import client, parse_structured
+from models import MODEL_FAST, MODEL_SMART
+from utils import SPECIAL_CHARACTERS, is_special_character, parse_chatgpt_output
+
+# A Literal rather than a plain list so the same definition can be both the
+# validation rule and the JSON-schema enum sent to the model -- previously the
+# enum was hand-written into a schema dict and then re-checked in Python.
+Category = Literal[
     "Beauty & Fashion", "Health & Fitness", "Products & Tech", "Gaming", "Anime",
     "Movies", "Reactions & Commentary", "Challenges & Experiments", "Comedy",
     "Travel", "Documentaries", "Cooking", "Science",
     "Politics", "Finance", "Cars", "History", "Other"
 ]
 
+VALID_CATEGORIES: list[str] = list(get_args(Category))
+
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 # TODO: Make this more efficient
@@ -62,7 +77,7 @@ def filter_entities(text: str, language: str) -> str:
 
         return cleaned_text
     except Exception as e:
-        raise Exception(f"Error filtering non-Spanish words: {e}")
+        raise Exception(f"Error filtering non-Spanish words: {e}") from e
     
 def get_tags(title: str, text: str):
     text = text[:2000] + "..."
@@ -80,152 +95,64 @@ def get_tags(title: str, text: str):
         
         return json.loads(json_output)
 
-    except Exception as e:
-        error_message = str(e)
-        if "content filtering" in error_message or "Error code: 400" in error_message:
-            raise Exception(f"Generating Keywords for {title} violates Azure Content Policy")
-        else:
-            print(f"An unexpected error occurred: {error_message}")
+    except Exception:
+        logger.exception("Error generating tags for %r", title)
         return ["Failed"]
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-# (Make sure you have a StreamHandler or FileHandler attached to the logger!)
+class HighLevelTag(BaseModel):
+    category: Category
 
-def get_high_level_tag(title: str, tags: List[str]) -> str:
-    system_prompt = (
-        "You are a classifier.  Given a video Title and Tags, you must choose "
-        "exactly one of the following high-level categories:"
-    )
-    user_prompt = (
+
+def get_high_level_tag(title: str, tags: list[str]) -> str | None:
+    """The video's single high-level category, or None if the model could not
+    be reached. None rather than a "Failed" sentinel because the only caller
+    writes the result into *_processed.json and then skips any file that
+    already has a category -- a sentinel would be written once and never
+    retried."""
+    prompt = (
+        "Choose exactly one high-level category for this video.\n\n"
         f"Title: {title}\n"
-        f"Tags: {', '.join(tags)}\n\n"
-        "Respond with a JSON object matching:\n"
-        '{ "category": string }\n'
-        "where category must be one of the allowed values."
+        f"Tags: {', '.join(tags)}"
     )
-    schema = {
-        "name": "high_level_tag",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "category": {
-                    "type": "string",
-                    "enum": VALID_CATEGORIES
-                }
-            },
-            "required": ["category"],
-            "additionalProperties": False
-        }
-    }
-
     try:
-        resp = client.chat.completions.create(
+        verdict = parse_structured(
             model=MODEL_FAST,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_prompt}
-            ],
-            response_format={ "type": "json_schema", "json_schema": schema },
-            max_tokens=20,
+            messages=[{"role": "user", "content": prompt}],
+            schema_model=HighLevelTag,
+            reasoning={"enabled": False},
+            max_tokens=200,
             temperature=0.2,
         )
+    except Exception:
+        logger.exception("Could not classify %r", title)
+        return None
+    return verdict.category
 
-        choice = resp.choices[0]
-        msg = choice.message
 
-        # 1) Log finish reason
-        logger.debug(f"finish_reason: {choice.finish_reason}")
+class WordRoot(BaseModel):
+    """`key` becomes a dictionary headword and `type` selects which
+    generate_alternatives() prompt runs, so both are load-bearing. They used
+    to arrive as an unchecked dict: a response missing "key" surfaced as a
+    KeyError deep inside add_to_dictionary(), and a wrong-shaped one could
+    reach identify_word_id() and the database."""
 
-        # 2) Log any safety refusal
-        if getattr(msg, "refusal", None):
-            logger.warning(f"Model refused: {msg.refusal}")
-            return "Failed"
+    type: Literal["verb", "noun", "adjective", "other"]
+    key: str
 
-        # 3) Log raw content so you can see what JSON came back
-        logger.debug(f"raw content: {repr(msg.content)}")
 
-        # 4) Try parsing
-        try:
-            body = json.loads(msg.content)
-            category = body.get("category")
-        except json.JSONDecodeError as je:
-            logger.error(f"JSON decode error: {je}")
-            return "Failed"
-
-        # 5) Validate against our enum again
-        if category in VALID_CATEGORIES:
-            return category
-        else:
-            logger.error(f"Returned category not in VALID_CATEGORIES: {category}")
-            return "Failed"
-
-    except Exception as e:
-        # 6) Catch-all for networking, schema errors, etc.
-        logger.exception("Exception calling Azure OpenAI:")
-        return "Failed"
-
-def get_word_root(word: str, language: str) -> str:
+def get_word_root(word: str, language: str) -> dict | None:
     prompt = INSTRUCTION_ROOT_FORM[language].format(word=word)
-    
     try:
-        response = client.chat.completions.create(
+        return parse_structured(
             model=MODEL_SMART,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=45,
-            response_format={"type": "json_object"},
+            schema_model=WordRoot,
+            max_tokens=200,
             temperature=0.3,
-        )
-        raw_output = response.choices[0].message.content
-        json_output = parse_chatgpt_output(raw_output, '{', '}')
-        return json.loads(json_output)
-    except Exception as e:
-        print(f"Error finding root form: {e}")
+        ).model_dump()
+    except Exception:
+        logger.exception("Error finding root form for %r", word)
         return None
-
-def generate_alternatives(word: str, type: str):
-    if type == "verb":
-        response = client.chat.completions.create(
-            model=MODEL_SMART,
-            messages=[{"role": "user", "content": INSTRUCTION_VERBS.format(word=word)}],
-            max_tokens=550,
-            temperature=0.25,
-        )
-        raw_output = response.choices[0].message.content
-        forms = parse_chatgpt_output(raw_output, '{', '}')
-        forms = forms.lower()
-        dict = json.loads(forms)
-        #dict["perfecto root"] = dict["perfecto root"].split()[1:]
-        
-        result_set = set()
-        for value in dict.values():
-            if isinstance(value, list):
-                result_set.update(value)
-            else:
-                result_set.add(value)
-        return result_set
-        
-    elif type == "noun":
-        prompt = INSTRUCTION_NOUNS.format(word=word)
-    elif type == "adjective":
-        prompt = INSTRUCTION_ADJECTIVE.format(word=word)
-    else:
-        return []
-
-    response = client.chat.completions.create(
-        model=MODEL_SMART,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=180,
-        temperature=0.3,
-    )
-    
-    print(response)
-    raw_output = response.choices[0].message.content
-    forms = parse_chatgpt_output(raw_output, '[', ']')
-    forms = forms.lower()
-    
-    return set(json.loads(forms))
 
 def generate_alternatives(word: str, type: str, language: str):
     if type == "verb":
@@ -305,6 +232,24 @@ def verify_and_translate(root: str, type: str, forms: list[str], language: str) 
     )
 
 
+def _review(root: str, type: str | None, forms: list[str],
+            language: str) -> tuple[bool, str | None]:
+    """(flagged, translation) for a candidate entry.
+
+    The two callers below used to disagree about a failed review: the
+    bolt-on-to-an-existing-root path left flagged=True, the new-root path
+    reset it to False. Identical verifier outages therefore produced opposite
+    records. Flagging wins, because a flagged row is reviewable and an
+    unflagged bad row is invisible.
+    """
+    try:
+        verdict = verify_and_translate(root, type, forms, language)
+        return verdict.definitely_not_valid, (verdict.translation or None)
+    except Exception:
+        logger.exception("Could not verify %r", root)
+        return True, None
+
+
 def add_to_dictionary(word: str, source: str, language: str):
     try:
         word_root_info = get_word_root(word, language)
@@ -321,12 +266,9 @@ def add_to_dictionary(word: str, source: str, language: str):
             # a genuinely valid but previously-missing inflection shouldn't
             # be punished just because it collided with something.
             if root_id:
-                flagged = True
-                try:
-                    verdict = verify_and_translate(word_root_info["key"], word_root_info.get("type"), [word], language)
-                    flagged = verdict.definitely_not_valid
-                except Exception as e:
-                    print(f"Error verifying '{word}' against existing root '{word_root_info['key']}': {e}")
+                flagged, _ = _review(
+                    word_root_info["key"], word_root_info.get("type"), [word], language
+                )
                 print(f"Added '{word}' for {word_root_info['key']} (flagged={flagged})")
                 return add_and_flag_wordform(word, root_id, language, flagged=flagged)
         except ValueError:
@@ -338,26 +280,20 @@ def add_to_dictionary(word: str, source: str, language: str):
 
         forms = generate_alternatives(key, type, language)
 
-        flagged, translation = True, None
-        try:
-            verdict = verify_and_translate(key, type, list(forms), language)
-            flagged, translation = verdict.definitely_not_valid, (verdict.translation or None)
-        except Exception as e:
-            print(f"Error verifying new entry '{key}': {e}")
-            flagged = False  # unable to verify -- don't penalize; matches pre-verification behavior
+        flagged, translation = _review(key, type, list(forms), language)
 
         return save_to_supabase(key, forms, language, source, translation=translation, flagged=flagged)
     except Exception as e:
         print(f"Error adding word to dictionary: {e} ")
         return None
 
-def parse(groups: List[str], source: str, language: str):
+def parse(groups: list[str], source: str, language: str):
     """
     Process a list of text groups (tokens) and return a list of dictionaries.
     """
     result = []
-    local_cache: Dict[str, Optional[int]] = {}
-    missing_entries: List[Tuple[int, str, str]] = []
+    local_cache: dict[str, int | None] = {}
+    missing_entries: list[tuple[int, str, str]] = []
 
     # 1) First pass: immediate lookup or record as missing.
     for group in groups:
@@ -386,12 +322,19 @@ def parse(groups: List[str], source: str, language: str):
         missing_words = list(dict.fromkeys([e[1] for e in missing_entries]))
         # call the improved verifier
         try:
-            bad = set(w.lower() for w in verify_language(missing_words, language))
+            bad = {w.lower() for w in verify_language(missing_words, language)}
         except Exception:
-            bad = set()
+            # This used to fall back to an empty set, i.e. "nothing is
+            # invalid", so an outage wrote every unknown token into the
+            # dictionary unverified and permanently. Leaving them as plain
+            # content is recoverable -- the next parse of the same text
+            # retries them.
+            logger.exception("Language check failed; leaving %d words unresolved",
+                             len(missing_words))
+            return result
 
         # map word → all result-indices
-        idxs: Dict[str, List[int]] = {}
+        idxs: dict[str, list[int]] = {}
         for idx, lw, _ in missing_entries:
             idxs.setdefault(lw, []).append(idx)
 
@@ -415,7 +358,7 @@ def group_text(text: str) -> list:
     print(f"group_text executed in {end_time - start_time:.6f} seconds")
     return result
 
-async def get_missing_words(user_id: str, words: List[Dict], language: str) -> List[Dict]:
+async def get_missing_words(user_id: str, words: list[dict], language: str) -> list[dict]:
     
     word_ids = [word['id'] for word in words if 'id' in word and word['id'] is not None]
     word_ids = list(dict.fromkeys(word_ids))
@@ -423,7 +366,7 @@ async def get_missing_words(user_id: str, words: List[Dict], language: str) -> L
         missing_words = get_missing_words_from_db(user_id, word_ids, language)
         return missing_words
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching data from Supabase: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching data from Supabase: {e!s}") from e
 
 def summarize_text(text: str) -> str:
     prompt = INSTRUCTION_SUMMARIZE.format(text=text)
@@ -446,7 +389,7 @@ def summarize_text(text: str) -> str:
 
 
 
-def parse_and_translate_word(word: str, language: str) -> Dict:
+def parse_and_translate_word(word: str, language: str) -> dict:
     # This used to map 'it'/'es' onto long names and everything else onto the
     # literal 'other'. Post-migration that turned a correct key into one the
     # ISO-keyed word_cache and INSTRUCTION_* tables no longer hold, so the
@@ -472,7 +415,7 @@ def parse_and_translate_word(word: str, language: str) -> Dict:
     }
 
 # Takes a language name    
-def translate_section(section: str, language: str) -> Dict:
+def translate_section(section: str, language: str) -> dict:
     
     prompt = INSTRUCTION_TRANSLATE.format(text=section, language=language)
     
@@ -485,49 +428,44 @@ def translate_section(section: str, language: str) -> Dict:
     
     return response.choices[0].message.content
 
-def verify_language(words: List[str], language: str) -> List[str]:
+class InvalidWords(BaseModel):
+    invalid: list[str]
+
+
+def verify_language(words: list[str], language: str) -> list[str]:
+    """Of `words`, the ones that are not valid words of `language`.
+
+    The criteria live in INSTRUCTION_VERIFY_LANGUAGE, which has always had a
+    per-language entry -- this function previously ignored its `language`
+    argument entirely and inlined a Spanish-only prompt, so German, French and
+    Italian tokens were judged by a "meticulous Spanish lexicographer".
     """
-    words: list of lowercase tokens to check
-    returns: list of those tokens deemed NOT valid Spanish
-    """
-    # build bullet-list for prompt
+    if not words:
+        return []
+
+    code = require_code(language)
     payload = "\n".join(f"- {w}" for w in words)
-
-    system_msg = (
-        "You are a meticulous Spanish lexicographer. "
-        "Your job is to spot tokens that are NOT valid Spanish words."
+    prompt = (
+        INSTRUCTION_VERIFY_LANGUAGE[code].format(word_list=payload)
+        # The instruction bodies ask for a bare JSON array; the schema below
+        # needs an object, so name the wrapper here rather than making four
+        # prompt files agree about a detail of the transport.
+        + '\n\nReturn the result as {"invalid": ["word1", "word2", ...]}.'
     )
-    user_msg = f"""
-You are given a list of supposedly spanish words. Most of them are invalid.
 
-For each token, consider them invalid if:
-1. Not recognised by standard Spanish dictionaries (RAE or widely accepted regional).
-2. Misspelling or nonsense string
-3. Contains an article that should be removed
-4. They're proper names, brands, acronyms, scientific/technical terms.
-5. They're not real spanish words
-
-Return **only** a complete, full JSON array of all the problematic tokens exactly as given, e.g.:
-["elcarborundum", "rehue", "pesonas", "ceatividad"]
-"""
-
-    resp = client.chat.completions.create(
+    return parse_structured(
         model=MODEL_SMART,
-        messages=[
-            {"role": "system",  "content": system_msg},
-            {"role": "user",    "content": user_msg + "\n\n" + payload}
-        ],
+        messages=[{"role": "user", "content": prompt}],
+        schema_model=InvalidWords,
         max_tokens=3000,
         temperature=0.0,
-    )
-    out = resp.choices[0].message.content
-    raw = parse_chatgpt_output(out, "[", "]")
-    return json.loads(raw)
+    ).invalid
+
 
 def generate_word_examples(
-    words: List[str],
+    words: list[str],
     language: str = "es",              # ← new parameter
-) -> Dict[str, Dict[str, List[str]]]:
+) -> dict[str, dict[str, list[str]]]:
     """
     Generate two A1-A2 sentences (and highlight forms) *in the given language*
     for every word/phrase supplied.

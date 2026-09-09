@@ -1,10 +1,12 @@
-import urllib.parse
 import json
+import urllib.parse
+
 from paths import data_file
+
 
 def process_youtubers(json_path):
     # Read JSON data from the file
-    with open(json_path, 'r', encoding='utf-8') as file:
+    with open(json_path, encoding='utf-8') as file:
         youtubers = json.load(file)
     
     for youtuber in youtubers:

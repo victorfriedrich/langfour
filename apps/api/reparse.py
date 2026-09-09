@@ -1,15 +1,15 @@
 
-import os
 import json
-from typing import Dict, List, Any
-from database import word_cache, initialize_cache, identify_word_id
-from nlp_processing import add_to_dictionary
-from paths import processed_file
-from paths import processed_dir
+import os
+from typing import Any
+
+from database import identify_word_id, initialize_cache, word_cache
 from languages import to_code
+from paths import processed_dir, processed_file
+
 
 # TODO: Identify source and language of video
-def reparse_missing_words(content: List[Dict[str, Any]], word_cache: Dict[str, Dict[str, int]], language: str, source: str) -> List[Dict[str, Any]]:
+def reparse_missing_words(content: list[dict[str, Any]], word_cache: dict[str, dict[str, int]], language: str, source: str) -> list[dict[str, Any]]:
     reparsed_content = []
     
     for item in content:
@@ -35,7 +35,7 @@ def reparse_missing_words(content: List[Dict[str, Any]], word_cache: Dict[str, D
     
     return reparsed_content
 
-def process_youtube_script(script_json: str, word_cache: Dict[str, Dict[str, int]], language: str, source: str) -> str:
+def process_youtube_script(script_json: str, word_cache: dict[str, dict[str, int]], language: str, source: str) -> str:
     data = json.loads(script_json)
     data['content'] = reparse_missing_words(data['content'], word_cache, language, source)
     return json.dumps(data, ensure_ascii=False, indent=2)
@@ -58,7 +58,7 @@ def process_video_id(id: str, language: str):
         print(f"File not found: {file_path}")
         return
     
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, encoding='utf-8') as f:
         script_json = f.read()
         updated_json = process_youtube_script(script_json, word_cache, language, id)
     

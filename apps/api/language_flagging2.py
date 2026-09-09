@@ -1,19 +1,18 @@
-import os
-from dotenv import load_dotenv
-from supabase import create_client, Client
 import json
-from typing import List, Dict
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
 from llm_client import client
-from models import MODEL_SMART, MODEL_FAST
+from models import MODEL_SMART
 
 # Initialize Supabase client
 from supabase_client import supabase
+from utils import parse_chatgpt_output
 
 
-def fetch_words(language: str, batch_size: int = 50, offset: int = 0) -> List[Dict]:
+def fetch_words(language: str, batch_size: int = 50, offset: int = 0) -> list[dict]:
     # Fetch words along with the first 6 wordforms of each word
     response = supabase.table("words").select("id, root").eq("language", language).range(offset, offset + batch_size - 1).execute()
     words = response.data
@@ -25,17 +24,7 @@ def fetch_words(language: str, batch_size: int = 50, offset: int = 0) -> List[Di
 
     return words
 
-def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
-    start = output.find(startChar)
-    end = output.rfind(endChar)
-    
-    if start == -1 or end == -1 or start > end:
-        raise ValueError("No valid JSON object found in the output")
-    
-    json_content = output[start:end+1]
-    return json_content
-
-def verify_language(words: List[Dict], language: str) -> List[str]:
+def verify_language(words: list[dict], language: str) -> list[str]:
     formatted_terms = [
         f'root: "{word["root"]}" - {word["wordforms"]}' for word in words
     ]
@@ -56,7 +45,7 @@ def verify_language(words: List[Dict], language: str) -> List[str]:
 
     return problematic_roots
 
-def flag_non_language_words(problematic_roots: List[str], all_words: List[Dict]):
+def flag_non_language_words(problematic_roots: list[str], all_words: list[dict]):
     # Update flagged status in the database
     print("flagging " + str(problematic_roots))
 
@@ -85,7 +74,7 @@ def main(language: str):
             else:
                 print(f"No non-{language} or misspelled words found in this batch.")
         except Exception as e:
-            print(f"Error filtering non-{language} words: {str(e)}")
+            print(f"Error filtering non-{language} words: {e!s}")
         
         offset += batch_size
         print(offset)
