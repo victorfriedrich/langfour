@@ -29,6 +29,12 @@ def update_files_with_high_level_tag(base_folder: str):
                 tags = data.get("tags", [])
 
                 high_level_tag = get_high_level_tag(title, tags)
+                if high_level_tag is None:
+                    # Classification failed. Writing a sentinel here would be
+                    # permanent: the skip above treats any non-None category
+                    # as already done.
+                    print(f"Skipped {file_path}: could not classify")
+                    continue
 
                 # Overwrite or insert the category
                 data["category"] = high_level_tag

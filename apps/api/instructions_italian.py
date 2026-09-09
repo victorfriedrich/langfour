@@ -121,10 +121,10 @@ Return a JSON object:
 Return ONLY the JSON object.
 """
 
-INSTRUCTION_VERIFY_LANGUAGE = """From the following words, identify those that are not suitable to be added to learning flashcards. This includes mainly words that are not spanish, but also misspellings and:
+INSTRUCTION_VERIFY_LANGUAGE = """From the following words, identify those that are not suitable to be added to learning flashcards. This includes mainly words that are not italian, but also misspellings and:
     1. Person names
     2. Company names or website domains
-    3. English words that are not spanish
+    3. English words that are not italian
     4. Unique location names (e.g. Clarion, Hotel, Queens, NY, Clarque, Quay)
     5. Unique product names (e.g. iPhone, MacBook, Pro, Samsung, S22, YouTuber)
     6. Unique sport related words (e.g. BVB, FCB)

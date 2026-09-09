@@ -9,6 +9,7 @@ from models import MODEL_SMART
 
 # Initialize Supabase client
 from supabase_client import supabase
+from utils import parse_chatgpt_output
 
 
 def fetch_words(language: str, batch_size: int = 50, offset: int = 0) -> list[dict]:
@@ -22,16 +23,6 @@ def fetch_words(language: str, batch_size: int = 50, offset: int = 0) -> list[di
         word['wordforms'] = [wf['form'] for wf in wordform_response.data]
 
     return words
-
-def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
-    start = output.find(startChar)
-    end = output.rfind(endChar)
-    
-    if start == -1 or end == -1 or start > end:
-        raise ValueError("No valid JSON object found in the output")
-    
-    json_content = output[start:end+1]
-    return json_content
 
 def verify_language(words: list[dict], language: str) -> list[str]:
     formatted_terms = [

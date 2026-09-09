@@ -10,6 +10,7 @@ from models import MODEL_SMART
 
 # Initialize Supabase client
 from supabase_client import supabase
+from utils import parse_chatgpt_output
 
 
 def fetch_words_without_translation(batch_size: int = 40, offset: int = 0, language: str = "es") -> list[dict]:
@@ -17,16 +18,6 @@ def fetch_words_without_translation(batch_size: int = 40, offset: int = 0, langu
     # codes -- it would have quietly returned zero rows forever.
     response = supabase.table("words").select("id, root").eq("language", require_code(language)).is_("translation", None).order("id", desc=False).range(offset, offset + batch_size - 1).execute()
     return response.data
-
-def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
-    start = output.find(startChar)
-    end = output.rfind(endChar)
-    
-    if start == -1 or end == -1 or start > end:
-        raise ValueError("No valid JSON object found in the output")
-    
-    json_content = output[start:end+1]
-    return json_content
 
 def get_translations(words: list[dict]) -> list[dict]:
     word_list = [word['root'] for word in words]
