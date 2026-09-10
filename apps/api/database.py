@@ -99,9 +99,13 @@ def initialize_cache():
                 if root_word not in word_cache[language]['words']:
                     word_cache[language]['words'][root_word] = word_id
 
-                # Add wordform to the wordform cache only if it exists
+                # Add wordform to the wordform cache only if it exists.
+                # setdefault for the same reason as the incremental load:
+                # pages arrive word_id ASC, so plain assignment gave a
+                # homograph to the newest -- usually most contaminated --
+                # root claiming it.
                 if wordform:
-                    word_cache[language]['wordforms'][wordform] = word_id
+                    word_cache[language]['wordforms'].setdefault(wordform, word_id)
 
             # Update the last fetched word ID for pagination
             last_fetched_word_id = records[-1]['word_id']
@@ -159,6 +163,10 @@ def save_to_supabase(root: str, forms: set, language: str, source: str | None = 
             "language": language,
             "translation": translation,
             "flagged": flagged,
+            # cognate is what the clients gate on (useMissingWords,
+            # WordCategories, WordValidation); words.flagged has no reader at
+            # all. A verdict written only to flagged never reaches a learner.
+            "cognate": "invalid" if flagged else None,
         }).execute()
         word_id = response.data[0]['id']
 
@@ -196,11 +204,15 @@ def save_to_supabase(root: str, forms: set, language: str, source: str | None = 
                 response = supabase.table("words").select("id").eq("root", root).eq("language", language).limit(1).execute()
                 existing_word_id = response.data[0]['id']
 
-                # Update the root word's flagged status
-                update_fields = {"flagged": True}
+                # The incoming proposal is suspicious; the row it collided
+                # with is not. Flagging the existing root here marked 16,685
+                # established entries -- 37% of them top-10k vocabulary --
+                # because collision probability scales with how many videos
+                # propose a word, not with whether it is junk. The suspicion
+                # belongs to the incoming forms, which are flagged below.
                 if translation:
-                    update_fields["translation"] = translation
-                supabase.table("words").update(update_fields).eq("id", existing_word_id).execute()
+                    supabase.table("words").update(
+                        {"translation": translation}).eq("id", existing_word_id).execute()
 
                 # Add the new wordform and flag it
                 for form in forms:
@@ -256,6 +268,19 @@ def identify_word_id(word: str, language: str):
         print(f"Error fetching word '{word}' from Supabase: {e}")
     
     raise ValueError(f"Word '{word}' not found in language '{language}'")
+
+def root_of(word_id: int) -> str | None:
+    """The root string behind an id.
+
+    identify_word_id() returns only an id, so callers used to verify against the
+    key they had *proposed* rather than the row they actually hit. With five
+    roots claiming the form "hecho", those are not the same thing: the verdict
+    approved the pair ("hecho", ["hecha"]) while the write landed on root
+    "the fact".
+    """
+    response = supabase.table("words").select("root").eq("id", word_id).limit(1).execute()
+    return response.data[0]["root"] if response.data else None
+
 
 def get_words_with_many_forms():
     response = supabase.rpc("get_words_with_many_forms").execute()
@@ -327,7 +352,13 @@ def refresh_cache():
             max_cached_word_id = 0
 
         # Fetch new words
-        new_words_response = supabase.table("words").select("id, root").gt("id", max_cached_word_id).eq("language", language).execute().data
+        # Invalid roots must not enter the cache: identify_word_id() resolves
+        # against it, so a contaminated root ("the fact") would keep winning
+        # new wordforms. neq alone would drop NULL cognates, hence the or_.
+        new_words_response = (supabase.table("words").select("id, root")
+                              .gt("id", max_cached_word_id).eq("language", language)
+                              .or_("cognate.is.null,cognate.neq.invalid")
+                              .execute().data)
         for word in new_words_response:
             word_cache[language]['words'][word['root'].lower()] = word['id']
         
@@ -338,7 +369,11 @@ def refresh_cache():
             max_cached_wordform_id = 0
         new_forms_response = supabase.table("wordforms").select("word_id, form").gt("word_id", max_cached_wordform_id).or_("flagged.is.null,flagged.eq.false").execute().data
         for form in new_forms_response:
-            word_cache[language]['wordforms'][form['form'].lower()] = form['word_id']
+            # setdefault, not assignment: five roots claim "hecho", and
+            # assignment handed it to the highest id (199369 "the fact")
+            # rather than to hacer. First writer wins = lowest id wins.
+            word_cache[language]['wordforms'].setdefault(
+                form['form'].lower(), form['word_id'])
 
 def add_and_flag_wordform(wordform: str, root_id: int, language: str, flagged: bool = True) -> int:
     """
@@ -363,11 +398,12 @@ def add_and_flag_wordform(wordform: str, root_id: int, language: str, flagged: b
             "flagged": flagged
         }).execute()
 
-        # Only flag the root word if the new form is actually a problem --
-        # a valid new form of an existing word is not itself evidence the
-        # root is bad.
-        if flagged:
-            supabase.table("words").update({"flagged": True}).eq("id", root_id).execute()
+        # The root is deliberately left alone. `flagged` here means the new
+        # FORM is not a valid form of this root -- which says nothing about the
+        # root, exactly as a duplicate-key collision says nothing about the row
+        # it collided with. Marking it cognate='invalid' would now evict a
+        # perfectly good root from the match cache, so a bad form can no longer
+        # cost the lemma its entry.
 
         # Add the new wordform to the cache, but only if it's not flagged --
         # see the matching comment in save_to_supabase().

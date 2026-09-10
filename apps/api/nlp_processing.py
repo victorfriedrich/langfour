@@ -14,6 +14,7 @@ from database import (
     get_missing_words_from_db,
     get_or_create_translation,
     identify_word_id,
+    root_of,
     save_to_supabase,
 )
 from instructionmanager import (
@@ -266,10 +267,16 @@ def add_to_dictionary(word: str, source: str, language: str):
             # a genuinely valid but previously-missing inflection shouldn't
             # be punished just because it collided with something.
             if root_id:
+                # Verify against the root that was RESOLVED, not the one
+                # proposed: identify_word_id() falls through to the wordform
+                # cache, so a homograph lands the write on a different row than
+                # the key implies -- ("hecho", ["hecha"]) looked valid while the
+                # write went to root "the fact".
+                resolved = root_of(root_id) or word_root_info["key"]
                 flagged, _ = _review(
-                    word_root_info["key"], word_root_info.get("type"), [word], language
+                    resolved, word_root_info.get("type"), [word], language
                 )
-                print(f"Added '{word}' for {word_root_info['key']} (flagged={flagged})")
+                print(f"Added '{word}' for {resolved} (flagged={flagged})")
                 return add_and_flag_wordform(word, root_id, language, flagged=flagged)
         except ValueError:
             # If the root doesn't exist, we'll continue with the normal flow to add it
