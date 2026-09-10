@@ -48,10 +48,10 @@ def get_video_words(video_id: str, language_code: str) -> list[dict]:
         # If still not found, raise FileNotFoundError
         raise FileNotFoundError(f"Video data not found: {video_id}")
 
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=f"Video data not found: {video_id}") from exc
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail="Failed to parse JSON file") from exc
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"Video data not found: {video_id}") from e
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail="Failed to parse JSON file") from e
     except Exception as e:
         print(type(e))
         raise HTTPException(status_code=500, detail=str(e)) from e

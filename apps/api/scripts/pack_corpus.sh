@@ -17,6 +17,7 @@ for lang in de es fr it; do
     echo "skip $lang (no $SRC/$lang)"
     continue
   fi
+  python3 "$(dirname "$0")/build_corpus_metadata.py" "$DATA_DIR/$SRC/$lang"
   echo "packing $lang ..."
   # -C $DATA_DIR so archive members are 'processed/<lang>/...' and extracting
   # into DATA_DIR restores the tree in place.

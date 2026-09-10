@@ -33,7 +33,7 @@ def _tone_wav(path: str, seconds: float = 1.0, rate: int = 16000, hz: float = 44
 
 def main() -> int:
     try:
-        from llm_client import transcription_client, DEEPINFRA_BASE_URL
+        from llm_client import DEEPINFRA_BASE_URL, transcription_client
         from models import MODEL_TRANSCRIBE
     except RuntimeError as exc:
         print(f"FAIL  {exc}")

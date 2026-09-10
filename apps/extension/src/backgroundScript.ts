@@ -1,9 +1,11 @@
-import { supabase, ensureSupabaseSession } from './supabaseclient';
+import { supabase, ensureSupabaseSession, getAccessToken } from './supabaseclient';
 import { fetchWords } from './fetchWords';
 import {
   ArticleData,
   ArticleExtractionResponse,
   assertNever,
+  BackendRequest,
+  BackendResponse,
   BackgroundMessage,
   sendToTab,
 } from './messages';
@@ -12,6 +14,75 @@ import { BACKEND_URL, debugLog } from './config';
 import { toLanguage } from './languages';
 
 let sessionId: string | undefined;
+
+// GoTrue rotates the refresh token on every refresh, and this worker's
+// Supabase client holds its session in memory only. Without writing the
+// refreshed session back, the next worker restart would replay the stale
+// refresh token from storage, which GoTrue rejects as already used -- and
+// ensureSupabaseSession would then discard the session as invalid.
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event !== 'TOKEN_REFRESHED' || !session) return;
+
+  // Only update a session that is still supposed to exist. Signing out
+  // removes this key while this worker's client keeps its copy in memory, so
+  // an unconditional write would let a later refresh put the credential back
+  // and silently sign the user in again.
+  chrome.storage.local.get('supabaseSession', (stored) => {
+    if (!stored.supabaseSession) return;
+    chrome.storage.local.set({ supabaseSession: session }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Error storing refreshed session:', chrome.runtime.lastError);
+      }
+    });
+  });
+});
+
+function backendFailure(statusText: string, status = 0): BackendResponse {
+  return { ok: false, status, statusText, body: '' };
+}
+
+/**
+ * Calls the FastAPI backend with the current Supabase access token attached.
+ * The backend's auth middleware is deny-by-default, so every call needs it.
+ *
+ * Callers are extension contexts, plus whatever contentScript.ts relays from
+ * the MAIN world -- that relay checks the path before forwarding, so the
+ * allowlist lives there, at the boundary, rather than being duplicated here.
+ */
+async function backendFetch({ path, method, body }: BackendRequest): Promise<BackendResponse> {
+  let token: string | null;
+  try {
+    token = await getAccessToken();
+  } catch (error: unknown) {
+    console.error('Error ensuring Supabase session:', error);
+    return backendFailure(getErrorMessage(error, 'Error ensuring Supabase session'));
+  }
+  if (!token) {
+    return backendFailure('No Supabase session available', 401);
+  }
+
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  try {
+    const response = await fetch(`${BACKEND_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      body: await response.text(),
+    };
+  } catch (error: unknown) {
+    console.error('Backend request failed:', error);
+    return backendFailure(getErrorMessage(error, 'Backend request failed'));
+  }
+}
 
 /**
  * Uses the existing Supabase RPC function to fetch the user's last update timestamp.
@@ -230,6 +301,12 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
       return true; // Keeps the message channel open for async response
     }
 
+    case 'BACKEND_FETCH': {
+      const { path, method, body } = message;
+      backendFetch({ path, method, body }).then(sendResponse);
+      return true; // Keeps the message channel open for async response
+    }
+
     default:
       assertNever(message);
       return;
@@ -325,18 +402,20 @@ function extractArticleAsFallback(tabId: number): void {
     debugLog('Extracted content using fallback:', result.title);
 
     // Send the raw content to the server for parsing
-    fetch(`${BACKEND_URL}/parse`, {
+    backendFetch({
+      path: '/parse',
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-
-      body: JSON.stringify({
+      body: {
         text: result.content,
         language: 'es' // Default language
-      })
+      },
     })
-    .then(response => response.json())
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
+      return JSON.parse(response.body);
+    })
     .then(parsedArticle => {
       chrome.storage.local.set({ currentArticle: parsedArticle }, () => {
         chrome.tabs.create({ url: chrome.runtime.getURL('src/reader.html') });

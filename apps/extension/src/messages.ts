@@ -21,6 +21,27 @@ export type DefaultLanguageResponse = {
   error?: string;
 };
 
+// A FastAPI backend call proxied through the background service worker. The
+// backend rejects every request without a Supabase bearer token, and the
+// background is the only context holding a Supabase client that can supply
+// (and refresh) one, so no other context calls the backend directly.
+export type BackendRequest = {
+  path: string;
+  method: 'GET' | 'POST';
+  body?: unknown;
+};
+
+// Mirrors the parts of a fetch Response that cross the message bus. A
+// transport failure (no session, network error, unknown path) is reported
+// as `ok: false` with the reason in `statusText`, so callers handle it the
+// same way as an HTTP error.
+export type BackendResponse = {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  body: string;
+};
+
 // Messages the background service worker owns and handles.
 export type BackgroundMessage =
   | { type: 'STORE_WORDS'; words: string[]; language: string }
@@ -33,7 +54,8 @@ export type BackgroundMessage =
   // string | number is deliberate: translationPopup.ts forwards a `data-id`
   // attribute while api-service.ts sends a parsed integer, and both reach the
   // same RPC. Narrowing this to `string` would be a lie about the wire format.
-  | { type: 'ADD_WORD_TO_USERWORDS'; wordId: string | number };
+  | { type: 'ADD_WORD_TO_USERWORDS'; wordId: string | number }
+  | ({ type: 'BACKEND_FETCH' } & BackendRequest);
 
 // Messages a content script owns and handles.
 export type ContentScriptMessage =
