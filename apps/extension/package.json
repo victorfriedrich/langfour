@@ -10,7 +10,9 @@
     "analize": "parcel build manifest.json --config @parcel/config-webextension --reporter @parcel/reporter-bundle-analyzer --no-scope-hoist",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -29,16 +31,21 @@
     "@parcel/config-webextension": "^2.12.0",
     "@parcel/reporter-bundle-analyzer": "^2.12.0",
     "@parcel/transformer-inline-string": "^2.12.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/user-event": "^14.6.7",
     "@types/node": "^22.4.1",
     "bestzip": "^2.2.1",
     "buffer": "^6.0.3",
     "cpy-cli": "^5.0.0",
     "eslint": "^9.39.5",
+    "happy-dom": "^20.14.0",
     "parcel": "^2.12.0",
     "prettier": "3.3.3",
     "tslib": "^2.6.3",
     "typescript": "^5.6.2",
-    "typescript-eslint": "^8.46.0"
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^5.0.0"
   },
   "browserslist": [
     "last 1 Chrome version"

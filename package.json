@@ -5,7 +5,7 @@
   "license": "MIT",
   "description": "Langfour monorepo — web app, Chrome extension, and API.",
   "packageManager": "npm@10.9.0",
-  "engines": { "node": ">=20" },
+  "engines": { "node": "^22.12.0 || ^24.0.0 || >=26.0.0" },
   "workspaces": [
     "apps/web",
     "apps/extension"
@@ -25,6 +25,11 @@
     "lint:ext": "npm run lint --workspace=spotlight-lingo",
     "lint:api": "apps/api/.venv/bin/ruff check apps/api",
 
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:web": "vitest run --project web",
+    "test:ext": "vitest run --project extension",
+
     "api:install": "python3 -m venv apps/api/.venv && apps/api/.venv/bin/pip install -r apps/api/requirements-dev.txt",
     "api:test": "apps/api/.venv/bin/pytest apps/api",
 
@@ -32,6 +37,7 @@
     "corpus:upload": "apps/api/scripts/upload_corpus.sh"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "vitest": "^5.0.0"
   }
 }
