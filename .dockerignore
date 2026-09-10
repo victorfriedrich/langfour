@@ -16,6 +16,10 @@ apps/api/data/processed
 apps/api/data/archives
 apps/api/data/downloaded_files
 apps/api/data/youtube_thumbnails
+# The channel discovery store, ~2.9 GB. ytpipeline.py builds it and only
+# ytpipeline.py reads it; the API never opens it, and it is not in the
+# image. Without this line it is the build context, all on its own.
+apps/api/data/seeds
 
 # One-off scripts and tests are not part of the service.
 apps/api/scripts

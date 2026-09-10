@@ -9,7 +9,8 @@ ytpipeline.py - build a language-filtered list of YouTube videos.
     videos    uploads + videos.list  -> per-video data   2 units / channel
   selection
     classify  cached titles -> LLM verdict per channel   MODEL_FAST, cheap
-    expand    search.list top-viewed, gated channels     101 units / channel
+    expand    whole catalogue for gated channels         2 units / 50 videos,
+                                                         or 101 above ENUMERATE_MAX
     select    gates + per-video ranking -> video_queue   free
   ingestion
     ingest.py drains video_queue (Supabase) into transcripts
@@ -78,6 +79,20 @@ MAX_MINUTES, TOP_N, VIEW_BIAS = 33, 15, 0.9
 MUSIC_CATEGORY = "10"
 KEY_RE = re.compile(r"([?&]key=)[^&\s\"'<>]+")
 
+# Paging the uploads playlist costs 2*ceil(video_count/50) -- one playlistItems
+# unit per 50 ids, one videos.list unit per 50 videos. search.list is a flat 100,
+# plus 1 for the videos.list after it. The two cross at exactly 2,500 videos
+# (2*50 = 100 < 101; 2*51 = 102 > 101). Below the line enumeration is cheaper
+# *and* strictly better data: it returns the whole catalogue rather than a
+# top-50, so the per-video ranking sees everything the channel ever published.
+#
+# Above the line search.list earns its 100 units. The uploads playlist is
+# ordered newest-first, so a cheap partial enumeration would buy the most recent
+# N videos -- which is the recency bias expand() exists to correct. order=viewCount
+# is the only way to reach an old catalogue's best work without paying for all of it.
+ENUMERATE_MAX = 2_500
+ENUMERATE_PAGES = ENUMERATE_MAX // 50 + 2      # a hard stop on runaway pagination
+
 _LOCK_HANDLE = None            # open lock file; closing it releases the flock
 
 SCHEMA = """
@@ -92,7 +107,7 @@ CREATE TABLE IF NOT EXISTS channels (
     lang TEXT, lang_conf REAL,          -- from detect
     enriched_at TEXT, videos_at TEXT,   -- NULL = stage not run; also the TTL
     audio_lang TEXT, music_share REAL, note TEXT,
-    expanded_at TEXT,                   -- search.list top-viewed pull done
+    expanded_at TEXT,                   -- full-catalogue pull done, by either route
     classified_at TEXT, sensitivity REAL, intellectuality REAL
 );
 
@@ -101,9 +116,12 @@ CREATE TABLE IF NOT EXISTS videos (
     title TEXT, description TEXT, published_at TEXT,
     views INTEGER, likes INTEGER, comments INTEGER,
     duration_s INTEGER, category_id TEXT, audio_lang TEXT,
-    caption TEXT,                       -- 'true' = usable without transcription
+    caption TEXT,                       -- manual captions only; ASR is not counted
     live TEXT,
-    source TEXT NOT NULL DEFAULT 'uploads'  -- 'uploads' sample | 'search' top-viewed
+    -- 'uploads' recency sample (the only source channel statistics are computed
+    -- from) | 'search' top-viewed | 'catalog' full uploads-playlist enumeration
+    source TEXT NOT NULL DEFAULT 'uploads',
+    fetched_at TEXT                     -- when this row was last read from the API
 );
 
 CREATE TABLE IF NOT EXISTS done (stage TEXT, key TEXT, at TEXT, PRIMARY KEY (stage, key));
@@ -128,7 +146,7 @@ CREATE INDEX IF NOT EXISTS ix_effective_lang
 ADDED_COLUMNS = {
     "channels": ["expanded_at TEXT", "classified_at TEXT", "sensitivity REAL",
                  "intellectuality REAL"],
-    "videos": ["source TEXT NOT NULL DEFAULT 'uploads'"],
+    "videos": ["source TEXT NOT NULL DEFAULT 'uploads'", "fetched_at TEXT"],
 }
 
 # The one place the videos column list is spelled. It used to live in four --
@@ -140,7 +158,7 @@ ADDED_COLUMNS = {
 # keeps this tuple honest.
 VIDEO_COLS = ("video_id", "channel_id", "title", "description", "published_at",
               "views", "likes", "comments", "duration_s", "category_id",
-              "audio_lang", "caption", "live", "source")
+              "audio_lang", "caption", "live", "source", "fetched_at")
 VIDEO_COLUMNS = len(VIDEO_COLS)
 INSERT_VIDEO = ("INSERT OR {} INTO videos (" + ", ".join(VIDEO_COLS) + ") "
                 "VALUES (" + ", ".join("?" * VIDEO_COLUMNS) + ")")
@@ -383,16 +401,27 @@ class YouTube:
         self.used, self.budget = 0, budget
 
     def _call(self, resource, cost: int = 1, **kw) -> list[dict]:
+        """The items of one page. Most callers want nothing else."""
+        return self._page(resource, cost, **kw).get("items", [])
+
+    def _page(self, resource, cost: int = 1, **kw) -> dict:
         """Budget / Gone / RuntimeError -- decided here, where the typed
         HttpError still exists. Callers used to re-parse the rendered string to
-        recover what this method had just thrown away."""
+        recover what this method had just thrown away.
+
+        Returns the whole response, not just its items: pagination needs
+        nextPageToken, and a method that threw it away could not be resumed."""
         from googleapiclient.errors import HttpError
-        if self.used + cost > self.budget:
-            raise Budget("local budget reached")
-        self.used += cost
         for attempt in range(3):
+            # Charged per attempt, not per call. Each retry is a separately
+            # billed request at Google's end, so counting the call once let a
+            # flaky patch spend three times what --budget thought it had --
+            # 300 units for one retried search.list, reported as 100.
+            if self.used + cost > self.budget:
+                raise Budget("local budget reached")
+            self.used += cost
             try:
-                return resource().list(**kw).execute().get("items", [])
+                return resource().list(**kw).execute()
             except HttpError as exc:
                 reason = error_reason(exc)
                 if reason in QUOTA_REASONS:
@@ -410,18 +439,27 @@ class YouTube:
                 if attempt == 2:
                     raise RuntimeError(redact(str(exc))) from exc
             time.sleep(2 ** attempt)
-        return []
+        return {}
 
     def channels(self, ids: Sequence[str]) -> list[dict]:
         return self._call(self.api.channels, part=self.CHANNEL_PARTS,
                           id=",".join(ids), maxResults=50)
 
-    def playlist(self, playlist_id: str, n: int) -> list[str]:
+    def playlist(self, playlist_id: str, n: int, page_token: Optional[str] = None
+                 ) -> tuple[list[str], Optional[str]]:
+        """Video ids and the next page token, for one unit.
+
+        The token is what lets expand() page a whole catalogue; a single page is
+        still all the videos stage asks for."""
         if not 1 <= n <= 50:
             raise ValueError("playlist sample must be from 1 to 50")
-        items = self._call(self.api.playlistItems, part="contentDetails",
-                           playlistId=playlist_id, maxResults=n)
-        return [i["contentDetails"]["videoId"] for i in items]
+        request = dict(part="contentDetails", playlistId=playlist_id, maxResults=n)
+        if page_token:
+            request["pageToken"] = page_token
+        page = self._page(self.api.playlistItems, **request)
+        ids = [i["contentDetails"]["videoId"] for i in page.get("items", [])
+               if (i.get("contentDetails") or {}).get("videoId")]
+        return ids, page.get("nextPageToken")
 
     def videos(self, ids: Sequence[str]) -> list[dict]:
         return self._call(self.api.videos, part=self.VIDEO_PARTS,
@@ -666,7 +704,7 @@ def videos(db: sqlite3.Connection, yt: YouTube, lang: Optional[str],
     print(f"{len(todo):,} channels to fetch ({2 * len(todo):,} units)", flush=True)
     for n, (cid, uploads) in enumerate(todo, 1):
         try:
-            ids = yt.playlist(uploads, sample)
+            ids, _ = yt.playlist(uploads, sample)
             items = yt.videos(ids) if ids else []
         except Budget as why:
             # Distinguish "my --budget ran out" from "Google refused": the first
@@ -712,14 +750,209 @@ def video_rows(items: Sequence[dict], source: str = "uploads") -> list[tuple]:
             if (i.get("snippet") or {}).get("channelId")]
 
 
+def now_utc() -> str:
+    """SQLite's datetime('now') format, produced in Python.
+
+    Both spellings must agree: retention compares a Python-written fetched_at
+    against a SQL-written videos_at with julianday(), and a stray 'T' or a
+    timezone suffix would silently make every comparison NULL."""
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+
+
+def counted(value: Any) -> Optional[int]:
+    """None when the API omitted the field, which is not the same as zero.
+
+    likeCount is absent when the creator hides likes and commentCount when
+    comments are disabled -- both mean "unmeasurable", exactly as a hidden
+    subscriber count does. Collapsing them to 0 made a channel that switched
+    comments off look like one nobody bothered to comment on, and avg_reactions
+    carries 0.3 of the channel ranking."""
+    return None if value is None else int(value)
+
+
 def video_row(item: dict, source: str = "uploads") -> tuple:
     sn, st, cd = item["snippet"], item.get("statistics", {}), item.get("contentDetails", {})
     return (item["id"], sn.get("channelId"), (sn.get("title") or "").strip(),
             sn.get("description"), sn.get("publishedAt"),
-            int(st.get("viewCount") or 0), int(st.get("likeCount") or 0),
-            int(st.get("commentCount") or 0), seconds(cd.get("duration", "")),
+            int(st.get("viewCount") or 0), counted(st.get("likeCount")),
+            counted(st.get("commentCount")), seconds(cd.get("duration", "")),
             sn.get("categoryId"), sn.get("defaultAudioLanguage"),
-            cd.get("caption"), sn.get("liveBroadcastContent"), source)
+            cd.get("caption"), sn.get("liveBroadcastContent"), source, now_utc())
+
+
+# ───────────────────────────────────────────────────── stage: refresh ──
+#
+# The YouTube API Services Developer Policies treat everything this pipeline
+# stores as Non-Authorized Data: the store is built with an API key, not with
+# User Credentials, and III.E.4.d says an API Client "may temporarily store
+# limited amounts of Non-Authorized Data for as long as is necessary for the
+# purposes of the API Client but not longer than 30 calendar days."
+#
+# Read literally -- which is the reading applied here -- nothing may sit in the
+# store past the ceiling. So every row is either refreshed inside RETENTION_DAYS
+# or deleted, and `refresh` is the stage that guarantees it. That is also why
+# --stale-days defaults to 30: it was never a tuning knob.
+#
+# Deleting is the cheaper half and does most of the work. A channel below the
+# subscriber gate that has never been sampled cannot enter any future run, so
+# refreshing it buys nothing and dropping it retires the obligation outright.
+
+RETENTION_DAYS = 30
+
+
+def prune(db: sqlite3.Connection, min_subs: int) -> dict[str, int]:
+    """Delete stored API data no run can use. Free, and it shrinks the ceiling.
+
+    Kept: anything already sampled (videos_at set -- units were spent on it),
+    anything at or above the subscriber gate, and hidden counts, which are
+    unknown rather than small. Everything else is data being retained for
+    nothing."""
+    gone = {}
+    gone["not_returned"] = db.execute(
+        "DELETE FROM channels WHERE note='not_returned'").rowcount
+    # Below the gate and never sampled: it cannot become a candidate, because
+    # candidates() needs subscribers >= min_subs or a hidden count.
+    gone["below_gate"] = db.execute(
+        """DELETE FROM channels WHERE videos_at IS NULL
+             AND subscribers IS NOT NULL AND subscribers < ?""", (min_subs,)).rowcount
+    # No uploads playlist means the videos stage can never sample it.
+    gone["no_uploads"] = db.execute(
+        "DELETE FROM channels WHERE videos_at IS NULL AND uploads IS NULL").rowcount
+    gone["orphan_videos"] = db.execute(
+        """DELETE FROM videos WHERE channel_id NOT IN
+             (SELECT channel_id FROM channels)""").rowcount
+    db.commit()
+    # The point is to stop holding the data, not merely to stop reading it, so
+    # the pages are handed back rather than left in the freelist. VACUUM rewrites
+    # the whole file: minutes on a multi-GB store, and it needs room for a second
+    # copy while it runs.
+    print("  reclaiming space (VACUUM; this rewrites the file)...", flush=True)
+    db.execute("VACUUM")
+    return gone
+
+
+def overdue(db: sqlite3.Connection, retention_days: int) -> tuple[int, int]:
+    """(channels, videos) held past the ceiling. NULL counts as overdue: a row
+    with no timestamp cannot be shown to be inside it."""
+    channels = db.execute(
+        """SELECT COUNT(*) FROM channels WHERE enriched_at IS NULL
+             OR julianday('now') - julianday(enriched_at) > ?""",
+        (retention_days,)).fetchone()[0]
+    videos = db.execute(
+        """SELECT COUNT(*) FROM videos WHERE fetched_at IS NULL
+             OR julianday('now') - julianday(fetched_at) > ?""",
+        (retention_days,)).fetchone()[0]
+    return channels, videos
+
+
+def new_uploads(db: sqlite3.Connection, yt: YouTube, cid: str, uploads: str,
+                page: int = 50) -> list[str]:
+    """Video ids published since this channel was last read.
+
+    The uploads playlist is newest-first, so the first id already in the store
+    ends the walk. A channel that posted three videos costs one unit, whatever
+    the size of its catalogue -- which is what makes keeping the corpus current
+    affordable at all."""
+    known = {r[0] for r in db.execute(
+        "SELECT video_id FROM videos WHERE channel_id=?", (cid,))}
+    fresh: list[str] = []
+    token = None
+    for _ in range(ENUMERATE_PAGES):
+        ids, token = yt.playlist(uploads, page, token)
+        for vid in ids:
+            if vid in known:
+                return fresh
+            fresh.append(vid)
+        if not token:
+            break
+    return fresh
+
+
+def refresh_videos(db: sqlite3.Connection, yt: YouTube, ids: Sequence[str]) -> tuple[int, int]:
+    """Re-read stored video rows. Returns (refreshed, deleted).
+
+    A video the API no longer returns has been deleted or made private, so the
+    row is dropped rather than kept: under the literal reading there is no
+    version of "keep it, it is only a bit stale" available."""
+    refreshed = deleted = 0
+    sources = dict(db.execute(
+        "SELECT video_id, source FROM videos WHERE video_id IN (%s)"
+        % ",".join("?" * len(ids)), list(ids))) if ids else {}
+    for chunk in batched(ids, 50):
+        items = yt.videos(chunk)
+        rows = [video_row(i, sources.get(i["id"], "uploads")) for i in items
+                if (i.get("snippet") or {}).get("channelId")]
+        db.executemany(INSERT_VIDEO.format("REPLACE"), rows)
+        returned = {i["id"] for i in items}
+        missing = [(v,) for v in chunk if v not in returned]
+        db.executemany("DELETE FROM videos WHERE video_id=?", missing)
+        db.commit()
+        refreshed += len(rows)
+        deleted += len(missing)
+    return refreshed, deleted
+
+
+def refresh(db: sqlite3.Connection, yt: YouTube, min_subs: int,
+            retention_days: int = RETENTION_DAYS, page: int = 50,
+            pick_up_new: bool = False) -> None:
+    """Bring every retained row inside the ceiling, and drop the rest.
+
+    Compliance is prune + re-enrich + refresh-or-delete the video rows, which on
+    the current store is ~6,400 units a cycle against the 14,338 a blanket
+    re-enrich costs today -- deleting 89% of the channels is what pays for it.
+
+    Picking up newly published videos is a separate thing and off by default:
+    it keeps the corpus current, which the retention rule does not ask for, and
+    at one unit per tracked channel it costs more than the compliance half."""
+    before = overdue(db, retention_days)
+    dropped = prune(db, min_subs)
+    print("pruned " + "  ".join(f"{k} {v:,}" for k, v in dropped.items()), flush=True)
+
+    channels, videos_ = overdue(db, retention_days)
+    print(f"past the {retention_days}-day ceiling after pruning: "
+          f"{channels:,} channels, {videos_:,} videos "
+          f"(was {before[0]:,} / {before[1]:,})", flush=True)
+
+    enrich(db, yt, retention_days)             # the channel half, 1 unit / 50
+
+    if pick_up_new:
+        # Before the stale rows are refreshed: a video published since the last
+        # pass has no row to refresh, so it has to be fetched, not re-read.
+        tracked = db.execute(
+            "SELECT channel_id, uploads FROM channels "
+            "WHERE videos_at IS NOT NULL AND uploads IS NOT NULL").fetchall()
+        print(f"checking {len(tracked):,} tracked channels for new uploads "
+              f"({len(tracked):,}+ units)", flush=True)
+        added = 0
+        for n, (cid, uploads) in enumerate(tracked, 1):
+            try:
+                fresh = new_uploads(db, yt, cid, uploads, page)
+                if fresh:
+                    added += refresh_videos(db, yt, fresh)[0]
+            except Budget as why:
+                print(f"stopped picking up new uploads at {n:,}/{len(tracked):,}: {why}")
+                break
+            except Gone:
+                db.execute("UPDATE channels SET note='no_uploads' WHERE channel_id=?", (cid,))
+                db.commit()
+            except RuntimeError as exc:
+                print(f"  {cid}: {str(exc)[:100]}", flush=True)
+        print(f"{added:,} newly published videos added", flush=True)
+
+    stale = [r[0] for r in db.execute(
+        """SELECT video_id FROM videos WHERE fetched_at IS NULL
+             OR julianday('now') - julianday(fetched_at) > ?""", (retention_days,))]
+    print(f"refreshing {len(stale):,} video rows "
+          f"({-(-len(stale) // 50):,} units)", flush=True)
+    try:
+        done, removed = refresh_videos(db, yt, stale)
+        print(f"refreshed {done:,}, deleted {removed:,} that no longer exist")
+    except Budget as why:
+        print(f"stopped refreshing video rows: {why}")
+
+    left = overdue(db, retention_days)
+    print(f"still past the ceiling: {left[0]:,} channels, {left[1]:,} videos"
+          + ("  -- run again with more budget" if any(left) else "  -- clear"))
 
 
 # ═══════════════════════════════════════════════════════════ selection ══
@@ -757,8 +990,15 @@ class Gates:
 CHANNEL_STATS = """
     SELECT c.channel_id, c.title, c.subscribers, c.music_share,
            c.sensitivity, c.intellectuality, c.classified_at, c.expanded_at,
+           c.uploads, c.video_count,
            COUNT(*) AS n, AVG(v.views) AS avg_views,
-           AVG(COALESCE(v.likes, 0) + COALESCE(v.comments, 0)) AS avg_reactions,
+           -- Only videos where both counts are known. A video with comments
+           -- disabled cannot be averaged in as a zero, and COALESCE(...,0) here
+           -- would have undone the NULLs video_row now stores. A channel that
+           -- hides both everywhere gets NULL, which ratio() turns into None and
+           -- percentiles() scores 0.5 -- unmeasurable, so neither rewarded nor punished.
+           AVG(CASE WHEN v.likes IS NOT NULL AND v.comments IS NOT NULL
+                    THEN v.likes + v.comments END) AS avg_reactions,
            COUNT(*) * 1.0 / MAX(1.0, julianday(MAX(v.published_at))
                                      - julianday(MIN(v.published_at))) AS per_day
     FROM channels c JOIN videos v USING (channel_id)
@@ -895,20 +1135,74 @@ def classify(db: sqlite3.Connection, lang: str, g: Gates, limit: int,
 
 # ─────────────────────────────────────────────────────── stage: expand ──
 
+def enumerate_uploads(yt: YouTube, uploads: str, video_count: int) -> list[str]:
+    """Every video id in the uploads playlist, one unit per fifty."""
+    ids: list[str] = []
+    token = None
+    for _ in range(ENUMERATE_PAGES):
+        page, token = yt.playlist(uploads, 50, token)
+        ids.extend(page)
+        if not token or len(ids) >= video_count:
+            break
+    return ids
+
+
+def catalogue(yt: YouTube, channel_id: str, uploads: Optional[str],
+              video_count: Optional[int]) -> tuple[list[str], str]:
+    """Ids worth ranking for one channel, by whichever route is cheaper, and the
+    `source` they should be stored under.
+
+    A NULL video_count means the catalogue's size is unknown, so only
+    search.list can bound what the channel might cost."""
+    if uploads and video_count is not None and video_count <= ENUMERATE_MAX:
+        return enumerate_uploads(yt, uploads, video_count), "catalog"
+    return yt.search(channel_id), "search"
+
+
+def expand_cost(rows: Sequence[dict]) -> int:
+    """What expand() is about to spend, branch by branch."""
+    total = 0
+    for r in rows:
+        n = r["video_count"]
+        total += (2 * max(1, -(-n // 50)) if r["uploads"] and n is not None
+                  and n <= ENUMERATE_MAX else 101)
+    return total
+
+
 def expand(db: sqlite3.Connection, yt: YouTube, lang: str, g: Gates) -> None:
-    """Top-viewed videos for every channel that cleared all gates, LLM included.
+    """Every video worth ranking, for channels that cleared all gates.
+
+    Below ENUMERATE_MAX the uploads playlist is paged in full: cheaper than
+    search.list and it returns the whole catalogue rather than a top-50, so
+    queue_rows ranks over everything the channel published. Above it, search.list
+    by viewCount is the only way to reach an old catalogue's best work without
+    paying to page all of it.
+
     Merged with INSERT OR IGNORE so a video already in the uploads sample keeps
-    source='uploads' and stays part of the channel statistics."""
+    source='uploads' and stays part of the channel statistics -- neither route's
+    results may be counted there, one because it is top-viewed by construction
+    and the other because it spans the whole catalogue rather than a recency window.
+    """
     passed, funnel = qualified(db, lang, g, need_llm=True)
     todo = [r for r in passed if r["expanded_at"] is None]
-    # Reach first: 101 units buys the most where the typical video travels.
+    # Reach first: the units buy the most where the typical video travels.
     todo.sort(key=lambda r: -(r["avg_views"] or 0))
-    print(f"{len(todo):,} channels to expand ({101 * len(todo):,} units)", flush=True)
+    print(f"{len(todo):,} channels to expand (~{expand_cost(todo):,} units)", flush=True)
     for n, r in enumerate(todo, 1):
         cid = r["channel_id"]
+        # Nothing left to buy: the store already holds the whole catalogue, so
+        # either route would spend units re-fetching rows that are already here.
+        held = db.execute("SELECT COUNT(*) FROM videos WHERE channel_id=?",
+                          (cid,)).fetchone()[0]
+        if r["video_count"] is not None and held >= r["video_count"]:
+            db.execute("UPDATE channels SET expanded_at=datetime('now') "
+                       "WHERE channel_id=?", (cid,))
+            db.commit(); continue
         try:
-            ids = yt.search(cid)
-            items = yt.videos(ids) if ids else []
+            ids, source = catalogue(yt, cid, r["uploads"], r["video_count"])
+            items = []
+            for chunk in batched(ids, 50):
+                items.extend(yt.videos(chunk))
         except Budget as why:
             print(f"stopped at {n:,}/{len(todo):,}: {why or 'local budget reached'}")
             break
@@ -922,7 +1216,7 @@ def expand(db: sqlite3.Connection, yt: YouTube, lang: str, g: Gates) -> None:
             print(f"  {cid}: {str(exc)[:100]}", flush=True)
             continue                             # no stamp: retried next run
         if items:
-            db.executemany(INSERT_VIDEO.format("IGNORE"), video_rows(items, "search"))
+            db.executemany(INSERT_VIDEO.format("IGNORE"), video_rows(items, source))
         db.execute("UPDATE channels SET expanded_at=datetime('now') WHERE channel_id=?", (cid,))
         db.commit()
         if n % 20 == 0:
@@ -1076,6 +1370,10 @@ def report(db: sqlite3.Connection) -> None:
     cap = db.execute("SELECT COALESCE(SUM(caption='true'), 0), COUNT(*) FROM videos").fetchone()
     if cap[1]:
         print(f"  with captions {cap[0]:>9,}  ({100 * cap[0] / cap[1]:.0f}%)")
+    late = overdue(db, RETENTION_DAYS)
+    print(f"past the {RETENTION_DAYS}-day retention ceiling"
+          f"  {late[0]:>9,} channels, {late[1]:,} videos"
+          + ("" if any(late) else "   (clear)"))
     print("\nby language (channels with >=10k subs):")
     for lang, n in db.execute("""SELECT COALESCE(audio_lang, lang) l, COUNT(*)
                                  FROM channels WHERE subscribers >= 10000 AND l IS NOT NULL
@@ -1123,8 +1421,14 @@ def add(db: sqlite3.Connection, yt: YouTube, lang: str, reference: str,
     # The operator asserts the language; detect() would only see a description.
     db.execute("UPDATE channels SET lang=?, lang_conf=1.0, videos_at=datetime('now'), "
                "expanded_at=datetime('now') WHERE channel_id=?", (lang, cid))
-    items = yt.videos(yt.search(cid)) or []
-    db.executemany(INSERT_VIDEO.format("IGNORE"), video_rows(items, "search"))
+    details, stats = found[0].get("contentDetails", {}), found[0].get("statistics", {})
+    ids, source = catalogue(yt, cid,
+                            details.get("relatedPlaylists", {}).get("uploads"),
+                            int(stats["videoCount"]) if stats.get("videoCount") else None)
+    items = []
+    for chunk in batched(ids, 50):
+        items.extend(yt.videos(chunk))
+    db.executemany(INSERT_VIDEO.format("IGNORE"), video_rows(items, source))
     db.commit()
 
     title = found[0].get("snippet", {}).get("title") or cid
@@ -1154,13 +1458,18 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("stage",
-                   choices="harvest enrich detect videos classify expand select add report".split())
+                   choices=("harvest enrich detect videos classify expand select add "
+                            "refresh prune report").split())
     p.add_argument("--db", type=Path, default=DB)
     p.add_argument("--budget", type=int, default=9000, help="quota units")
     p.add_argument("--lang", help="ISO 639-1, e.g. es")
     p.add_argument("--sample", type=sample_size, default=50,
                    help="videos: uploads sampled per channel (1-50; one API page)")
-    p.add_argument("--stale-days", type=int, default=30, help="re-enrich after N days")
+    # Not a tuning knob: the Developer Policies cap retention of Non-Authorized
+    # Data -- which is all of it, since the store is built with an API key -- at
+    # 30 calendar days. Raising it puts the store outside that ceiling.
+    p.add_argument("--stale-days", type=int, default=RETENTION_DAYS,
+                   help="refresh-or-delete ceiling in days (policy limit: 30)")
     p.add_argument("--crawls", nargs="*", default=CRAWLS)
     gates = p.add_argument_group("selection gates")
     gates.add_argument("--min-subs", type=int, default=10_000,
@@ -1177,6 +1486,9 @@ def main() -> None:
                        help="skip channels the classifier rates less explanatory than this")
     gates.add_argument("--min-sample", type=int, default=5,
                        help="sampled uploads needed before a channel can be judged")
+    p.add_argument("--new-uploads", action="store_true",
+                   help="refresh: also pick up videos published since the last pass "
+                        "(one unit per tracked channel; not required by retention)")
     p.add_argument("--limit", type=int, default=10_000, help="classify: channels per run")
     p.add_argument("--top", type=int, default=TOP_N, help="select: videos per channel")
     p.add_argument("--channel", help="add: a UC id, channel URL, or @handle")
@@ -1217,6 +1529,10 @@ def main() -> None:
         elif not a.out:
             print("dry run: pass --push to queue, --out to inspect")
         return
+    if a.stage == "prune":
+        dropped = prune(db, g.min_subs)
+        print("pruned " + "  ".join(f"{k} {v:,}" for k, v in dropped.items()))
+        return report(db)
     if a.stage == "harvest":
         harvest(db, a.crawls)
     elif a.stage == "detect":
@@ -1227,6 +1543,8 @@ def main() -> None:
         yt = YouTube(a.budget)
         if a.stage == "enrich":
             enrich(db, yt, a.stale_days)
+        elif a.stage == "refresh":
+            refresh(db, yt, g.min_subs, a.stale_days, a.sample, a.new_uploads)
         elif a.stage == "videos":
             videos(db, yt, a.lang, g.min_subs, a.sample)
         else:

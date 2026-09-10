@@ -83,6 +83,79 @@ def cleanup_files(*filenames):
         except Exception as e:
             print(f"Error deleting file {filename}: {e}")
 
+# A caption track's label is a claim, not a guarantee. One video in the corpus
+# publishes a track tagged 'pt-BR' whose text is byte-identical to its Catalan
+# track -- a creator uploading the wrong file. No amount of code-matching can
+# see that, because the mislabelling is in YouTube's own data, so the text is
+# checked after it is fetched. A Catalan transcript filed under Portuguese is
+# exactly the kind of thing a language-learning corpus must not absorb.
+MIN_TRANSCRIPT_CHARS = 200
+
+
+def transcript_language_matches(text: str, language: str) -> bool:
+    """False only when the detector is confident the text is another language.
+
+    Abstains on short or unreadable text rather than rejecting it: the cost of
+    a false rejection is a Whisper run, but the cost of a false acceptance is a
+    permanently poisoned pool, and most transcripts are neither."""
+    global _DETECTOR
+    try:
+        # Reused from ytpipeline rather than restated, so the transcript check
+        # and channel detection cannot drift apart on thresholds or noise rules.
+        from ytpipeline import clean, DETECT_LANGS, MIN_CONF
+        body = clean(text)
+        if len(body) < MIN_TRANSCRIPT_CHARS:
+            return True
+        from lingua import Language, LanguageDetectorBuilder
+        if _DETECTOR is None:
+            _DETECTOR = (LanguageDetectorBuilder
+                         .from_languages(*[getattr(Language, n) for n in DETECT_LANGS])
+                         .with_preloaded_language_models().build())
+    except ImportError:
+        # Fail open. This is a guard against bad upstream data, not a gate on
+        # ingestion: a deployment without lingua should still build a corpus.
+        return True
+    values = _DETECTOR.compute_language_confidence_values(body[:4000])
+    if not values or values[0].value < MIN_CONF:
+        return True
+    return values[0].language.iso_code_639_1.name.lower() == language.lower()
+
+
+_DETECTOR = None
+
+
+def fetch_transcript(video_id: str, language: str):
+    """Caption cues for `language`, matched on the primary subtag.
+
+    YouTube's track codes are inconsistent -- bare 'es' on one video, 'pt-BR',
+    'en-US' or 'de-DE' on the next -- while `language` is always a bare ISO
+    639-1 code, because require_code() normalises it. The library compares the
+    two with `in`, an exact dict-key lookup (still true in 1.2.4), so asking for
+    ['pt'] cannot match a track published as 'pt-BR' and the video is reported
+    as having no captions at all. Spanish publishes bare 'es' and hid this;
+    Portuguese and English do not.
+
+    Raises NoTranscriptFound when nothing matches, which main() now treats as a
+    reason to transcribe the audio rather than as the end of the video.
+    """
+    # 1.x is instance-based; list_transcripts/get_transcript no longer exist.
+    # The upgrade off 0.6.2 was not cosmetic: that version still listed a
+    # video's caption tracks but its timedtext fetch returned an empty body
+    # against current YouTube, so every fetch died in xml.etree with ParseError.
+    # Measured on real videos: 0/7 fetched on 0.6.2, 4/7 on 1.2.4 -- the other
+    # three being genuine TranscriptsDisabled, which Whisper now picks up.
+    available = YouTubeTranscriptApi().list(video_id)
+    codes = [t.language_code for t in available]
+    target = language.lower()
+    matching = [c for c in codes if c.split('-')[0].lower() == target]
+    if not matching:
+        raise NoTranscriptFound(video_id, [language], available)
+    # Exact code first, then regional variants in the order YouTube listed them.
+    # find_transcript itself prefers a manually created track over an ASR one.
+    matching.sort(key=lambda c: (c.lower() != target, codes.index(c)))
+    return available.find_transcript(matching).fetch()
+
+
 def main(url, language: str, use_transcript_api=True):
     
     # Was an if/elif ending in an unguarded `else: 'de'`, so an ISO code
@@ -122,27 +195,50 @@ def main(url, language: str, use_transcript_api=True):
         process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
         return
 
+    # Captions when they exist, Whisper when they do not. This used to raise on
+    # a missing or disabled track, which ended the video: ingest.transcribe()
+    # caught the exception and wrote status='failed', permanently. The audio
+    # path below was unreachable from the queue, because ingest calls main()
+    # with two arguments and the default left use_transcript_api True -- so
+    # moviepy, pytubefix and the Whisper client were all shipped for a branch
+    # nothing could enter, while the library rot below silently failed
+    # every single video.
+    transcript = None
     if use_transcript_api:
         try:
             start_time = time.time()
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[language])
-            # TODO: Localize based on language
-            # Música
-            merged_text = ' '.join(
-                item['text'] for item in transcript if item['text'] != '[Musik]'
-            )
+            transcript = fetch_transcript(video_id, language)
+            print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
+        except Exception as e:
+            # Deliberately any failure, not just the library's two typed ones.
+            # youtube_transcript_api is a scraper, and a scraper's failure mode
+            # is not always a tidy exception: 0.6.2 listed caption tracks fine
+            # but returned an empty body when it fetched one, surfacing as an
+            # xml.etree ParseError that no `except` here named. Narrowing this
+            # back to (TranscriptsDisabled, NoTranscriptFound) would let the
+            # next round of rot -- and there will be one -- end videos that
+            # Whisper could have transcribed.
+            print(f"No usable '{language}' captions for {video_id} "
+                  f"({type(e).__name__}: {str(e).splitlines()[0][:120]}); "
+                  f"falling back to audio transcription")
+
+    if transcript is not None:
+        # TODO: Localize based on language
+        # Música
+        # 1.x yields FetchedTranscriptSnippet objects, not dicts.
+        merged_text = ' '.join(
+            snippet.text for snippet in transcript if snippet.text != '[Musik]'
+        )
+        if transcript_language_matches(merged_text, language):
             with open(txt_filename, "w", encoding='utf-8') as txt_file:
                 txt_file.write(merged_text)
-            end_time = time.time()
-            print(f"Transcript fetched and saved in {end_time - start_time:.2f} seconds")
             process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
-        except TranscriptsDisabled:
-            raise Exception(f"Subtitles are disabled for video {video_id}.")
-        except NoTranscriptFound:
-            raise Exception(f"No transcripts found for language '{language}' for video {video_id}.")
-        except Exception as e:
-            raise Exception(f"Error fetching transcript via YouTubeTranscriptApi for video {video_id}: {str(e)}")
-    else:
+            return
+        print(f"Caption track for {video_id} is labelled '{language}' but reads as "
+              f"another language; ignoring it and transcribing the audio instead")
+        transcript = None
+
+    if transcript is None:
         mp4_filename = download_video(url)
         if mp4_filename:
             mp3_filename = mp4_filename
