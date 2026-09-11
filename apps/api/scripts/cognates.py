@@ -20,23 +20,13 @@ load_dotenv()
 from llm_client import client
 from models import MODEL_SMART
 from supabase_client import supabase
+from utils import parse_chatgpt_output
 
 
 def fetch_words(batch_size: int = 50, offset: int = 0) -> list[dict]:
     """Fetch words from the database with given batch size and offset."""
     response = supabase.table("words").select("id, root").range(offset, offset + batch_size - 1).execute()
     return response.data
-
-def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
-    """Extract JSON output from ChatGPT's response."""
-    start = output.find(startChar)
-    end = output.rfind(endChar)
-    
-    if start == -1 or end == -1 or start > end:
-        raise ValueError("No valid JSON object found in the output")
-    
-    json_content = output[start:end+1]
-    return json_content
 
 def analyze_cognates(words: list[dict]) -> list[dict]:
     """Analyze the words to determine their cognates using ChatGPT."""

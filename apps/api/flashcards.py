@@ -364,7 +364,9 @@ async def process_missing_words(
         word = item.get("word")
         if not word:
             continue
-        words_for_verification.append({"root": word.lower()})
+        # Plain strings: verify_language() formats each into a bullet list, so
+        # passing dicts here rendered "- {'root': 'ciao'}" into the prompt.
+        words_for_verification.append(word.lower())
 
     try:
         problematic_words = verify_language(words_for_verification, language)
@@ -382,7 +384,7 @@ async def process_missing_words(
             continue
 
         root_info = get_word_root(word, language)
-        if not root_info or "key" not in root_info:
+        if not root_info:
             continue
 
         try:
