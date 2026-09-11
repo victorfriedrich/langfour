@@ -5,7 +5,7 @@ from scripts.build_corpus_metadata import build
 
 def test_build_adds_titles_to_legacy_manifest(tmp_path):
     filenames = ["first_processed.json", "second_processed.json"]
-    for filename, title in zip(filenames, ["First", "Second"]):
+    for filename, title in zip(filenames, ["First", "Second"], strict=False):
         (tmp_path / filename).write_text(json.dumps({"title": title}), encoding="utf-8")
 
     manifest_path = tmp_path / "document_term_matrix.npz.meta.json"

@@ -17,7 +17,9 @@ from postgrest.exceptions import APIError
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
-from supabase_client import supabase, SUPABASE_URL as url, SUPABASE_KEY as key  # noqa: E402
+from supabase_client import SUPABASE_KEY as key
+from supabase_client import SUPABASE_URL as url
+from supabase_client import supabase
 
 if not url or not key:
     print("ERROR: SUPABASE_URL and SUPABASE_KEY must be set in your .env file.")

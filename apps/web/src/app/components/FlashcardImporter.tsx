@@ -64,7 +64,7 @@ const VocabularyImporter = ({ onBack, onComplete }) => {
       const data = await response.json();
       setIsUploading(false);
       setUploadProgress(100);
-      onComplete && onComplete(data);
+      onComplete?.(data);
     } catch (error) {
       setIsUploading(false);
       setUploadError(error.message || 'Upload failed');
@@ -107,7 +107,7 @@ const VocabularyImporter = ({ onBack, onComplete }) => {
       const data = await response.json();
       setIsUploading(false);
       setUploadProgress(100);
-      onComplete && onComplete(data);
+      onComplete?.(data);
     } catch (error) {
       setIsUploading(false);
       setUploadError(error.message || 'Upload failed');
@@ -162,7 +162,7 @@ const VocabularyImporter = ({ onBack, onComplete }) => {
               Back
             </button>
             <h2 className="text-2xl font-semibold text-gray-900 leading-tight">Import vocabulary</h2>
-            <p className="mt-2 text-base text-gray-500">Choose how you'd like to add new vocabulary to your collection</p>
+            <p className="mt-2 text-base text-gray-500">Choose how you&apos;d like to add new vocabulary to your collection</p>
           </div>
           
           {/* Import options */}
@@ -388,7 +388,7 @@ const VocabularyImporter = ({ onBack, onComplete }) => {
                       <>
                         <li className="flex items-start">
                           <span className="text-indigo-500 mr-1">•</span>
-                          Export your Quizlet set as a CSV. If you're not the owner, you have to create a copy first.
+                          Export your Quizlet set as a CSV. If you&apos;re not the owner, you have to create a copy first.
                         </li>
                         <li className="flex items-start">
                           <span className="text-indigo-500 mr-1">•</span>

@@ -1,6 +1,8 @@
-from PIL import Image, ImageDraw, ImageFont
-import requests
 from io import BytesIO
+
+import requests
+from PIL import Image, ImageDraw, ImageFont
+
 
 def create_thumbnail_collage(videos):
     # Calculate grid dimensions
@@ -26,7 +28,7 @@ def create_thumbnail_collage(videos):
     # Try to load a font, fall back to default if not available
     try:
         font = ImageFont.truetype("Arial.ttf", 15)
-    except:
+    except OSError:
         font = ImageFont.load_default()
 
     for idx, video in enumerate(videos):
@@ -53,7 +55,7 @@ def create_thumbnail_collage(videos):
             draw.text((x, y + thumb_height + 5), wrapped_title, font=font, fill='black')
             
         except Exception as e:
-            print(f"Error processing video {video['id']}: {str(e)}")
+            print(f"Error processing video {video['id']}: {e!s}")
 
     return canvas
 

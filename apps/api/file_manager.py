@@ -1,12 +1,12 @@
-import os
 import json
-from typing import List, Tuple, Dict
+import os
+
 from paths import PROCESSED_DIR, processed_dir
 
 # Global cache for categories
-language_categories_cache: Dict[str, List[dict]] = {}
+language_categories_cache: dict[str, list[dict]] = {}
 
-def load_categories_for_language(language: str) -> List[dict]:
+def load_categories_for_language(language: str) -> list[dict]:
     if language == 'it':
         return [
             {"category": 'Documentaries', "icon": None},
@@ -26,7 +26,7 @@ def load_categories_for_language(language: str) -> List[dict]:
         print(categories)
         return categories
     except Exception as e:
-        print(f"Error loading categories for {language}: {str(e)}")
+        print(f"Error loading categories for {language}: {e!s}")
         return []
 
 def initialize_categories():
@@ -37,7 +37,7 @@ def initialize_categories():
         print(language)
         language_categories_cache[language] = load_categories_for_language(language)
 
-def load_documents(base_folder: str) -> Tuple[List[List[int]], List[str], List[str], List[str]]:
+def load_documents(base_folder: str) -> tuple[list[list[int]], list[str], list[str], list[str]]:
     """
     Load all documents from the base_folder. Extract category from each JSON file.
     Instead of loading full JSON content (which contains dictionaries for each word),
@@ -58,7 +58,7 @@ def load_documents(base_folder: str) -> Tuple[List[List[int]], List[str], List[s
         if filename.endswith('.json') and not filename.endswith('.npz.meta.json'):
             file_path = os.path.join(base_folder, filename)
             try:
-                with open(file_path, 'r', encoding='utf-8') as file:
+                with open(file_path, encoding='utf-8') as file:
                     data = json.load(file)
                     
                     # Extract category (log error if not set)
@@ -90,11 +90,11 @@ def get_category_icon(base_folder: str, category: str) -> str:
         return icon_path
     return None
 
-def get_categories_with_icons(base_folder: str = None) -> List[Dict[str, str]]:
+def get_categories_with_icons(base_folder: str | None = None) -> list[dict[str, str]]:
     categories = []
     if base_folder is None:
         base_folder = str(PROCESSED_DIR)
-    documents, _, categories_list, _ = load_documents(base_folder)
+    _documents, _, categories_list, _ = load_documents(base_folder)
     unique_categories = set(categories_list)
     for category in unique_categories:
         icon = get_category_icon(base_folder, category)

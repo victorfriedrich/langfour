@@ -10,7 +10,6 @@ sentinel value "invalid" into the same column to mark a word for review.
 import json
 import os
 import sys
-from typing import Dict, List
 
 from dotenv import load_dotenv
 
@@ -18,12 +17,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
 
-from llm_client import client  # noqa: E402
-from models import MODEL_SMART  # noqa: E402
-from supabase_client import supabase  # noqa: E402
+from llm_client import client
+from models import MODEL_SMART
+from supabase_client import supabase
 
 
-def fetch_words(batch_size: int = 50, offset: int = 0) -> List[Dict]:
+def fetch_words(batch_size: int = 50, offset: int = 0) -> list[dict]:
     """Fetch words from the database with given batch size and offset."""
     response = supabase.table("words").select("id, root").range(offset, offset + batch_size - 1).execute()
     return response.data
@@ -39,7 +38,7 @@ def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
     json_content = output[start:end+1]
     return json_content
 
-def analyze_cognates(words: List[Dict]) -> List[Dict]:
+def analyze_cognates(words: list[dict]) -> list[dict]:
     """Analyze the words to determine their cognates using ChatGPT."""
     word_list = [word['root'] for word in words]
     prompt = f"""Analyze the following Spanish words and determine if they are similar to an English or French word with the same meaning. 
@@ -67,7 +66,7 @@ def analyze_cognates(words: List[Dict]) -> List[Dict]:
 
     return [{"id": word['id'], "root": word['root'], "cognate": cognates.get(word['root'], None)} for word in words]
 
-def update_cognates(cognate_data: List[Dict]):
+def update_cognates(cognate_data: list[dict]):
     """Update the cognate information in the database for existing words."""
     word_ids = [data['id'] for data in cognate_data]
     

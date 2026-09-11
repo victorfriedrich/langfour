@@ -58,7 +58,7 @@ export default function InstructionsPage() {
               <h2 className="font-medium">Enable Developer Mode</h2>
             </div>
             <p className="text-sm text-gray-600 ml-9">
-              Find and enable the "Developer mode" toggle in the top right corner
+              Find and enable the &quot;Developer mode&quot; toggle in the top right corner
             </p>
           </div>
 
@@ -70,7 +70,7 @@ export default function InstructionsPage() {
               <h2 className="font-medium">Load the Extension</h2>
             </div>
             <p className="text-sm text-gray-600 ml-9">
-              Click "Load unpacked" and select the unzipped folder
+              Click &quot;Load unpacked&quot; and select the unzipped folder
             </p>
           </div>
         </div>

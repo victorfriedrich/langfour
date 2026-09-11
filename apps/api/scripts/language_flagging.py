@@ -16,7 +16,6 @@ temperature 0.7.
 import json
 import os
 import sys
-from typing import Dict, List
 
 from dotenv import load_dotenv
 
@@ -24,13 +23,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
 
-from languages import require_code  # noqa: E402
-from llm_client import client  # noqa: E402
-from models import MODEL_FAST, MODEL_SMART  # noqa: E402
-from supabase_client import supabase  # noqa: E402
+from languages import require_code
+from llm_client import client
+from models import MODEL_FAST
+from supabase_client import supabase
 
 
-def fetch_words(language: str, batch_size: int = 40, offset: int = 0) -> List[Dict]:
+def fetch_words(language: str, batch_size: int = 40, offset: int = 0) -> list[dict]:
     """Words to check, skipping the ones that came from a trusted reference list.
 
     source = "CREA" marks rows seeded from the CREA frequency corpus, which is
@@ -52,7 +51,7 @@ def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
     json_content = output[start:end+1]
     return json_content
 
-def verify_language(words: List[Dict], language: str) -> List[str]:
+def verify_language(words: list[dict], language: str) -> list[str]:
     word_entries = [
         f"{word['root']} (translation: {word.get('translation', 'NONE')})"
         for word in words
@@ -99,7 +98,7 @@ def verify_language(words: List[Dict], language: str) -> List[str]:
     return non_language_words
 
 
-def flag_non_language_words(non_language_words: List[str], all_words: List[Dict]):
+def flag_non_language_words(non_language_words: list[str], all_words: list[dict]):
     # Update flagged status in the database
     print("flagging " + str(non_language_words))
     word_ids_to_flag = [word['id'] for word in all_words if word['root'] in non_language_words]
@@ -130,7 +129,7 @@ def main(language: str, offset: int = 0):
             else:
                 print(f"No non-{language} or misspelled words found in this batch.")
         except Exception as e:
-            print(f"Error filtering non-{language} words: {str(e)}")
+            print(f"Error filtering non-{language} words: {e!s}")
 
         offset += batch_size
         print(offset)

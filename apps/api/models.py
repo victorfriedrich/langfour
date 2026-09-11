@@ -28,4 +28,4 @@ MODEL_FAST = os.getenv("LLM_MODEL_FAST", "deepseek/deepseek-v4-flash")
 # throughput.
 MODEL_TRANSCRIBE = os.getenv("LLM_MODEL_TRANSCRIBE", "openai/whisper-large-v3-turbo")
 
-__all__ = ["MODEL_SMART", "MODEL_FAST", "MODEL_TRANSCRIBE"]
+__all__ = ["MODEL_FAST", "MODEL_SMART", "MODEL_TRANSCRIBE"]

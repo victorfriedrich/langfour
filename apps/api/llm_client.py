@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Type, TypeVar
+from typing import Any, TypeVar
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -87,11 +87,11 @@ def transcription_client() -> OpenAI:
 T = TypeVar("T", bound=BaseModel)
 
 
-def parse_structured(
+def parse_structured[T: BaseModel](
     *,
     model: str,
     messages: list[dict[str, Any]],
-    schema_model: Type[T],
+    schema_model: type[T],
     reasoning: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> T:
@@ -157,7 +157,7 @@ def parse_structured(
                 content = content[start : end + 1]
             return schema_model.model_validate(json.loads(content))
 
-        except Exception as exc:  # noqa: BLE001 - deliberately broad, we retry
+        except Exception as exc:
             last_error = exc
             if i + 1 < len(attempts):
                 log.warning(
@@ -169,9 +169,9 @@ def parse_structured(
 
 
 __all__ = [
-    "client",
-    "transcription_client",
-    "parse_structured",
-    "OPENROUTER_BASE_URL",
     "DEEPINFRA_BASE_URL",
+    "OPENROUTER_BASE_URL",
+    "client",
+    "parse_structured",
+    "transcription_client",
 ]

@@ -19,16 +19,16 @@ bulk delete calls for. Pass one to repair a single video.
 import json
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from database import identify_word_id, initialize_cache, word_cache  # noqa: E402
-from languages import to_code  # noqa: E402
-from paths import processed_dir, processed_file  # noqa: E402
+from database import identify_word_id, initialize_cache, word_cache
+from languages import to_code
+from paths import processed_dir, processed_file
 
 
-def reparse_missing_words(content: List[Dict[str, Any]], word_cache: Dict[str, Dict[str, int]], language: str, source: str) -> List[Dict[str, Any]]:
+def reparse_missing_words(content: list[dict[str, Any]], word_cache: dict[str, dict[str, int]], language: str, source: str) -> list[dict[str, Any]]:
     """Re-resolve every token whose id is no longer in the cache.
 
     `source` is threaded through for the disabled add_to_dictionary path below and
@@ -62,7 +62,7 @@ def reparse_missing_words(content: List[Dict[str, Any]], word_cache: Dict[str, D
     
     return reparsed_content
 
-def process_youtube_script(script_json: str, word_cache: Dict[str, Dict[str, int]], language: str, source: str) -> str:
+def process_youtube_script(script_json: str, word_cache: dict[str, dict[str, int]], language: str, source: str) -> str:
     data = json.loads(script_json)
     data['content'] = reparse_missing_words(data['content'], word_cache, language, source)
     return json.dumps(data, ensure_ascii=False, indent=2)
@@ -86,7 +86,7 @@ def process_video_id(id: str, language: str):
         print(f"File not found: {file_path}")
         return
     
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, encoding='utf-8') as f:
         script_json = f.read()
         updated_json = process_youtube_script(script_json, word_cache, language, id)
     

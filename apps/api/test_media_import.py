@@ -19,7 +19,8 @@ def test_import_media_writes_catalog_and_recommender_file(tmp_path):
             {"timestamp": [3, 5], "text": "Hasta luego."},
         ],
     }
-    parser = lambda groups, source, language: [{"content": "hola", "id": 42}]
+    def parser(groups, source, language):
+        return [{"content": "hola", "id": 42}]
 
     result = import_media(payload, parser, lambda text: [text], tmp_path / "media", tmp_path / "processed")
 

@@ -1,31 +1,37 @@
-from videothumbnailcreation import create_thumbnail_collage
-from pydantic import BaseModel
-import os
-import time
-import logging
-from dotenv import load_dotenv
 import json
-from typing import List, Dict
-from fastapi import HTTPException
-import traceback
-from database import (
-    save_to_supabase,
-    identify_word_id,
-    get_missing_words_from_db,
-    add_and_flag_wordform,
-    get_or_create_translation,
-    find_root_by_wordform_id
-)
+import logging
+import time
 from itertools import groupby
-from utils import is_special_character, parse_chatgpt_output, SPECIAL_CHARACTERS
-from languages import require_code
-from instructionmanager import INSTRUCTION_VERBS, INSTRUCTION_NOUNS, INSTRUCTION_ADJECTIVE, INSTRUCTION_SUMMARIZE, INSTRUCTION_FILTER_LANGUAGE, INSTRUCTION_ROOT_FORM, INSTRUCTION_CATEGORIZE, INSTRUCTION_HIGH_LEVEL_TAG, INSTRUCTION_VERIFY_LANGUAGE, INSTRUCTION_TRANSLATE, INSTRUCTION_VERIFY_NEW_WORD
-from models import MODEL_SMART, MODEL_FAST
-from llm_client import client, parse_structured
-from pydantic import BaseModel
-from typing import Literal, Optional, Tuple
 
-VALID_CATEGORIES: List[str] = [
+from dotenv import load_dotenv
+from fastapi import HTTPException
+from pydantic import BaseModel
+
+from database import (
+    add_and_flag_wordform,
+    find_root_by_wordform_id,
+    get_missing_words_from_db,
+    get_or_create_translation,
+    identify_word_id,
+    save_to_supabase,
+)
+from instructionmanager import (
+    INSTRUCTION_ADJECTIVE,
+    INSTRUCTION_CATEGORIZE,
+    INSTRUCTION_FILTER_LANGUAGE,
+    INSTRUCTION_NOUNS,
+    INSTRUCTION_ROOT_FORM,
+    INSTRUCTION_SUMMARIZE,
+    INSTRUCTION_TRANSLATE,
+    INSTRUCTION_VERBS,
+    INSTRUCTION_VERIFY_NEW_WORD,
+)
+from languages import require_code
+from llm_client import client, parse_structured
+from models import MODEL_FAST, MODEL_SMART
+from utils import SPECIAL_CHARACTERS, is_special_character, parse_chatgpt_output
+
+VALID_CATEGORIES: list[str] = [
     "Beauty & Fashion", "Health & Fitness", "Products & Tech", "Gaming", "Anime",
     "Movies", "Reactions & Commentary", "Challenges & Experiments", "Comedy",
     "Travel", "Documentaries", "Cooking", "Science",
@@ -62,7 +68,7 @@ def filter_entities(text: str, language: str) -> str:
 
         return cleaned_text
     except Exception as e:
-        raise Exception(f"Error filtering non-Spanish words: {e}")
+        raise Exception(f"Error filtering non-Spanish words: {e}") from e
     
 def get_tags(title: str, text: str):
     text = text[:2000] + "..."
@@ -83,7 +89,7 @@ def get_tags(title: str, text: str):
     except Exception as e:
         error_message = str(e)
         if "content filtering" in error_message or "Error code: 400" in error_message:
-            raise Exception(f"Generating Keywords for {title} violates Azure Content Policy")
+            raise Exception(f"Generating Keywords for {title} violates Azure Content Policy") from e
         else:
             print(f"An unexpected error occurred: {error_message}")
         return ["Failed"]
@@ -92,7 +98,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 # (Make sure you have a StreamHandler or FileHandler attached to the logger!)
 
-def get_high_level_tag(title: str, tags: List[str]) -> str:
+def get_high_level_tag(title: str, tags: list[str]) -> str:
     system_prompt = (
         "You are a classifier.  Given a video Title and Tags, you must choose "
         "exactly one of the following high-level categories:"
@@ -144,7 +150,7 @@ def get_high_level_tag(title: str, tags: List[str]) -> str:
             return "Failed"
 
         # 3) Log raw content so you can see what JSON came back
-        logger.debug(f"raw content: {repr(msg.content)}")
+        logger.debug(f"raw content: {msg.content!r}")
 
         # 4) Try parsing
         try:
@@ -161,7 +167,7 @@ def get_high_level_tag(title: str, tags: List[str]) -> str:
             logger.error(f"Returned category not in VALID_CATEGORIES: {category}")
             return "Failed"
 
-    except Exception as e:
+    except Exception:
         # 6) Catch-all for networking, schema errors, etc.
         logger.exception("Exception calling Azure OpenAI:")
         return "Failed"
@@ -183,49 +189,6 @@ def get_word_root(word: str, language: str) -> str:
     except Exception as e:
         print(f"Error finding root form: {e}")
         return None
-
-def generate_alternatives(word: str, type: str):
-    if type == "verb":
-        response = client.chat.completions.create(
-            model=MODEL_SMART,
-            messages=[{"role": "user", "content": INSTRUCTION_VERBS.format(word=word)}],
-            max_tokens=550,
-            temperature=0.25,
-        )
-        raw_output = response.choices[0].message.content
-        forms = parse_chatgpt_output(raw_output, '{', '}')
-        forms = forms.lower()
-        dict = json.loads(forms)
-        #dict["perfecto root"] = dict["perfecto root"].split()[1:]
-        
-        result_set = set()
-        for value in dict.values():
-            if isinstance(value, list):
-                result_set.update(value)
-            else:
-                result_set.add(value)
-        return result_set
-        
-    elif type == "noun":
-        prompt = INSTRUCTION_NOUNS.format(word=word)
-    elif type == "adjective":
-        prompt = INSTRUCTION_ADJECTIVE.format(word=word)
-    else:
-        return []
-
-    response = client.chat.completions.create(
-        model=MODEL_SMART,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=180,
-        temperature=0.3,
-    )
-    
-    print(response)
-    raw_output = response.choices[0].message.content
-    forms = parse_chatgpt_output(raw_output, '[', ']')
-    forms = forms.lower()
-    
-    return set(json.loads(forms))
 
 def generate_alternatives(word: str, type: str, language: str):
     if type == "verb":
@@ -351,13 +314,13 @@ def add_to_dictionary(word: str, source: str, language: str):
         print(f"Error adding word to dictionary: {e} ")
         return None
 
-def parse(groups: List[str], source: str, language: str):
+def parse(groups: list[str], source: str, language: str):
     """
     Process a list of text groups (tokens) and return a list of dictionaries.
     """
     result = []
-    local_cache: Dict[str, Optional[int]] = {}
-    missing_entries: List[Tuple[int, str, str]] = []
+    local_cache: dict[str, int | None] = {}
+    missing_entries: list[tuple[int, str, str]] = []
 
     # 1) First pass: immediate lookup or record as missing.
     for group in groups:
@@ -386,12 +349,12 @@ def parse(groups: List[str], source: str, language: str):
         missing_words = list(dict.fromkeys([e[1] for e in missing_entries]))
         # call the improved verifier
         try:
-            bad = set(w.lower() for w in verify_language(missing_words, language))
+            bad = {w.lower() for w in verify_language(missing_words, language)}
         except Exception:
             bad = set()
 
         # map word → all result-indices
-        idxs: Dict[str, List[int]] = {}
+        idxs: dict[str, list[int]] = {}
         for idx, lw, _ in missing_entries:
             idxs.setdefault(lw, []).append(idx)
 
@@ -415,7 +378,7 @@ def group_text(text: str) -> list:
     print(f"group_text executed in {end_time - start_time:.6f} seconds")
     return result
 
-async def get_missing_words(user_id: str, words: List[Dict], language: str) -> List[Dict]:
+async def get_missing_words(user_id: str, words: list[dict], language: str) -> list[dict]:
     
     word_ids = [word['id'] for word in words if 'id' in word and word['id'] is not None]
     word_ids = list(dict.fromkeys(word_ids))
@@ -423,7 +386,7 @@ async def get_missing_words(user_id: str, words: List[Dict], language: str) -> L
         missing_words = get_missing_words_from_db(user_id, word_ids, language)
         return missing_words
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching data from Supabase: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching data from Supabase: {e!s}") from e
 
 def summarize_text(text: str) -> str:
     prompt = INSTRUCTION_SUMMARIZE.format(text=text)
@@ -446,7 +409,7 @@ def summarize_text(text: str) -> str:
 
 
 
-def parse_and_translate_word(word: str, language: str) -> Dict:
+def parse_and_translate_word(word: str, language: str) -> dict:
     # This used to map 'it'/'es' onto long names and everything else onto the
     # literal 'other'. Post-migration that turned a correct key into one the
     # ISO-keyed word_cache and INSTRUCTION_* tables no longer hold, so the
@@ -472,7 +435,7 @@ def parse_and_translate_word(word: str, language: str) -> Dict:
     }
 
 # Takes a language name    
-def translate_section(section: str, language: str) -> Dict:
+def translate_section(section: str, language: str) -> dict:
     
     prompt = INSTRUCTION_TRANSLATE.format(text=section, language=language)
     
@@ -485,7 +448,7 @@ def translate_section(section: str, language: str) -> Dict:
     
     return response.choices[0].message.content
 
-def verify_language(words: List[str], language: str) -> List[str]:
+def verify_language(words: list[str], language: str) -> list[str]:
     """
     words: list of lowercase tokens to check
     returns: list of those tokens deemed NOT valid Spanish
@@ -497,7 +460,7 @@ def verify_language(words: List[str], language: str) -> List[str]:
         "You are a meticulous Spanish lexicographer. "
         "Your job is to spot tokens that are NOT valid Spanish words."
     )
-    user_msg = f"""
+    user_msg = """
 You are given a list of supposedly spanish words. Most of them are invalid.
 
 For each token, consider them invalid if:
@@ -525,9 +488,9 @@ Return **only** a complete, full JSON array of all the problematic tokens exactl
     return json.loads(raw)
 
 def generate_word_examples(
-    words: List[str],
+    words: list[str],
     language: str = "es",              # ← new parameter
-) -> Dict[str, Dict[str, List[str]]]:
+) -> dict[str, dict[str, list[str]]]:
     """
     Generate two A1-A2 sentences (and highlight forms) *in the given language*
     for every word/phrase supplied.

@@ -1,13 +1,13 @@
 """ingest.py against the shared in-memory queue fake (see conftest.py)."""
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from conftest import FakeSupabase, queued as pending
-
 import ingest
+from conftest import FakeSupabase
+from conftest import queued as pending
 
 
 def test_claim_is_compare_and_set():
@@ -76,7 +76,7 @@ def test_submit_is_idempotent_and_never_resets_state():
 
 
 def test_reclaim_returns_only_stale_processing_rows():
-    old = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+    old = (datetime.now(UTC) - timedelta(hours=5)).isoformat()
     sb = FakeSupabase([pending("stale", status="processing", claimed_at=old),
                        pending("fresh", status="processing", claimed_at=ingest.now())])
     assert ingest.reclaim(sb, "es", older_than_minutes=120) == 1

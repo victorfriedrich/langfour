@@ -37,9 +37,6 @@ from __future__ import annotations
 
 import argparse
 import atexit
-from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 import fcntl
 import gzip
 import json
@@ -50,8 +47,17 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections import Counter
+from collections.abc import Iterable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    # googleapiclient is a dev/test-only dependency; the runtime import
+    # stays lazy inside the call sites that need it.
+    from googleapiclient.errors import HttpError
 
 from paths import API_ROOT, DATA_DIR
 
@@ -64,13 +70,7 @@ PREFIX = "com,youtube)/channel/"
 # Crawls are published roughly monthly; this is a static list so a harvest never
 # depends on index.commoncrawl.org, which throttles hard and is a different
 # service from the bulk host below. `--crawls` overrides it.
-CRAWLS = [f"CC-MAIN-{c}" for c in (
-    "2026-34 2026-30 2026-25 2026-21 2026-17 2026-12 2026-08 2026-04 "
-    "2025-51 2025-47 2025-43 2025-38 2025-33 2025-30 2025-26 2025-21 "
-    "2025-18 2025-13 2025-08 2025-05 2024-51 2024-46 2024-42 2024-38 "
-    "2024-33 2024-30 2024-26 2024-22 2024-18 2024-10 2023-50 2023-40 "
-    "2023-23 2023-14 2023-06 2022-49 2022-40 2022-33 2022-27 2022-21 2022-05"
-).split()]
+CRAWLS = [f"CC-MAIN-{c}" for c in ["2026-34", "2026-30", "2026-25", "2026-21", "2026-17", "2026-12", "2026-08", "2026-04", "2025-51", "2025-47", "2025-43", "2025-38", "2025-33", "2025-30", "2025-26", "2025-21", "2025-18", "2025-13", "2025-08", "2025-05", "2024-51", "2024-46", "2024-42", "2024-38", "2024-33", "2024-30", "2024-26", "2024-22", "2024-18", "2024-10", "2023-50", "2023-40", "2023-23", "2023-14", "2023-06", "2022-49", "2022-40", "2022-33", "2022-27", "2022-21", "2022-05"]]
 
 # Video selection, carried over from the Selenium script it replaced so results
 # stay comparable: prefer short, prefer viewed, never longer than 33 minutes.
@@ -187,7 +187,7 @@ def redact(text: str) -> str:
 
 # ──────────────────────────────────────────────────────────────── http ──
 
-def fetch(url: str, rng: Optional[tuple[int, int]] = None, tries: int = 4) -> Optional[bytes]:
+def fetch(url: str, rng: tuple[int, int] | None = None, tries: int = 4) -> bytes | None:
     """Bytes, or None for a genuine 404. Anything else retries then raises."""
     headers = {"User-Agent": UA}
     if rng:
@@ -206,7 +206,7 @@ def fetch(url: str, rng: Optional[tuple[int, int]] = None, tries: int = 4) -> Op
     raise RuntimeError(f"{url.rsplit('/', 1)[-1]}: {last}")
 
 
-def content_length(url: str, tries: int = 4) -> Optional[int]:
+def content_length(url: str, tries: int = 4) -> int | None:
     """Remote size, or None for a genuine 404, with the same retry policy as fetch."""
     request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA})
     for attempt in range(tries):
@@ -225,7 +225,7 @@ def content_length(url: str, tries: int = 4) -> Optional[int]:
 
 # ───────────────────────────────────────────────────── stage: harvest ──
 
-def blocks_for(crawl: str) -> Optional[list[tuple[str, int, int]]]:
+def blocks_for(crawl: str) -> list[tuple[str, int, int]] | None:
     """cluster.idx entries covering youtube.com/channel/.
 
     cluster.idx is ~100 MB and sorted, so it is binary-searched with small range
@@ -427,7 +427,7 @@ class YouTube:
         return self._call(self.api.videos, part=self.VIDEO_PARTS,
                           id=",".join(ids), maxResults=50)
 
-    def channel_by_handle(self, handle: str) -> Optional[str]:
+    def channel_by_handle(self, handle: str) -> str | None:
         """@name -> UC id, one unit. extend_scrapelist.py had to fetch the page
         and regex its canonical link; forHandle does it directly."""
         items = self._call(self.api.channels, part="id", forHandle=handle)
@@ -464,7 +464,7 @@ PERMANENT_REASONS = frozenset({
 })
 
 
-def error_reason(exc: "HttpError") -> str:
+def error_reason(exc: HttpError) -> str:
     """The API's own reason code, e.g. 'quotaExceeded'.
 
     Read from the raw body, not from str(exc). On the pinned client
@@ -476,13 +476,13 @@ def error_reason(exc: "HttpError") -> str:
         errors = json.loads(exc.content or b"{}").get("error", {}).get("errors") or []
         if errors and isinstance(errors[0], dict) and errors[0].get("reason"):
             return errors[0]["reason"]
-    except Exception:                          # noqa: BLE001 - best effort only
+    except Exception:
         pass
     try:
         details = exc.error_details or []
         if details and isinstance(details[0], dict):
             return details[0].get("reason") or ""
-    except Exception:                          # noqa: BLE001
+    except Exception:
         pass
     text = str(exc)
     return next((r for r in QUOTA_REASONS | PERMANENT_REASONS if r in text), "")
@@ -510,15 +510,17 @@ def enrich(db: sqlite3.Connection, yt: YouTube, stale_days: int) -> None:
                             OR julianday('now') - julianday(enriched_at) > ?""",
                       (stale_days,)).fetchall()
     todo = [r[0] for r in rows]
-    print(f"{todo and len(todo) or 0:,} channels to enrich "
+    print(f"{(todo and len(todo)) or 0:,} channels to enrich "
           f"({-(-len(todo) // 50):,} units)", flush=True)
     for n, chunk in enumerate(batched(todo), 1):
         try:
             items = yt.channels(chunk)
         except Budget as why:
-            print(f"stopped at {n * 50:,}: {why or 'local budget reached'}"); break
+            print(f"stopped at {n * 50:,}: {why or 'local budget reached'}")
+            break
         except RuntimeError as exc:
-            print(f"  batch {n} failed: {str(exc)[:120]}"); continue
+            print(f"  batch {n} failed: {str(exc)[:120]}")
+            continue
         db.executemany(UPDATE_CHANNEL, [channel_row(i) for i in items])
         # Absent from the response = deleted or terminated. Stamped so it is
         # skipped until it goes stale, not retried on every run.
@@ -551,10 +553,7 @@ def channel_row(item: dict) -> tuple:
 
 # Broad on purpose: restricting to the target languages would force an English
 # channel into one of them instead of excluding it.
-DETECT_LANGS = ("ENGLISH SPANISH FRENCH GERMAN ITALIAN PORTUGUESE DUTCH POLISH "
-                "RUSSIAN UKRAINIAN TURKISH ARABIC JAPANESE KOREAN CHINESE HINDI "
-                "INDONESIAN VIETNAMESE THAI SWEDISH DANISH BOKMAL FINNISH CZECH "
-                "GREEK HUNGARIAN ROMANIAN CATALAN").split()
+DETECT_LANGS = ["ENGLISH", "SPANISH", "FRENCH", "GERMAN", "ITALIAN", "PORTUGUESE", "DUTCH", "POLISH", "RUSSIAN", "UKRAINIAN", "TURKISH", "ARABIC", "JAPANESE", "KOREAN", "CHINESE", "HINDI", "INDONESIAN", "VIETNAMESE", "THAI", "SWEDISH", "DANISH", "BOKMAL", "FINNISH", "CZECH", "GREEK", "HUNGARIAN", "ROMANIAN", "CATALAN"]
 NOISE = re.compile(r"https?://\S+|www\.\S+|\S+\.(?:com|net|org|io|ly|me|tv)/\S*"
                    r"|[@#]\w+|[|•·▶→←/\\_*=+~`\[\](){}<>]+")
 MIN_CHARS, MIN_CONF = 25, 0.60
@@ -626,7 +625,7 @@ def seconds(duration: str) -> int:
     return d * 86400 + h * 3600 + mi * 60 + s
 
 
-def candidates(db: sqlite3.Connection, lang: Optional[str], min_subs: int) -> list[tuple]:
+def candidates(db: sqlite3.Connection, lang: str | None, min_subs: int) -> list[tuple]:
     """Keep a channel unless it is confidently a *different* language.
 
     Description is a strong precision signal and a weak recall one, so it is
@@ -648,7 +647,7 @@ def candidates(db: sqlite3.Connection, lang: Optional[str], min_subs: int) -> li
                       args).fetchall()
 
 
-def audio_language(langs: Sequence[str]) -> Optional[str]:
+def audio_language(langs: Sequence[str]) -> str | None:
     """Return a stable, sufficiently-supported majority audio language."""
     if len(langs) < MIN_AUDIO_LANG_SAMPLES:
         return None
@@ -660,7 +659,7 @@ def audio_language(langs: Sequence[str]) -> Optional[str]:
     return winners[0]
 
 
-def videos(db: sqlite3.Connection, yt: YouTube, lang: Optional[str],
+def videos(db: sqlite3.Connection, yt: YouTube, lang: str | None,
            min_subs: int, sample: int) -> None:
     todo = candidates(db, lang, min_subs)
     print(f"{len(todo):,} channels to fetch ({2 * len(todo):,} units)", flush=True)
@@ -678,13 +677,15 @@ def videos(db: sqlite3.Connection, yt: YouTube, lang: Optional[str],
             # Permanent, so stamp it or it is re-bought on every run.
             db.execute("""UPDATE channels SET videos_at=datetime('now'),
                           note='no_uploads' WHERE channel_id=?""", (cid,))
-            db.commit(); continue
+            db.commit()
+            continue
         except RuntimeError as exc:
             # A transport/service failure is retryable. Do not stamp videos_at:
             # that is the durable marker the stage completed.
             db.execute("UPDATE channels SET note=? WHERE channel_id=?",
                        (f"videos_error:{str(exc)[:187]}", cid))
-            db.commit(); continue
+            db.commit()
+            continue
         if items:
             db.executemany(INSERT_VIDEO.format("REPLACE"), video_rows(items))
         langs = [v["snippet"].get("defaultAudioLanguage", "").split("-")[0].lower()
@@ -769,7 +770,7 @@ CHANNEL_STATS = """
 """
 
 
-def reject(r: dict, g: Gates, need_llm: bool) -> Optional[str]:
+def reject(r: dict, g: Gates, need_llm: bool) -> str | None:
     """Why a channel fails, or None. Pure, so thresholds are testable bare."""
     if r["n"] < g.min_sample:
         return "sample"
@@ -810,7 +811,7 @@ def qualified(db: sqlite3.Connection, lang: str, g: Gates,
     columns = [d[0] for d in cursor.description]
     passed, funnel = [], Counter()
     for row in cursor:
-        r = dict(zip(columns, row))
+        r = dict(zip(columns, row, strict=False))
         why = reject(r, g, need_llm)
         if why:
             funnel[why] += 1
@@ -840,6 +841,7 @@ Titles:
 def verdict_for(name: str, titles: Sequence[str], lang: str) -> dict[str, float]:
     """One MODEL_FAST call, imported lazily so harvest/enrich need no LLM key."""
     from pydantic import BaseModel
+
     from llm_client import parse_structured
     from models import MODEL_FAST
 
@@ -851,7 +853,8 @@ def verdict_for(name: str, titles: Sequence[str], lang: str) -> dict[str, float]
     v = parse_structured(model=MODEL_FAST, messages=[{"role": "user", "content": prompt}],
                          schema_model=ChannelVerdict, reasoning={"enabled": False},
                          max_tokens=200, temperature=0.2)
-    clamp = lambda x: min(1.0, max(0.0, float(x)))
+    def clamp(x):
+        return min(1.0, max(0.0, float(x)))
     return {"sensitivity": clamp(v.sensitivity),
             "intellectuality": clamp(v.intellectuality)}
 
@@ -865,7 +868,7 @@ def classify(db: sqlite3.Connection, lang: str, g: Gates, limit: int,
     read and verdicts are written on this thread, one commit per channel, so
     the stage stays resumable exactly as before and sqlite sees a single
     writer."""
-    passed, funnel = qualified(db, lang, g, need_llm=False)
+    passed, _funnel = qualified(db, lang, g, need_llm=False)
     todo = [r for r in passed if r["classified_at"] is None][:limit]
     print(f"classifying {len(todo):,} channels, {workers} at a time", flush=True)
     work = [(r, [t for (t,) in db.execute(
@@ -879,7 +882,7 @@ def classify(db: sqlite3.Connection, lang: str, g: Gates, limit: int,
             r = futures[future]
             try:
                 v = future.result()
-            except Exception as exc:             # noqa: BLE001 - one channel, not the run
+            except Exception as exc:
                 failed += 1
                 print(f"  {r['channel_id']}: {type(exc).__name__}: {str(exc)[:100]}", flush=True)
                 continue
@@ -899,7 +902,7 @@ def expand(db: sqlite3.Connection, yt: YouTube, lang: str, g: Gates) -> None:
     """Top-viewed videos for every channel that cleared all gates, LLM included.
     Merged with INSERT OR IGNORE so a video already in the uploads sample keeps
     source='uploads' and stays part of the channel statistics."""
-    passed, funnel = qualified(db, lang, g, need_llm=True)
+    passed, _funnel = qualified(db, lang, g, need_llm=True)
     todo = [r for r in passed if r["expanded_at"] is None]
     # Reach first: 101 units buys the most where the typical video travels.
     todo.sort(key=lambda r: -(r["avg_views"] or 0))
@@ -917,7 +920,8 @@ def expand(db: sqlite3.Connection, yt: YouTube, lang: str, g: Gates) -> None:
             # costs 100 units on every single run, forever.
             db.execute("""UPDATE channels SET expanded_at=datetime('now'),
                           note='no_search' WHERE channel_id=?""", (cid,))
-            db.commit(); continue
+            db.commit()
+            continue
         except RuntimeError as exc:
             print(f"  {cid}: {str(exc)[:100]}", flush=True)
             continue                             # no stamp: retried next run
@@ -937,7 +941,7 @@ def expand(db: sqlite3.Connection, yt: YouTube, lang: str, g: Gates) -> None:
 # video scoring above 0.89. This is the old weighted_rankings, without pandas.
 
 
-def ratio(numerator: Optional[float], denominator: Optional[float]) -> Optional[float]:
+def ratio(numerator: float | None, denominator: float | None) -> float | None:
     """None when the denominator is unknown or zero -- not 0.0, which would
     rank a channel last for something that simply cannot be measured."""
     if not denominator or numerator is None:
@@ -956,7 +960,7 @@ CHANNEL_SIGNALS: dict[str, tuple[Any, float]] = {
 }
 
 
-def percentiles(values: Sequence[Optional[float]]) -> list[float]:
+def percentiles(values: Sequence[float | None]) -> list[float]:
     """Each value's position in [0, 1] within the pool; ties share a position.
 
     Percentile, not the raw number: subscribers run to millions and engagement
@@ -990,7 +994,7 @@ USABLE_VIDEO = """v.live = 'none' AND COALESCE(v.category_id, '') != ?
 
 
 def usable_videos(db: sqlite3.Connection, lang: str,
-                  channel_id: Optional[str] = None) -> list[tuple]:
+                  channel_id: str | None = None) -> list[tuple]:
     sql = f"""SELECT v.channel_id, v.video_id, v.title, COALESCE(v.views, 0), v.duration_s
               FROM videos v JOIN channels c USING (channel_id)
               WHERE COALESCE(c.audio_lang, c.lang) = ? AND {USABLE_VIDEO}"""
@@ -1039,7 +1043,7 @@ def score(minutes: int, views: int, lo: float, hi: float) -> float:
 def select(db: sqlite3.Connection, lang: str, g: Gates, top_n: int = TOP_N) -> list[dict]:
     """The deliverable: queue rows for every channel that cleared the gates,
     ordered so the transcription budget goes to the best creators first."""
-    passed, funnel = qualified(db, lang, g, need_llm=True)
+    passed, _funnel = qualified(db, lang, g, need_llm=True)
     keep = {r["channel_id"] for r in passed}
     rank = rank_channels(passed)
     videos = [v for v in usable_videos(db, lang) if v[0] in keep]
@@ -1053,7 +1057,7 @@ def push(rows: list[dict], sb=None) -> int:
     which is the property the JSON worklist never had."""
     from languages import require_code
     if sb is None:
-        from supabase_client import supabase as sb   # verifies service_role
+        from supabase_client import supabase as sb  # verifies service_role
     for r in rows:
         require_code(r["lang"])
     written = 0
@@ -1065,7 +1069,8 @@ def push(rows: list[dict], sb=None) -> int:
 
 
 def report(db: sqlite3.Connection) -> None:
-    q = lambda s, *a: db.execute(s, a).fetchone()[0]
+    def q(s, *a):
+        return db.execute(s, a).fetchone()[0]
     print(f"channels        {q('SELECT COUNT(*) FROM channels'):>9,}")
     print(f"  enriched      {q('SELECT COUNT(*) FROM channels WHERE enriched_at IS NOT NULL'):>9,}")
     print(f"  detected      {q('SELECT COUNT(*) FROM channels WHERE lang IS NOT NULL'):>9,}")
@@ -1129,7 +1134,7 @@ def add(db: sqlite3.Connection, yt: YouTube, lang: str, reference: str,
 
     title = found[0].get("snippet", {}).get("title") or cid
     rows = queue_rows(lang, usable_videos(db, lang, cid), {cid: 1.0}, top_n)
-    from ingest import PRIORITY                  # one definition of the order
+    from ingest import PRIORITY  # one definition of the order
     for r in rows:
         r["source"], r["priority"] = "manual", PRIORITY["manual"]
     print(f"{title}: {len(items):,} fetched, {len(rows):,} usable "
@@ -1154,7 +1159,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("stage",
-                   choices="harvest enrich detect videos classify expand select add report".split())
+                   choices=["harvest", "enrich", "detect", "videos", "classify", "expand", "select", "add", "report"])
     p.add_argument("--db", type=Path, default=DB)
     p.add_argument("--budget", type=int, default=9000, help="quota units")
     p.add_argument("--lang", help="ISO 639-1, e.g. es")

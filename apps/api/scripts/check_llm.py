@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from pydantic import BaseModel  # noqa: E402
+from pydantic import BaseModel
 
 
 class _Probe(BaseModel):
@@ -23,7 +23,7 @@ class _Probe(BaseModel):
 def main() -> int:
     try:
         from llm_client import client, parse_structured, transcription_client
-        from models import MODEL_SMART, MODEL_FAST, MODEL_TRANSCRIBE
+        from models import MODEL_FAST, MODEL_SMART, MODEL_TRANSCRIBE
     except RuntimeError as exc:
         print(f"FAIL  {exc}")
         return 1

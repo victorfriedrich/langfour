@@ -1,5 +1,8 @@
-import instructions_italian, instructions_spanish, instructions_german, instructions_french, instructions_nonlocalized
-
+import instructions_french
+import instructions_german
+import instructions_italian
+import instructions_nonlocalized
+import instructions_spanish
 
 INSTRUCTION_HIGH_LEVEL_TAG = instructions_nonlocalized.INSTRUCTION_HIGH_LEVEL_TAG
 INSTRUCTION_CATEGORIZE    = instructions_nonlocalized.INSTRUCTION_CATEGORIZE

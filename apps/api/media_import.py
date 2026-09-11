@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
-from paths import PROCESSED_DIR
-
 
 from languages import require_code
+from paths import PROCESSED_DIR
 
 
 def make_media_id(series: str, season: int | None, episode: int | None) -> str:
@@ -70,7 +69,7 @@ def import_media(
 
     transcript = "\n".join(chunk["text"] for chunk in normalized_chunks)
     content = parse_content(group_text(transcript), media_id, code)
-    imported_at = datetime.now(timezone.utc).isoformat()
+    imported_at = datetime.now(UTC).isoformat()
     duration = payload.get("audio_seconds") or normalized_chunks[-1]["timestamp"][1]
     title = payload.get("title") or f"{payload['series']} - Episode {payload.get('episode', '?')}"
 

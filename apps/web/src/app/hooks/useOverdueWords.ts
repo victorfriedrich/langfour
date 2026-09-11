@@ -77,7 +77,7 @@ export const useOverdueWords = (
     };
 
     fetchWords();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [refreshTrigger, language, dueType, pageSize, source, isLoadingUser]);
 
   return { words, isLoading, error };

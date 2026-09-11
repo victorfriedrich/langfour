@@ -1,16 +1,18 @@
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 import json
-import time
-from dotenv import load_dotenv
-import pytubefix as pytube
-from moviepy.editor import VideoFileClip
 import os
+import time
+import traceback
+from datetime import datetime
+
+import pytubefix as pytube
+from dotenv import load_dotenv
+from moviepy.editor import VideoFileClip
+from youtube_transcript_api import NoTranscriptFound, TranscriptsDisabled, YouTubeTranscriptApi
+
+from languages import require_code
 from llm_client import transcription_client
 from models import MODEL_TRANSCRIBE
-import traceback
-from nlp_processing import filter_entities, parse, group_text, get_tags
-from languages import require_code
-from datetime import datetime
+from nlp_processing import get_tags, group_text, parse
 from paths import processed_file
 
 load_dotenv()
@@ -136,12 +138,12 @@ def main(url, language: str, use_transcript_api=True):
             end_time = time.time()
             print(f"Transcript fetched and saved in {end_time - start_time:.2f} seconds")
             process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
-        except TranscriptsDisabled:
-            raise Exception(f"Subtitles are disabled for video {video_id}.")
-        except NoTranscriptFound:
-            raise Exception(f"No transcripts found for language '{language}' for video {video_id}.")
+        except TranscriptsDisabled as exc:
+            raise Exception(f"Subtitles are disabled for video {video_id}.") from exc
+        except NoTranscriptFound as exc:
+            raise Exception(f"No transcripts found for language '{language}' for video {video_id}.") from exc
         except Exception as e:
-            raise Exception(f"Error fetching transcript via YouTubeTranscriptApi for video {video_id}: {str(e)}")
+            raise Exception(f"Error fetching transcript via YouTubeTranscriptApi for video {video_id}: {e!s}") from e
     else:
         mp4_filename = download_video(url)
         if mp4_filename:
@@ -162,7 +164,7 @@ def main(url, language: str, use_transcript_api=True):
 def process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language):
     try:
         start_time = time.time()
-        with open(txt_filename, 'r', encoding='utf-8') as file:
+        with open(txt_filename, encoding='utf-8') as file:
             transcription_text = file.read()
 
         # This takes too long
@@ -199,4 +201,4 @@ def process_transcription(txt_filename, video_id, title, creator, tags, views, l
         print(f"Transcription processing completed in {end_time - start_time:.2f} seconds")
     except Exception as e:
         traceback.print_exc()
-        raise Exception(f"Error in processing transcript: {str(e)}")
+        raise Exception(f"Error in processing transcript: {e!s}") from e

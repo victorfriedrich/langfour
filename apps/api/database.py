@@ -1,22 +1,18 @@
-import os
-from supabase import create_client, Client
-from dotenv import load_dotenv
-from fastapi import HTTPException
-from typing import List, Dict
-from llm_client import client
-from models import MODEL_FAST
 import logging
 
+from dotenv import load_dotenv
+
+from llm_client import client
+from models import MODEL_FAST
+
 load_dotenv()
-
-from supabase_client import supabase
-
 
 # These are both the in-memory cache keys and the values sent to Postgres as
 # words.language, so they follow the column: ISO codes. Sourced from
 # languages.py rather than restated, which is how this list came to be missing
 # Italian while the words table held 36k Italian rows.
 from languages import SUPPORTED_CODES, display_name, to_code
+from supabase_client import supabase
 
 SUPPORTED_LANGUAGES = list(SUPPORTED_CODES)
 
@@ -134,8 +130,8 @@ def initialize_cache():
         logging.info("Word cache loaded: %s", totals)
 
 
-def save_to_supabase(root: str, forms: set, language: str, source: str = None,
-                      translation: str = None, flagged: bool = False):
+def save_to_supabase(root: str, forms: set, language: str, source: str | None = None,
+                      translation: str | None = None, flagged: bool = False):
     """
     Save a root word and its forms to Supabase and update the cache accordingly.
     :param root: The root word.
@@ -265,10 +261,10 @@ def get_words_with_many_forms():
     response = supabase.rpc("get_words_with_many_forms").execute()
     return response.data
 
-def insert_gerundio_form(gerundio_entry: Dict):
+def insert_gerundio_form(gerundio_entry: dict):
     supabase.table("wordforms").insert(gerundio_entry).execute()
 
-def get_missing_words_from_db(user_id: str, word_ids: List[int], language: str) -> List[Dict]:
+def get_missing_words_from_db(user_id: str, word_ids: list[int], language: str) -> list[dict]:
     """
     Get words missing from the user's word list.
     :param user_id: The user ID.

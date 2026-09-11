@@ -1,0 +1,42 @@
+# Lint config for the Python API. Kept deliberately narrow: this codebase had
+# no linter before, so the selection covers real defects (pyflakes), import
+# hygiene, and mechanical modernisation -- not whole-codebase style opinions.
+target-version = "py312"
+line-length = 100
+
+exclude = [".venv", "__pycache__", "data", "_to_delete"]
+
+[lint]
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes -- undefined names, unused imports/variables
+  "I",    # import sorting
+  "UP",   # pyupgrade -- modern syntax for the pinned Python
+  "B",    # flake8-bugbear -- likely bugs
+  "C4",   # flake8-comprehensions
+  "SIM",  # flake8-simplify
+  "RUF",  # ruff-specific
+]
+ignore = [
+  "E501",    # line length; formatting is not enforced here
+  "B008",    # function call in default arg -- the FastAPI Depends()/Query() idiom
+  "RUF012",  # ClassVar annotations not used in this codebase
+
+  # Several modules must call load_dotenv() before importing supabase_client,
+  # which validates the service-role key at import time. The ordering is
+  # load-bearing, so "imports at top of file" cannot apply.
+  "E402",
+
+  # This is a language-learning corpus: Spanish/French/German/Italian text and
+  # typographic punctuation appear throughout strings, comments and docstrings.
+  # The "ambiguous unicode character" rules flag the domain content itself.
+  "RUF001", "RUF002", "RUF003",
+
+  # The two nested ifs this flags are deliberately two-level: each pairs an
+  # outer guard with a comment explaining why the inner test is separate.
+  "SIM102",
+]
+
+[lint.per-file-ignores]
+# Instruction modules are long prompt strings, not code.
+"instructions_*.py" = ["E501"]

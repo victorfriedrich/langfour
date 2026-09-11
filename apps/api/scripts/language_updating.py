@@ -11,7 +11,6 @@ so it can be re-run after an interruption.
 import json
 import os
 import sys
-from typing import Dict, List
 
 from dotenv import load_dotenv
 
@@ -19,13 +18,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
 
-from languages import require_code  # noqa: E402
-from llm_client import client  # noqa: E402
-from models import MODEL_FAST, MODEL_SMART  # noqa: E402
-from supabase_client import supabase  # noqa: E402
+from languages import require_code
+from llm_client import client
+from models import MODEL_SMART
+from supabase_client import supabase
 
 
-def fetch_words_without_translation(batch_size: int = 40, offset: int = 0, language: str = "es") -> List[Dict]:
+def fetch_words_without_translation(batch_size: int = 40, offset: int = 0, language: str = "es") -> list[dict]:
     # Was a hardcoded "spanish" against words.language, which now holds ISO
     # codes -- it would have quietly returned zero rows forever.
     response = supabase.table("words").select("id, root").eq("language", require_code(language)).is_("translation", None).order("id", desc=False).range(offset, offset + batch_size - 1).execute()
@@ -41,7 +40,7 @@ def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
     json_content = output[start:end+1]
     return json_content
 
-def get_translations(words: List[Dict]) -> List[Dict]:
+def get_translations(words: list[dict]) -> list[dict]:
     word_list = [word['root'] for word in words]
     prompt = f"Please provide English equivalents for the following Spanish terms. If a word is offensive or not a valid spanish word, don't include it. For each term, offer 1-3 adequate translations, separated by commas. For nouns, omit the article in the translation. Present the results in a JSON format where the Spanish term is the key and its English equivalent is the value. Terms to translate:\n\n{', '.join(word_list)}"
     print(word_list)
@@ -58,7 +57,7 @@ def get_translations(words: List[Dict]) -> List[Dict]:
 
     return [{"id": word['id'], "root": word['root'], "translation": translations.get(word['root'], '')} for word in words]
 
-def update_translations(translations: List[Dict]):
+def update_translations(translations: list[dict]):
     for translation in translations:
         supabase.table("words").update({"translation": translation['translation']}).eq("id", translation['id']).execute()
         print(f"Updated translation for word: {translation['root']}")

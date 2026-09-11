@@ -1,10 +1,11 @@
-import os
 import json
+import os
 import uuid
+
 from fastapi import HTTPException
-from typing import List, Dict
 
 from paths import PROCESSED_DIR
+
 VIDEOS_DIR = str(PROCESSED_DIR)
 SPECIAL_CHARACTERS = '.,!?¿¡\'"""''1234567890()«»%: -_[]{}#@$&*+=|\\<>/~`^“”…;\n\r\t'
 
@@ -24,22 +25,22 @@ def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
     json_content = output[start:end+1]
     return json_content
 
-def get_video_words(video_id: str, language_code: str) -> List[Dict]:
+def get_video_words(video_id: str, language_code: str) -> list[dict]:
     try:
         # First, try to find the file in the main VIDEOS_DIR
         file_path = os.path.join(VIDEOS_DIR, f"{language_code}/{video_id}_processed.json")
         if os.path.exists(file_path):
-            with open(file_path, 'r') as f:      
+            with open(file_path) as f:      
                 return json.load(f).get("content")
 
         
         # If not found, search recursively in all subdirectories
-        for root, dirs, files in os.walk(f"{VIDEOS_DIR}/{language_code}"):
+        for root, _dirs, _files in os.walk(f"{VIDEOS_DIR}/{language_code}"):
             file_path = os.path.join(root, f"{video_id}_processed.json")
             print(file_path)
             if os.path.exists(file_path):
                 print(f"3 {os.path.exists(file_path)}")
-                with open(file_path, 'r') as f:
+                with open(file_path) as f:
                     if language_code == "es" :
                         return json.load(f)
                     return json.load(f).get("content")
@@ -47,11 +48,11 @@ def get_video_words(video_id: str, language_code: str) -> List[Dict]:
         # If still not found, raise FileNotFoundError
         raise FileNotFoundError(f"Video data not found: {video_id}")
 
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Video data not found: {video_id}")
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Failed to parse JSON file")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"Video data not found: {video_id}") from e
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail="Failed to parse JSON file") from e
     except Exception as e:
         print(type(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 

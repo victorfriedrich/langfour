@@ -4,3 +4,5 @@ pytest==8.3.2
 # The pipeline tests classify real googleapiclient HttpErrors rather than
 # strings that look like them, so the API client is needed to run them.
 google-api-python-client==2.149.0
+# Linting (see apps/api/ruff.toml for the rule selection).
+ruff==0.16.6

@@ -18,8 +18,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from nlp_processing import get_high_level_tag  # noqa: E402
-from paths import processed_dir  # noqa: E402
+from nlp_processing import get_high_level_tag
+from paths import processed_dir
 
 # Verdicts worth a second attempt when --redo is passed.
 #
@@ -47,7 +47,7 @@ def update_files_with_high_level_tag(base_folder: str, redo: bool = False):
             file_path = os.path.join(root, file)
 
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     data = json.load(f)
 
                 current_cat = data.get("category")
