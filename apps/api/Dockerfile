@@ -4,7 +4,8 @@
 # The root .dockerignore keeps the context small. Without it the context is
 # ~2.4 GB, because the transcript corpus and the archived pre-monorepo .git
 # directories both live under the root.
-FROM python:3.11-slim
+# Keep the runtime aligned with target-version in ruff.toml.
+FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -24,6 +25,7 @@ RUN pip install -r requirements.txt
 # tarball per language, ~134 MB total. Configure LANGFIVE_CORPUS_BASE_URL or
 # LANGFIVE_CORPUS_BUCKET, or the recommender starts with an empty corpus.
 COPY apps/api/ ./
+RUN python -m compileall -q .
 
 # Fails fast rather than silently: the service refuses to start unless
 # SUPABASE_SERVICE_ROLE_KEY carries the service_role claim, and refuses to
