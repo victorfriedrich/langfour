@@ -4,7 +4,13 @@
 # The root .dockerignore keeps the context small. Without it the context is
 # ~2.4 GB, because the transcript corpus and the archived pre-monorepo .git
 # directories both live under the root.
-FROM python:3.11-slim
+# 3.12, not 3.11: ruff.toml sets target-version = "py312" and enables
+# pyupgrade, which rewrote llm_client.parse_structured into PEP 695 generic
+# syntax (`def parse_structured[T: BaseModel](...)`). That is a syntax error on
+# 3.11, so the image built cleanly and then died on `import app` with
+# "SyntaxError: expected '('" -- a failure no local check caught, because the
+# dev venv is 3.12. Keep this in step with ruff's target-version.
+FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
