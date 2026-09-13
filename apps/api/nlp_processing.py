@@ -110,7 +110,9 @@ def get_high_level_tag(title: str, tags: list[str]) -> str | None:
     already has a category -- a sentinel would be written once and never
     retried."""
     prompt = (
-        "Choose exactly one high-level category for this video.\n\n"
+        "Choose exactly one high-level category for this video.\n"
+        f"Allowed categories: {json.dumps(VALID_CATEGORIES)}\n"
+        'Return only a JSON object with a "category" field containing one of these values.\n\n'
         f"Title: {title}\n"
         f"Tags: {', '.join(tags)}"
     )
@@ -320,18 +322,9 @@ def parse(groups: list[str], source: str, language: str):
     # 2) If any missing, batch-verify them in one LLM call:
     if missing_entries:
         missing_words = list(dict.fromkeys([e[1] for e in missing_entries]))
-        # call the improved verifier
-        try:
-            bad = {w.lower() for w in verify_language(missing_words, language)}
-        except Exception:
-            # This used to fall back to an empty set, i.e. "nothing is
-            # invalid", so an outage wrote every unknown token into the
-            # dictionary unverified and permanently. Leaving them as plain
-            # content is recoverable -- the next parse of the same text
-            # retries them.
-            logger.exception("Language check failed; leaving %d words unresolved",
-                             len(missing_words))
-            return result
+        # Let verification failures reach the caller so ingestion retries
+        # instead of saving a partial transcript as complete.
+        bad = {w.lower() for w in verify_language(missing_words, language)}
 
         # map word → all result-indices
         idxs: dict[str, list[int]] = {}
