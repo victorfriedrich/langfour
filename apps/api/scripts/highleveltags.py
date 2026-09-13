@@ -23,8 +23,11 @@ from paths import processed_dir
 
 # Verdicts worth a second attempt when --redo is passed.
 #
-#   "Failed"        get_high_level_tag returns this when the model refuses or its
-#                   reply does not parse. Roughly 7% of the Spanish corpus.
+#   "Failed"        a legacy value too: get_high_level_tag used to return it
+#                   when the model refused or its reply did not parse, and it
+#                   sits in roughly 7% of the Spanish corpus. It now returns
+#                   None instead and this script leaves the file uncategorised,
+#                   so new failures are retried by an ordinary run.
 #   "Entertainment" a legacy value: it is not in nlp_processing.VALID_CATEGORIES
 #                   any more, so the classifier can no longer produce it.
 #   "Other"         the classifier's own catch-all, worth re-asking after a
@@ -58,6 +61,12 @@ def update_files_with_high_level_tag(base_folder: str, redo: bool = False):
                 tags = data.get("tags", [])
 
                 high_level_tag = get_high_level_tag(title, tags)
+                if high_level_tag is None:
+                    # Leave the file uncategorised rather than recording the
+                    # failure: the skip above treats any category as done, so
+                    # writing one here would need --redo to ever look again.
+                    print(f"Skipped {file_path}: could not classify")
+                    continue
 
                 # Overwrite or insert the category
                 data["category"] = high_level_tag

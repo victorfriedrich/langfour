@@ -27,6 +27,7 @@ from languages import require_code
 from llm_client import client
 from models import MODEL_FAST
 from supabase_client import supabase
+from utils import parse_chatgpt_output
 
 
 def fetch_words(language: str, batch_size: int = 40, offset: int = 0) -> list[dict]:
@@ -40,16 +41,6 @@ def fetch_words(language: str, batch_size: int = 40, offset: int = 0) -> list[di
     """
     response = supabase.table("words").select("id, root").eq("language", require_code(language)).neq("source", "CREA").range(offset, offset + batch_size - 1).execute()
     return response.data
-
-def parse_chatgpt_output(output: str, startChar: str, endChar: str) -> str:
-    start = output.find(startChar)
-    end = output.rfind(endChar)
-    
-    if start == -1 or end == -1 or start > end:
-        raise ValueError("No valid JSON object found in the output")
-    
-    json_content = output[start:end+1]
-    return json_content
 
 def verify_language(words: list[dict], language: str) -> list[str]:
     word_entries = [
