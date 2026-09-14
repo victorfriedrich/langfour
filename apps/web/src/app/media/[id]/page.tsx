@@ -12,18 +12,18 @@ import { getImportedMedia, ImportedMedia } from '../api';
 function MediaVocabularyContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { language } = useContext(UserContext);
+  const { language, fetchWithAuth } = useContext(UserContext);
   const [media, setMedia] = useState<ImportedMedia | null>(null);
   const [error, setError] = useState('');
   const [confirmationCount, setConfirmationCount] = useState(0);
 
   useEffect(() => {
     let active = true;
-    getImportedMedia(params.id, language?.code || 'es')
+    getImportedMedia(fetchWithAuth, params.id, language?.code || 'es')
       .then((item) => active && setMedia(item))
       .catch((reason) => active && setError(reason instanceof Error ? reason.message : 'Unable to load this episode'));
     return () => { active = false; };
-  }, [params.id, language?.code]);
+  }, [fetchWithAuth, params.id, language?.code]);
 
   const close = useCallback((count: number) => {
     if (count > 0) setConfirmationCount(count);
