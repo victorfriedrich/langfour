@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
+import { UserContext } from '@/context/UserContext';
 
 interface Category {
   category: string;
@@ -11,6 +12,7 @@ interface CategoriesResponse {
 
 export const useCategories = (language: string) => {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const { fetchWithAuth } = useContext(UserContext);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +22,7 @@ export const useCategories = (language: string) => {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(`${API_URL}/categories/videos?language=${language}`);
+        const response = await fetchWithAuth(`${API_URL}/categories/videos?language=${language}`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -37,7 +39,7 @@ export const useCategories = (language: string) => {
     };
 
     fetchCategories();
-  }, [language, API_URL]);
+  }, [language, API_URL, fetchWithAuth]);
 
   return { categories, isLoading, error };
 };
