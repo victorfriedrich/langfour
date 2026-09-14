@@ -31,7 +31,7 @@ function validateTranscript(value: unknown): TranscriptFile {
 }
 
 function MediaPageContent() {
-  const { language } = useContext(UserContext);
+  const { language, fetchWithAuth } = useContext(UserContext);
   const languageCode = language?.code || 'es';
   const [media, setMedia] = useState<ImportedMediaSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,10 +40,10 @@ function MediaPageContent() {
 
   const refresh = useCallback(async () => {
     setLoading(true); setError('');
-    try { setMedia(await listImportedMedia(languageCode)); }
+    try { setMedia(await listImportedMedia(fetchWithAuth, languageCode)); }
     catch (err) { setError(err instanceof Error ? err.message : 'Unable to load imported media'); }
     finally { setLoading(false); }
-  }, [languageCode]);
+  }, [fetchWithAuth, languageCode]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -79,9 +79,10 @@ function MediaPageContent() {
 }
 
 function ImportDialog({ language, onClose, onImported }: { language: string; onClose: () => void; onImported: () => void }) {
+  const { fetchWithAuth } = useContext(UserContext);
   const [file, setFile] = useState<TranscriptFile | null>(null); const [fileName, setFileName] = useState(''); const [series, setSeries] = useState(''); const [title, setTitle] = useState(''); const [season, setSeason] = useState(''); const [episode, setEpisode] = useState(''); const [error, setError] = useState(''); const [submitting, setSubmitting] = useState(false);
   const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => { const chosen = event.target.files?.[0]; if (!chosen) return; setError(''); try { const parsed = validateTranscript(JSON.parse(await chosen.text())); setFile(parsed); setFileName(chosen.name); } catch (err) { setFile(null); setFileName(''); setError(err instanceof Error ? err.message : 'Unable to read this file'); } };
-  const submit = async (event: FormEvent) => { event.preventDefault(); if (!file) return setError('Choose a transcript JSON file first.'); if (!series.trim() || !title.trim() || season === '' || episode === '') return setError('Series, title, season, and episode are required.'); setSubmitting(true); setError(''); const request: MediaImportRequest = { series: series.trim(), title: title.trim(), season: Number(season), episode: Number(episode), media_type: 'series', language: file.language || language, model: file.model || null, timebase: file.timebase || null, audio_seconds: file.audio_seconds ?? null, chunks: file.chunks }; try { await importMedia(request); onImported(); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to import media'); } finally { setSubmitting(false); } };
+  const submit = async (event: FormEvent) => { event.preventDefault(); if (!file) return setError('Choose a transcript JSON file first.'); if (!series.trim() || !title.trim() || season === '' || episode === '') return setError('Series, title, season, and episode are required.'); setSubmitting(true); setError(''); const request: MediaImportRequest = { series: series.trim(), title: title.trim(), season: Number(season), episode: Number(episode), media_type: 'series', language: file.language || language, model: file.model || null, timebase: file.timebase || null, audio_seconds: file.audio_seconds ?? null, chunks: file.chunks }; try { await importMedia(fetchWithAuth, request); onImported(); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to import media'); } finally { setSubmitting(false); } };
   return <div className="fixed inset-0 z-[55] flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4" onClick={!submitting ? onClose : undefined}><form onSubmit={submit} className="my-auto w-full max-w-xl rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}><div className="flex items-center justify-between border-b p-5"><div><h2 className="text-xl font-bold">Import an episode</h2><p className="text-sm text-slate-500">Add the episode details to your transcript.</p></div><button type="button" disabled={submitting} onClick={onClose} aria-label="Close" className="p-2 text-slate-400"><X/></button></div><div className="space-y-5 p-5">{error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}<label className={`flex cursor-pointer items-center gap-4 rounded-xl border-2 border-dashed p-4 ${file ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300 hover:border-indigo-400'}`}><input type="file" accept="application/json,.json" onChange={chooseFile} className="sr-only"/><span className={`rounded-lg p-2 ${file ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-50 text-indigo-600'}`}>{file ? <Check/> : <Upload/>}</span><span><strong className="block text-sm">{fileName || 'Choose transcription JSON'}</strong><span className="text-xs text-slate-500">{file ? `${file.chunks.length.toLocaleString()} chunks ready` : 'Your file is parsed locally before upload'}</span></span></label><div className="grid gap-4 sm:grid-cols-2"><Field label="Series name" value={series} setValue={setSeries} placeholder="Ozark"/><Field label="Episode title" value={title} setValue={setTitle} placeholder="Sugarwood"/><Field label="Season" value={season} setValue={setSeason} type="number" placeholder="1"/><Field label="Episode" value={episode} setValue={setEpisode} type="number" placeholder="1"/></div><div className="flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-500"><Film size={16} className="mt-0.5 shrink-0"/> Importing a long episode may take a few minutes. Keep this window open while vocabulary is processed.</div></div><div className="flex justify-end gap-3 border-t p-5"><button type="button" disabled={submitting} onClick={onClose} className="rounded-lg px-4 py-2 font-semibold text-slate-600">Cancel</button><button disabled={submitting} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2 font-semibold text-white disabled:opacity-60">{submitting && <Loader2 size={16} className="animate-spin"/>}{submitting ? 'Processing episode…' : 'Import episode'}</button></div></form></div>;
 }
 
