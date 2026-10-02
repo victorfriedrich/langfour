@@ -42,7 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
     { href: '/videos', name: 'Videos', icon: Film },
     { href: '/media', name: 'Media', icon: Clapperboard },
     { href: '/vocabulary', name: 'Practice', icon: BookMarked },
-    { href: '/progress', name: 'Words Known', icon: BarChart2 },
+    { href: '/progress', name: 'Vocabulary', icon: BarChart2 },
     { href: '/extension', name: 'Extension', icon: Download },
   ];
 

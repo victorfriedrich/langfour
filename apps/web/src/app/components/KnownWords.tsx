@@ -1,233 +1,162 @@
-import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Edit2, ArrowUp, ArrowDown } from 'lucide-react';
-import useUserWords from '../hooks/useUserWords';
-import { useUpdateUserwords } from '../hooks/useUpdateUserwords';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import { supabase } from '@/lib/supabaseclient';
+import { UserContext } from '@/context/UserContext';
+import { useSetUserwordsStatus } from '../hooks/useSetUserwordsStatus';
 
-interface Word {
+interface KnownWord {
   word_id: number;
   word: string;
-  translation: string;
-  status: string;
+  translation: string | null;
+  source: 'declared' | 'reviews';
 }
 
-interface KnownWordsProps {
-  searchTerm: string;
-}
+const PAGE = 50;
 
-const getStatusStyle = (status: string): string => {
-  if (status === 'Known' || isNaN(parseInt(status))) return 'bg-gray-100 text-black';
-  const practiceCount = parseInt(status);
-  if (practiceCount === 1) return 'bg-red-100 text-red-800';
-  if (practiceCount === 2) return 'bg-orange-100 text-orange-800';
-  if (practiceCount === 3) return 'bg-yellow-100 text-yellow-800';
-  return 'bg-green-100 text-green-800';
-};
+/** The words Langfour counts as known (sql/known_words.sql): marked known, or
+ *  learned in reviews. Only marked words can be sent back to practice; a
+ *  learned word is already being practised and drops out of this list by
+ *  itself if it is forgotten. */
+const KnownWords: React.FC<{ searchTerm: string }> = ({ searchTerm }) => {
+  const languageCode = useContext(UserContext).language?.code;
+  const { updateUserwordsStatus } = useSetUserwordsStatus();
+  const [words, setWords] = useState<KnownWord[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const cursor = useRef(0);
+  // Each new search or language is a new generation; answers from an older
+  // one are dropped, and one page loads at a time.
+  const generation = useRef(0);
+  const inFlight = useRef(false);
 
-const formatStatus = (status: string): string => {
-  return isNaN(parseInt(status)) ? 'Known' : `Practiced ${status}x`;
-};
+  const loadMore = useCallback(async () => {
+    if (!languageCode || inFlight.current) return;
+    const mine = generation.current;
+    inFlight.current = true;
+    setLoading(true);
+    const { data, error: rpcError } = await supabase.rpc('get_known_words_page', {
+      language_filter: languageCode,
+      search_term: searchTerm || null,
+      cursor_word_id: cursor.current,
+      page_size: PAGE,
+    });
+    inFlight.current = false;
+    if (mine !== generation.current) return;
+    setLoading(false);
+    if (rpcError) {
+      setError(rpcError.message);
+      return;
+    }
+    const page = (data ?? []) as KnownWord[];
+    cursor.current = page.at(-1)?.word_id ?? cursor.current;
+    setWords((prev) => [...prev, ...page]);
+    setHasMore(page.length === PAGE);
+  }, [languageCode, searchTerm]);
 
-const KnownWords: React.FC<KnownWordsProps> = ({ searchTerm }) => {
-  const [orderDirection, setOrderDirection] = useState<'ASC' | 'DESC'>('ASC');
-  const [selectedWords, setSelectedWords] = useState<number[]>([]);
-  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
-  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
-  const [displayWords, setDisplayWords] = useState<Word[]>([]);
-
-  const { words, fetchWords, loading, hasMore, error } = useUserWords({
-    pageSize: 20,
-    orderDirection,
-    searchTerm,
-  });
-
-  const { addWordsToUserwords } = useUpdateUserwords();
+  // A new search or language starts from the top.
+  useEffect(() => {
+    generation.current += 1;
+    inFlight.current = false;
+    cursor.current = 0;
+    setWords([]);
+    setSelected([]);
+    setHasMore(true);
+    loadMore();
+  }, [loadMore]);
 
   const observer = useRef<IntersectionObserver | null>(null);
-
-  // Smooth loading of words without flicker by using useEffect
-  useEffect(() => {
-    if (!loading) {
-      setDisplayWords(words);
-    }
-  }, [words, loading]);
-
-  const lastWordRef = useCallback(
+  const lastRowRef = useCallback(
     (node: HTMLTableRowElement | null) => {
-      if (loading) return;
-      if (observer.current) observer.current.disconnect();
-      observer.current = new IntersectionObserver(
-        (entries) => {
-          if (entries[0].isIntersecting && hasMore) {
-            fetchWords();
-          }
-        },
-        { threshold: 0.1, root: null, rootMargin: '20px' }
-      );
-      if (node) observer.current.observe(node);
+      observer.current?.disconnect();
+      if (!node || loading || !hasMore) return;
+      observer.current = new IntersectionObserver((entries) => entries[0].isIntersecting && loadMore());
+      observer.current.observe(node);
     },
-    [loading, hasMore, fetchWords]
+    [loading, hasMore, loadMore],
   );
 
-  const handleEdit = (e: React.MouseEvent, id: number) => {
-    e.stopPropagation();
-    console.log(`Editing word with id: ${id}`);
-    // Add your edit logic here
-  };
-
-  const toggleWordSelection = (id: number) => {
-    setSelectedWords((prev) =>
-      prev.includes(id) ? prev.filter((wordId) => wordId !== id) : [...prev, id]
-    );
-  };
-
-  const handleAddToUserwords = async () => {
+  const practiseAgain = async () => {
     try {
-      await addWordsToUserwords(selectedWords);
-      setSelectedWords([]);
-      // Optionally, refetch words or optimistically update the list
+      await updateUserwordsStatus(selected, 'learning');
+      setWords((prev) => prev.filter((w) => !selected.includes(w.word_id)));
+      setSelected([]);
     } catch (err) {
-      console.error('Error adding words:', err);
-      // Handle error (e.g., show a notification)
+      setError(err instanceof Error ? err.message : 'Could not move the words back to practice');
     }
   };
 
-  const toggleOrderDirection = () => {
-    setOrderDirection((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'));
-  };
-
-  // Shift-select logic for rows
-  const handleRowClick = (e: React.MouseEvent, index: number, wordId: number) => {
-    if (e.shiftKey && lastSelectedIndex !== null) {
-      e.preventDefault();
-      const rangeStart = Math.min(index, lastSelectedIndex);
-      const rangeEnd = Math.max(index, lastSelectedIndex);
-      const newSelectedWords = displayWords
-        .slice(rangeStart, rangeEnd + 1)
-        .map(word => word.word_id);
-      setSelectedWords(prev => {
-        const isRemoving = prev.includes(wordId);
-        if (isRemoving) {
-          return prev.filter(id => !newSelectedWords.includes(id));
-        }
-        return Array.from(new Set([...prev, ...newSelectedWords]));
-      });
-    } else {
-      toggleWordSelection(wordId);
-      setLastSelectedIndex(index);
-    }
-  };
+  const toggle = (id: number) => setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   return (
-    <div className="flex flex-col h-full w-full bg-white">
-      <style jsx global>{`
-        .hide-scrollbar {
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-        }
-        .hide-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-      `}</style>
-      <div className="flex-grow overflow-auto hide-scrollbar pb-16">
-        <table 
-          className="w-full divide-y divide-gray-200"
-          onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-        >
-          <thead className="bg-gray-50 sticky top-0 z-10">
-            <tr>
-              <th className="w-12 px-3 py-3">
-                <button
-                  onClick={toggleOrderDirection}
-                  className="text-gray-400 hover:text-black transition-colors duration-200 pt-1"
-                  aria-label="Toggle Order"
-                >
-                  {orderDirection === 'ASC' ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
-                </button>
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Word
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Translation
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                Status
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {displayWords.map((word: Word, index: number) => {
-              const isLastWord = displayWords.length === index + 1;
-              return (
-                <tr
-                  key={`${word.word_id}-${index}`}
-                  ref={isLastWord ? lastWordRef : null}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onMouseEnter={() => setHoveredRow(word.word_id)}
-                  onMouseLeave={() => setHoveredRow(null)}
-                  onClick={(e) => handleRowClick(e, index, word.word_id)}
-                >
-                  <td className="w-12 px-3 py-4">
+    // No scroll box of its own: the list continues the page under the summary.
+    <div>
+      <table className="w-full table-auto">
+        <tbody className="divide-y divide-gray-100 text-sm">
+          {words.map((w, i) => {
+            const declared = w.source === 'declared';
+            return (
+              <tr
+                key={w.word_id}
+                ref={i === words.length - 1 ? lastRowRef : null}
+                className={`group ${declared ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                onClick={() => declared && toggle(w.word_id)}
+              >
+                <td className="w-10 py-2.5 pl-1 pr-3">
+                  {declared && (
                     <input
                       type="checkbox"
-                      checked={selectedWords.includes(word.word_id)}
-                      onChange={(e) => handleRowClick(e as any, index, word.word_id)}
-                      className="form-checkbox h-4 w-4 text-indigo-600"
+                      checked={selected.includes(w.word_id)}
+                      onChange={() => toggle(w.word_id)}
                       onClick={(e) => e.stopPropagation()}
+                      className={`h-4 w-4 text-indigo-600 ${selected.length ? '' : 'opacity-0 group-hover:opacity-100'}`}
                     />
-                  </td>
-                  <td className="px-3 py-4 whitespace-nowrap font-medium text-gray-900">
-                    {word.word}
-                  </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-gray-500">
-                    <div className="flex items-center">
-                      <span className="flex-grow">{word.translation}</span>
-                      <div className="w-6 flex justify-center ml-2">
-                        {hoveredRow === word.word_id && (
-                          <button
-                            onClick={(e) => handleEdit(e, word.word_id)}
-                            className="text-gray-400 hover:text-black transition-colors duration-200"
-                            aria-label={`Edit ${word.word}`}
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm text-right w-24">
-                    <span
-                      className={`inline-flex items-center px-3 py-1 rounded-full ${getStatusStyle(
-                        word.status
-                      )}`}
-                    >
-                      {formatStatus(word.status)}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {loading && <div className="text-center py-4 text-gray-500">Loading...</div>}
-        {error && <div className="text-center py-4 text-red-500">{error}</div>}
-        {!hasMore && !loading && (
-          <div className="text-center py-4 text-gray-500">You have seen all words.</div>
-        )}
-      </div>
-      <div className="bg-white bg-opacity-50 backdrop-blur-sm p-4 border-t sticky bottom-0 left-0 right-0">
-        <button
-          className={`w-full py-2 px-4 font-semibold rounded-md transition-colors duration-200 ${
-            selectedWords.length > 0
-              ? 'bg-indigo-500 text-white hover:bg-indigo-600'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          }`}
-          disabled={selectedWords.length === 0}
-          onClick={handleAddToUserwords}
-        >
-          Move {selectedWords.length} {selectedWords.length === 1 ? 'Word' : 'Words'} to Flashcard Practice
-        </button>
-      </div>
+                  )}
+                </td>
+                <td className="w-56 whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900">
+                  {/* The marks of the summary above. */}
+                  <span
+                    className={`mr-2.5 inline-block h-1.5 w-1.5 -translate-y-px rounded-full ${declared ? 'bg-gray-300' : 'bg-indigo-600'}`}
+                    title={declared ? 'Marked as known' : 'Learned in your reviews'}
+                  />
+                  {w.word}
+                </td>
+                <td className="w-full whitespace-nowrap py-2.5 pr-1 text-gray-500">{w.translation}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {loading && (
+        <div className="divide-y divide-gray-100" aria-label="Loading">
+          {Array.from({ length: words.length ? 2 : 6 }, (_, i) => (
+            <div key={i} className="flex items-center gap-6 py-3 pl-11">
+              <span className="h-3 w-28 animate-pulse rounded bg-gray-100" />
+              <span className="h-3 w-40 animate-pulse rounded bg-gray-100" />
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <p className="py-4 text-center text-sm text-red-500">{error}</p>}
+      {!loading && words.length === 0 && (
+        <p className="py-10 text-center text-sm text-gray-500">
+          {searchTerm ? `No known words match “${searchTerm}”.` : 'No known words yet.'}
+        </p>
+      )}
+
+      {selected.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full bg-gray-900 py-1.5 pl-4 pr-1.5 text-sm text-white shadow-lg">
+          <span className="mr-2 tabular-nums">{selected.length} selected</span>
+          <button className="rounded-full bg-white px-3 py-1 font-medium text-gray-900 hover:bg-gray-100" onClick={practiseAgain}>
+            Practise again
+          </button>
+          <button className="rounded-full p-1.5 text-gray-400 hover:text-white" onClick={() => setSelected([])} aria-label="Clear selection">
+            <X size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

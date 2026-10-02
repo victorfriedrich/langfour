@@ -1,19 +1,53 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
+import {
+  ArrowLeft,
+  Car,
+  ChevronRight,
+  ChefHat,
+  Clapperboard,
+  FlaskConical,
+  Film,
+  Landmark,
+  Plane,
+  Tag,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { useWordRecommendations } from '../hooks/useWordRecommendations';
 import { useWordDetails } from '../hooks/useWordDetails';
 import { useUpdateUserwords } from '../hooks/useUpdateUserwords';
-import { Edit2 } from 'lucide-react';
 
 interface WordCategoriesProps {
   language: string;
   selectedCategory: string | null;
   categories: { category: string; icon: string | null }[];
-  onSelectCategory: (category: string) => void;
+  onSelectCategory: (category: string | null) => void;
   categoriesLoading: boolean;
 }
 
+// The API sends no usable icons (file_manager.py), so they are picked here.
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  Documentaries: Film,
+  Entertainment: Clapperboard,
+  Cooking: ChefHat,
+  Travel: Plane,
+  Politics: Landmark,
+  Science: FlaskConical,
+  Cars: Car,
+};
+
+const SkeletonRows = ({ count }: { count: number }) => (
+  <div className="divide-y divide-gray-100" aria-label="Loading">
+    {Array.from({ length: count }, (_, i) => (
+      <div key={i} className="flex items-center gap-6 py-3 pl-11">
+        <span className="h-3 w-28 animate-pulse rounded bg-gray-100" />
+        <span className="h-3 w-40 animate-pulse rounded bg-gray-100" />
+      </div>
+    ))}
+  </div>
+);
+
 const WordCategories: React.FC<WordCategoriesProps> = ({
-  language,
   selectedCategory,
   categories,
   onSelectCategory,
@@ -21,56 +55,46 @@ const WordCategories: React.FC<WordCategoriesProps> = ({
 }) => {
   const [selectedWords, setSelectedWords] = useState<number[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
-  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
-  const [displayedWordIds, setDisplayedWordIds] = useState<number[]>([]);
+  const [addedIds, setAddedIds] = useState<number[]>([]);
 
-  const {
-    recommendations,
-    isLoading: recommendationsLoading,
-    refreshRecommendations,
-  } = useWordRecommendations(selectedCategory);
+  const { recommendations, isLoading: recommendationsLoading, refreshRecommendations } = useWordRecommendations(selectedCategory);
   const { words: wordDetails } = useWordDetails(recommendations?.word_ids || []);
   const { addWordsToUserwords } = useUpdateUserwords();
 
-  // Initialize displayed words when recommendations change
-  useEffect(() => {
-    if (wordDetails) {
-      setDisplayedWordIds(wordDetails.map(word => word.word_id));
-    }
-  }, [wordDetails]);
+  // How much each word adds to understanding the category, keyed by word so
+  // it stays right after rows are filtered out.
+  const improvementById = useMemo(
+    () => new Map((recommendations?.word_ids ?? []).map((id, i) => [id, recommendations!.improvements[i] ?? 0])),
+    [recommendations],
+  );
+
+  // Words not added yet, and not marked invalid by the validation pipeline.
+  const displayedWords = useMemo(
+    () => wordDetails.filter((w) => !addedIds.includes(w.word_id) && w.cognate !== 'invalid'),
+    [wordDetails, addedIds],
+  );
 
   const toggleWordSelection = useCallback((id: number) => {
-    setSelectedWords(prev => prev.includes(id) ? prev.filter(wordId => wordId !== id) : [...prev, id]);
+    setSelectedWords((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }, []);
 
-  const handleWordClick = useCallback((e: React.MouseEvent, index: number, wordId: number) => {
+  const handleWordClick = (e: React.MouseEvent, index: number, wordId: number) => {
     if (e.shiftKey && lastSelectedIndex !== null) {
-      e.preventDefault(); // Prevent text selection
-      const rangeStart = Math.min(index, lastSelectedIndex);
-      const rangeEnd = Math.max(index, lastSelectedIndex);
-      // Include the end index by adding 1 to rangeEnd
-      const newSelectedWords = wordDetails
-        .slice(rangeStart, rangeEnd + 1)
-        .map(word => word.word_id)
-        .filter(id => displayedWordIds.includes(id));
-      setSelectedWords(prev => Array.from(new Set([...prev, ...newSelectedWords])));
+      e.preventDefault();
+      const range = displayedWords
+        .slice(Math.min(index, lastSelectedIndex), Math.max(index, lastSelectedIndex) + 1)
+        .map((w) => w.word_id);
+      setSelectedWords((prev) => Array.from(new Set([...prev, ...range])));
     } else {
       toggleWordSelection(wordId);
       setLastSelectedIndex(index);
     }
-  }, [wordDetails, toggleWordSelection, lastSelectedIndex, displayedWordIds]);
-
-  const toggleAllWords = useCallback(() => {
-    setSelectedWords(prev => 
-      prev.length === displayedWordIds.length ? [] : [...displayedWordIds]
-    );
-  }, [displayedWordIds]);
+  };
 
   const handleAddToUserwords = async () => {
     try {
       await addWordsToUserwords(selectedWords, `Frequent Words: ${selectedCategory}`);
-      // Remove added words from displayed words
-      setDisplayedWordIds(prev => prev.filter(id => !selectedWords.includes(id)));
+      setAddedIds((prev) => [...prev, ...selectedWords]);
       setSelectedWords([]);
       refreshRecommendations();
     } catch (err) {
@@ -78,138 +102,101 @@ const WordCategories: React.FC<WordCategoriesProps> = ({
     }
   };
 
-  const handleEdit = (e: React.MouseEvent, id: number) => {
-    e.stopPropagation();
-    console.log(`Editing word with id: ${id}`);
-  };
-
   if (!selectedCategory) {
-    if (categoriesLoading) {
-      return (
-        <div className="flex items-center justify-center h-64 text-gray-500">
-          Loading categories...
-        </div>
-      );
-    }
-
     return (
-      <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {categories.map((cat) => (
-          <div
-            key={cat.category}
-            onClick={() => onSelectCategory(cat.category)}
-            className="cursor-pointer rounded-md bg-white text-center py-6 text-gray-700 hover:shadow-md transform hover:-translate-y-1 transition-all duration-200"
-          >
-            {cat.category}
-          </div>
-        ))}
+      <div>
+        <p className="mb-4 text-sm text-gray-500">
+          Pick a topic to see the words that come up most in its videos, ordered by how much of them they help you understand.
+        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {categoriesLoading
+            ? Array.from({ length: 6 }, (_, i) => <div key={i} className="h-[52px] animate-pulse rounded-lg bg-gray-100" />)
+            : categories.map(({ category }) => {
+                const Icon = CATEGORY_ICONS[category] ?? Tag;
+                return (
+                  <button
+                    key={category}
+                    onClick={() => onSelectCategory(category)}
+                    className="group flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                  >
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-indigo-50 text-indigo-600">
+                      <Icon size={16} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{category}</span>
+                    <ChevronRight size={16} className="shrink-0 text-gray-300 transition-colors group-hover:text-gray-500" />
+                  </button>
+                );
+              })}
+        </div>
       </div>
     );
   }
 
-  // Filter wordDetails to only show words that are in displayedWordIds and not
-  // explicitly marked invalid by the validation pipeline.
-  const displayedWords = wordDetails.filter(
-    word => displayedWordIds.includes(word.word_id) && word.cognate !== 'invalid'
-  );
+  const allSelected = displayedWords.length > 0 && selectedWords.length === displayedWords.length;
 
   return (
-    <div className="flex flex-col h-full w-full">
-      <div className="flex-grow overflow-auto">
-        <table 
-          className="min-w-full divide-y divide-gray-200"
-          onMouseDown={(e) => e.shiftKey && e.preventDefault()} // Prevent text selection during shift-click
+    <div>
+      <div className="mb-2 flex items-center gap-3">
+        <button
+          onClick={() => onSelectCategory(null)}
+          className="-ml-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900"
         >
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="w-12 px-3 py-3">
-                <input 
-                  type="checkbox"
-                  checked={selectedWords.length === displayedWords.length && displayedWords.length > 0}
-                  onChange={toggleAllWords}
-                  className="form-checkbox h-4 w-4 text-indigo-600"
-                />
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Word
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Translation
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Frequency in Category
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {recommendationsLoading ? (
-              <tr>
-                <td colSpan={4} className="px-6 py-4 text-center">
-                  Loading recommendations...
-                </td>
-              </tr>
-            ) : (
-              displayedWords.map((word, index) => (
-                <tr
-                  key={word.word_id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onMouseEnter={() => setHoveredRow(word.word_id)}
-                  onMouseLeave={() => setHoveredRow(null)}
-                  onClick={(e) => handleWordClick(e, index, word.word_id)}
-                >
-                  <td className="w-12 px-3 py-4">
-                    <input
-                      type="checkbox"
-                      checked={selectedWords.includes(word.word_id)}
-                      onChange={() => toggleWordSelection(word.word_id)}
-                      className="form-checkbox h-4 w-4 text-indigo-600"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{word.word}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <span className="text-sm text-gray-500 flex-grow">{word.translation}</span>
-                      <div className="w-6 flex justify-center ml-2">
-                        {hoveredRow === word.word_id && (
-                          <button
-                            onClick={(e) => handleEdit(e, word.word_id)}
-                            className="text-gray-400 hover:text-black transition-colors duration-200"
-                            aria-label={`Edit ${word.word}`}
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">
-                      {((recommendations?.improvements[index].valueOf() ?? 0) * 100).toFixed(0)}%
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+          <ArrowLeft size={16} /> Topics
+        </button>
+        <h2 className="font-semibold text-gray-900">{selectedCategory}</h2>
+        {displayedWords.length > 0 && (
+          <button
+            onClick={() => setSelectedWords(allSelected ? [] : displayedWords.map((w) => w.word_id))}
+            className="ml-auto text-sm text-gray-500 hover:text-gray-900"
+          >
+            {allSelected ? 'Clear selection' : 'Select all'}
+          </button>
+        )}
       </div>
 
-      <div className="bg-white bg-opacity-50 backdrop-blur-sm p-4 border-t sticky bottom-0 left-0 right-0">
-        <button
-          className={`w-full py-2 px-4 font-semibold rounded-md transition-colors duration-200 ${
-            selectedWords.length > 0
-              ? 'bg-indigo-500 text-white hover:bg-indigo-600'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          }`}
-          disabled={selectedWords.length === 0}
-          onClick={handleAddToUserwords}
-        >
-          Add {selectedWords.length} {selectedWords.length === 1 ? 'word' : 'words'} to Practice
-        </button>
-      </div>
+      {recommendationsLoading && displayedWords.length === 0 ? (
+        <SkeletonRows count={8} />
+      ) : displayedWords.length === 0 ? (
+        <p className="py-10 text-center text-sm text-gray-500">You already know the common words for this topic.</p>
+      ) : (
+        <table className="w-full table-auto" onMouseDown={(e) => e.shiftKey && e.preventDefault()}>
+          <tbody className="divide-y divide-gray-100 text-sm">
+            {displayedWords.map((word, index) => (
+              <tr key={word.word_id} className="group cursor-pointer hover:bg-gray-50" onClick={(e) => handleWordClick(e, index, word.word_id)}>
+                <td className="w-10 py-2.5 pl-1 pr-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedWords.includes(word.word_id)}
+                    onChange={() => toggleWordSelection(word.word_id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`h-4 w-4 text-indigo-600 ${selectedWords.length ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                  />
+                </td>
+                <td className="w-56 whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900">{word.word}</td>
+                <td className="w-full whitespace-nowrap py-2.5 text-gray-500">{word.translation}</td>
+                <td
+                  className="whitespace-nowrap py-2.5 pr-1 text-right text-xs tabular-nums text-gray-400"
+                  title="How much more of this topic you would understand"
+                >
+                  +{((improvementById.get(word.word_id) ?? 0) * 100).toFixed(0)}%
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {selectedWords.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full bg-gray-900 py-1.5 pl-4 pr-1.5 text-sm text-white shadow-lg">
+          <span className="mr-2 tabular-nums">{selectedWords.length} selected</span>
+          <button className="rounded-full bg-white px-3 py-1 font-medium text-gray-900 hover:bg-gray-100" onClick={handleAddToUserwords}>
+            Add to practice
+          </button>
+          <button className="rounded-full p-1.5 text-gray-400 hover:text-white" onClick={() => setSelectedWords([])} aria-label="Clear selection">
+            <X size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

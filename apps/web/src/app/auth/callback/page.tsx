@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseclient';
+import { takeAfterLogin } from '@/lib/afterLogin';
 import { Loader2 } from 'lucide-react';
 
 const AuthCallback = () => {
@@ -22,7 +23,7 @@ const AuthCallback = () => {
         if (isDemoUser) {
           router.push('/'); // Redirect demo users to home or a demo-specific page
         } else {
-          router.push('/'); // Redirect regular users to home or dashboard
+          router.push(takeAfterLogin()); // Back to where login was asked for, or home
         }
       } else {
         router.push('/login');

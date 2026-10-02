@@ -13,10 +13,14 @@ export const useWordDetails = (wordIds: number[]) => {
   const [words, setWords] = useState<Word[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Callers pass a fresh array on every render; depend on its contents, or
+  // the effect re-runs, resets state and renders again without end.
+  const key = wordIds.join(',');
 
   useEffect(() => {
-    if (!wordIds.length) {
-      setWords([]);
+    const ids = key ? key.split(',').map(Number) : [];
+    if (!ids.length) {
+      setWords((prev) => (prev.length ? [] : prev));
       return;
     }
 
@@ -25,7 +29,7 @@ export const useWordDetails = (wordIds: number[]) => {
       try {
         const { data, error } = await supabase
           .rpc('get_words_by_ids', {
-            word_ids: wordIds
+            word_ids: ids
           });
 
         if (error) throw error;
@@ -33,7 +37,7 @@ export const useWordDetails = (wordIds: number[]) => {
         const { data: validityData, error: validityError } = await supabase
           .from('words')
           .select('id, cognate')
-          .in('id', wordIds);
+          .in('id', ids);
 
         if (validityError) throw validityError;
 
@@ -55,7 +59,7 @@ export const useWordDetails = (wordIds: number[]) => {
     };
 
     fetchWordDetails();
-  }, [wordIds]);
+  }, [key]);
 
   return { words, loading, error };
 };
