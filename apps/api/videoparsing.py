@@ -221,7 +221,7 @@ def main(url, language: str, use_transcript_api=True):
             # next round of rot -- and there will be one -- end videos that
             # Whisper could have transcribed.
             print(f"No usable '{language}' captions for {video_id} "
-                  f"({type(e).__name__}: {str(e).splitlines()[0][:120]}); "
+                  f"({type(e).__name__}: {(str(e).splitlines() or [''])[0][:120]}); "
                   f"falling back to audio transcription")
 
     if transcript is not None:

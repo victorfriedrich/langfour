@@ -1073,31 +1073,6 @@ class RefreshingYouTube:
                 for i in ids if i not in self.missing]
 
 
-def test_prune_drops_what_no_run_could_ever_use(db):
-    db.executemany("""INSERT INTO channels (channel_id, uploads, subscribers,
-                      videos_at, note, enriched_at)
-                      VALUES (?,?,?,?,?, datetime('now'))""", [
-        ("UC_dead",   None,   None,   None, "not_returned"),   # gone from YouTube
-        ("UC_small",  "UU_s",   500,   None, None),            # below the gate
-        ("UC_noup",   None,   90_000,  None, None),            # no uploads playlist
-        ("UC_keep",   "UU_k", 90_000,  None, None),            # a live candidate
-        ("UC_hidden", "UU_h",   None,  None, None),            # hidden != small
-        ("UC_spent",  "UU_p",    500, "2026-01-01", None),     # already sampled
-    ])
-    db.commit()
-    yp.prune(db, 10_000)
-    left = {c for (c,) in db.execute("SELECT channel_id FROM channels")}
-    assert left == {"UC_keep", "UC_hidden", "UC_spent"}
-
-
-def test_prune_takes_orphaned_videos_with_the_channel(db):
-    """Video rows outlive their channel otherwise, and they are API data too."""
-    add_channel(db, "UC_small", subs=500, videos_at=None)
-    add_videos(db, "UC_small", 3)
-    yp.prune(db, 10_000)
-    assert db.execute("SELECT COUNT(*) FROM videos").fetchone()[0] == 0
-
-
 def test_overdue_counts_a_missing_timestamp_as_past_the_ceiling(db):
     """The 239,704 rows written before fetched_at existed carry NULL. They
     cannot be shown to be inside the window, so they are treated as outside it."""
@@ -1154,3 +1129,47 @@ def test_refresh_preserves_the_source_of_the_row_it_rewrites(db):
 def test_retention_default_is_the_policy_ceiling():
     """Non-Authorized Data may not be stored longer than 30 calendar days."""
     assert yp.RETENTION_DAYS == 30
+
+
+def test_refresh_videos_stays_under_the_bound_variable_limit(db):
+    """One IN (...) over every stale id died on the real store: 522,594 ids
+    against SQLite's 250,000. The limit is lowered here instead."""
+    add_channel(db, "UC1")
+    ids = add_videos(db, "UC1", 300, fetched_at=None)
+    db.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 100)
+    refreshed, deleted = yp.refresh_videos(db, RefreshingYouTube(), ids)
+    assert (refreshed, deleted) == (300, 0)
+
+
+def test_enrich_keeps_the_language_while_the_description_is_unchanged(db):
+    """A blanket lang=NULL dropped every re-enriched channel -- and a language
+    asserted through `add` -- out of selection until detect ran again."""
+    add_channel(db, "UC_same", description="Historia de España", lang_conf=1.0,
+                enriched_at="2026-01-01 00:00:00")
+    add_channel(db, "UC_new", description="old text", lang_conf=0.9,
+                enriched_at="2026-01-01 00:00:00")
+
+    class Enriching:
+        used, budget = 0, 100
+
+        def channels(self, ids):
+            self.used += 1
+            text = {"UC_same": "Historia de España", "UC_new": "brand new text"}
+            return [{"id": i, "snippet": {"title": i, "description": text[i]},
+                     "statistics": {"subscriberCount": "50000"}} for i in ids]
+
+    yp.enrich(db, Enriching(), 30)
+    got = dict(db.execute("SELECT channel_id, lang FROM channels"))
+    assert got == {"UC_same": "es", "UC_new": None}
+
+
+def test_expand_does_not_start_a_channel_it_cannot_finish(db):
+    """Nothing is stored until a channel is complete, so a channel cut off by
+    the budget half way is units spent for nothing."""
+    add_channel(db, "UC1", uploads="UU1", video_count=200, **classified())
+    add_videos(db, "UC1", 6)
+    yt = BranchingYouTube(pages=4)
+    yt.budget = 5                              # the channel needs 8
+    yp.expand(db, yt, "es", yp.Gates())
+    assert yt.used == 0 and yt.paged == 0
+    assert db.execute("SELECT expanded_at FROM channels").fetchone()[0] is None

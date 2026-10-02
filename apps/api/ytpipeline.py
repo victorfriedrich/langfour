@@ -534,12 +534,19 @@ def batched(seq: Sequence[Any], n: int = 50) -> Iterable[list]:
 
 # ────────────────────────────────────────────────────── stage: enrich ──
 
+# lang is read from the description, so it is cleared only when the description
+# changed -- a blanket reset dropped every re-enriched channel (and the language
+# an operator asserted through `add`) out of selection until detect ran again.
+# Numbered parameters because the CASE needs ?2 a second time; every right-hand
+# side is evaluated against the old row, so `description` here is the stored one.
 UPDATE_CHANNEL = """
-    UPDATE channels SET title=?, description=?, custom_url=?, country=?,
-        subscribers=?, views=?, video_count=?, topics=?, published_at=?,
-        uploads=?, raw=?, enriched_at=datetime('now'), lang=NULL, lang_conf=NULL,
+    UPDATE channels SET title=?1, description=?2, custom_url=?3, country=?4,
+        subscribers=?5, views=?6, video_count=?7, topics=?8, published_at=?9,
+        uploads=?10, raw=?11, enriched_at=datetime('now'),
+        lang=CASE WHEN description IS ?2 THEN lang END,
+        lang_conf=CASE WHEN description IS ?2 THEN lang_conf END,
         note=CASE WHEN note='not_returned' THEN NULL ELSE note END
-    WHERE channel_id=?"""
+    WHERE channel_id=?12"""
 
 
 def enrich(db: sqlite3.Connection, yt: YouTube, stale_days: int) -> None:
@@ -794,42 +801,11 @@ def video_row(item: dict, source: str = "uploads") -> tuple:
 # or deleted, and `refresh` is the stage that guarantees it. That is also why
 # --stale-days defaults to 30: it was never a tuning knob.
 #
-# Deleting is the cheaper half and does most of the work. A channel below the
-# subscriber gate that has never been sampled cannot enter any future run, so
-# refreshing it buys nothing and dropping it retires the obligation outright.
+# Channels are refreshed, never pruned. A channel below today's subscriber gate
+# may be exactly what a smaller language needs tomorrow, and re-harvesting it is
+# free but re-enriching it is not.
 
 RETENTION_DAYS = 30
-
-
-def prune(db: sqlite3.Connection, min_subs: int) -> dict[str, int]:
-    """Delete stored API data no run can use. Free, and it shrinks the ceiling.
-
-    Kept: anything already sampled (videos_at set -- units were spent on it),
-    anything at or above the subscriber gate, and hidden counts, which are
-    unknown rather than small. Everything else is data being retained for
-    nothing."""
-    gone = {}
-    gone["not_returned"] = db.execute(
-        "DELETE FROM channels WHERE note='not_returned'").rowcount
-    # Below the gate and never sampled: it cannot become a candidate, because
-    # candidates() needs subscribers >= min_subs or a hidden count.
-    gone["below_gate"] = db.execute(
-        """DELETE FROM channels WHERE videos_at IS NULL
-             AND subscribers IS NOT NULL AND subscribers < ?""", (min_subs,)).rowcount
-    # No uploads playlist means the videos stage can never sample it.
-    gone["no_uploads"] = db.execute(
-        "DELETE FROM channels WHERE videos_at IS NULL AND uploads IS NULL").rowcount
-    gone["orphan_videos"] = db.execute(
-        """DELETE FROM videos WHERE channel_id NOT IN
-             (SELECT channel_id FROM channels)""").rowcount
-    db.commit()
-    # The point is to stop holding the data, not merely to stop reading it, so
-    # the pages are handed back rather than left in the freelist. VACUUM rewrites
-    # the whole file: minutes on a multi-GB store, and it needs room for a second
-    # copy while it runs.
-    print("  reclaiming space (VACUUM; this rewrites the file)...", flush=True)
-    db.execute("VACUUM")
-    return gone
 
 
 def overdue(db: sqlite3.Connection, retention_days: int) -> tuple[int, int]:
@@ -876,11 +852,12 @@ def refresh_videos(db: sqlite3.Connection, yt: YouTube, ids: Sequence[str]) -> t
     row is dropped rather than kept: under the literal reading there is no
     version of "keep it, it is only a bit stale" available."""
     refreshed = deleted = 0
-    placeholders = ",".join("?" * len(ids))
-    sources = dict(db.execute(
-        f"SELECT video_id, source FROM videos WHERE video_id IN ({placeholders})",
-        list(ids))) if ids else {}
     for chunk in batched(ids, 50):
+        # Per chunk: one IN (...) over every stale id exceeds SQLite's
+        # bound-variable limit on a real store (522,594 ids against 250,000).
+        sources = dict(db.execute(
+            f"SELECT video_id, source FROM videos WHERE video_id IN ({','.join('?' * len(chunk))})",
+            list(chunk)))
         items = yt.videos(chunk)
         rows = [video_row(i, sources.get(i["id"], "uploads")) for i in items
                 if (i.get("snippet") or {}).get("channelId")]
@@ -894,28 +871,26 @@ def refresh_videos(db: sqlite3.Connection, yt: YouTube, ids: Sequence[str]) -> t
     return refreshed, deleted
 
 
-def refresh(db: sqlite3.Connection, yt: YouTube, min_subs: int,
+def refresh(db: sqlite3.Connection, yt: YouTube,
             retention_days: int = RETENTION_DAYS, page: int = 50,
             pick_up_new: bool = False) -> None:
-    """Bring every retained row inside the ceiling, and drop the rest.
+    """Bring every retained row inside the ceiling.
 
-    Compliance is prune + re-enrich + refresh-or-delete the video rows, which on
-    the current store is ~6,400 units a cycle against the 14,338 a blanket
-    re-enrich costs today -- deleting 89% of the channels is what pays for it.
+    Compliance is re-enrich + refresh-or-delete the video rows: 1 unit per 50
+    channels and 1 per 50 videos. Only videos the API no longer returns are
+    deleted; channels are kept, whatever their size.
 
     Picking up newly published videos is a separate thing and off by default:
     it keeps the corpus current, which the retention rule does not ask for, and
     at one unit per tracked channel it costs more than the compliance half."""
-    before = overdue(db, retention_days)
-    dropped = prune(db, min_subs)
-    print("pruned " + "  ".join(f"{k} {v:,}" for k, v in dropped.items()), flush=True)
-
     channels, videos_ = overdue(db, retention_days)
-    print(f"past the {retention_days}-day ceiling after pruning: "
-          f"{channels:,} channels, {videos_:,} videos "
-          f"(was {before[0]:,} / {before[1]:,})", flush=True)
+    print(f"past the {retention_days}-day ceiling: "
+          f"{channels:,} channels, {videos_:,} videos", flush=True)
 
     enrich(db, yt, retention_days)             # the channel half, 1 unit / 50
+    # enrich clears the language of every channel whose description changed;
+    # without this those channels drop out of selection until detect next runs.
+    detect(db)
 
     if pick_up_new:
         # Before the stale rows are refreshed: a video published since the last
@@ -1203,6 +1178,11 @@ def expand(db: sqlite3.Connection, yt: YouTube, lang: str, g: Gates) -> None:
                        "WHERE channel_id=?", (cid,))
             db.commit()
             continue
+        # Nothing is stored until a channel is complete, so a channel started
+        # without the budget to finish it is paid for and then thrown away.
+        if yt.used + expand_cost([r]) > yt.budget:
+            print(f"stopped at {n:,}/{len(todo):,}: local budget reached")
+            break
         try:
             ids, source = catalogue(yt, cid, r["uploads"], r["video_count"])
             items = []
@@ -1466,7 +1446,7 @@ def main() -> None:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("stage",
                    choices=["harvest", "enrich", "detect", "videos", "classify",
-                            "expand", "select", "add", "refresh", "prune", "report"])
+                            "expand", "select", "add", "refresh", "report"])
     p.add_argument("--db", type=Path, default=DB)
     p.add_argument("--budget", type=int, default=9000, help="quota units")
     p.add_argument("--lang", help="ISO 639-1, e.g. es")
@@ -1536,10 +1516,6 @@ def main() -> None:
         elif not a.out:
             print("dry run: pass --push to queue, --out to inspect")
         return
-    if a.stage == "prune":
-        dropped = prune(db, g.min_subs)
-        print("pruned " + "  ".join(f"{k} {v:,}" for k, v in dropped.items()))
-        return report(db)
     if a.stage == "harvest":
         harvest(db, a.crawls)
     elif a.stage == "detect":
@@ -1551,7 +1527,7 @@ def main() -> None:
         if a.stage == "enrich":
             enrich(db, yt, a.stale_days)
         elif a.stage == "refresh":
-            refresh(db, yt, g.min_subs, a.stale_days, a.sample, a.new_uploads)
+            refresh(db, yt, a.stale_days, a.sample, a.new_uploads)
         elif a.stage == "videos":
             videos(db, yt, a.lang, g.min_subs, a.sample)
         else:
