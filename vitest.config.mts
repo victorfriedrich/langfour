@@ -8,6 +8,6 @@ export default defineConfig({
     // lines in apps/*/vitest.config.mts. The projects runner does its own
     // "no test files" check, so the per-project setting alone leaves this exit 1.
     passWithNoTests: true,
-    projects: ['apps/web', 'apps/extension'],
+    projects: ['apps/web', 'apps/extension', 'apps/remnote-plugin'],
   },
 });

@@ -1,0 +1,27 @@
+{
+  "manifestVersion": 1,
+  "id": "langfour_sync",
+  "name": "Langfour",
+  "author": "Victor Friedrich",
+  "repoUrl": "https://github.com/victorfriedrich/langfour",
+  "version": {
+    "major": 0,
+    "minor": 2,
+    "patch": 0
+  },
+  "theme": [],
+  "enableOnMobile": false,
+  "description": "Turns the words you save in Langfour into RemNote flashcards and reports your reviews back, so RemNote schedules and Langfour knows how well each word is learned.",
+  "requestNative": false,
+  "requiredScopes": [
+    {
+      "type": "All",
+      "level": "ReadCreateModify"
+    },
+    {
+      "type": "DescendantsOfName",
+      "remName": "Langfour",
+      "level": "ReadCreateModifyDelete"
+    }
+  ]
+}

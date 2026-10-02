@@ -1,0 +1,369 @@
+/* Built on RemNote's own design tokens (--rn-clr-*), which the plugin SDK
+   loads into the widget and switches with RemNote's light/dark theme. The
+   fallbacks are RemNote's light values, for the harness outside RemNote.
+
+   Stage colors: "learned" is RemNote's accent and "learning" is that accent
+   mixed toward the page, so the pair stays one hue and follows the theme.
+   Light values validated as an ordinal ramp (dataviz validate_palette.js
+   --ordinal: #8ea0ff -> #3658ff). "Not started" is a neutral fill. */
+.lf-root {
+  --surface: var(--rn-clr-background-primary, rgb(255 255 255));
+  --chip: var(--rn-clr-background-secondary, rgb(244 244 250));
+  --chip-hover: var(--rn-clr-background-tertiary, rgb(231 231 239));
+  --border: var(--rn-clr-border-opaque, rgb(231 231 239));
+  --text: var(--rn-clr-content-primary, rgb(41 41 54));
+  --text-2: var(--rn-clr-content-secondary, rgb(99 99 123));
+  --text-3: var(--rn-clr-content-tertiary, rgb(145 145 168));
+  --accent: var(--rn-clr-content-accent, rgb(54 88 255));
+  --accent-bg: var(--rn-clr-background-accent, rgb(75 105 255));
+  --accent-soft: var(--rn-clr-background-light-accent, rgb(232 236 255));
+  --on-accent: var(--rn-clr-content-on-color, rgb(255 255 255));
+  --good: var(--rn-clr-content-positive, rgb(0 152 93));
+  --warn: var(--rn-clr-content-warning, rgb(176 118 0));
+  --stage-learned: var(--accent);
+  --stage-learning: color-mix(in srgb, var(--accent) 55%, var(--surface));
+  --stage-new: var(--chip-hover);
+}
+
+body {
+  margin: 0;
+  background: var(--rn-clr-background-primary, rgb(255 255 255));
+}
+.lf-root {
+  box-sizing: border-box;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+  min-height: 100vh;
+  background: var(--surface);
+  color: var(--text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.lf-root *,
+.lf-root *::before,
+.lf-root *::after {
+  box-sizing: inherit;
+}
+.lf-root button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.lf-root h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.lf-root h2 {
+  margin: 32px 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* Header: page title, with the language filter on the right */
+.lf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.lf-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--chip);
+}
+.lf-tab {
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 10px;
+  background: none;
+  color: var(--text-2) !important;
+  font-size: 13px;
+}
+.lf-tab-on {
+  background: var(--surface);
+  color: var(--text) !important;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+/* Headline */
+.lf-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.lf-hero-value {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.lf-hero-label {
+  color: var(--text-2);
+}
+.lf-delta {
+  margin-left: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--rn-clr-background-light-positive, rgb(209 255 238));
+  color: var(--good);
+  font-size: 12px;
+  font-weight: 600;
+}
+.lf-delta-down {
+  background: var(--rn-clr-background-light-warning, rgb(255 248 217));
+  color: var(--warn);
+}
+
+/* Trend: 2px line over a faint area, crosshair + tooltip on hover. */
+.lf-trend {
+  margin-top: 20px;
+}
+.lf-trend-plot {
+  position: relative;
+  height: 112px;
+  border-bottom: 1px solid var(--border);
+  touch-action: none;
+}
+.lf-trend-plot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.lf-trend-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.lf-trend-area {
+  fill: var(--accent);
+  opacity: 0.1;
+}
+.lf-crosshair {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text-3);
+  pointer-events: none;
+}
+.lf-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
+.lf-tip {
+  position: absolute;
+  top: -6px;
+  transform: translate(8px, -100%);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--rn-clr-background-inverse-primary, rgb(41 41 54));
+  color: var(--rn-clr-content-inverse-primary, rgb(255 255 255));
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.lf-tip-left {
+  transform: translate(calc(-100% - 8px), -100%);
+}
+.lf-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* Where all words stand */
+.lf-stagebar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  margin-top: 24px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.lf-seg {
+  min-width: 3px;
+}
+.lf-stage-new { background: var(--stage-new); }
+.lf-stage-learning { background: var(--stage-learning); }
+.lf-stage-learned { background: var(--stage-learned); }
+.lf-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.lf-legend b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lf-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 2px;
+}
+
+/* Word chips: each opens its Rem */
+.lf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 10px;
+  background: var(--chip);
+}
+.lf-chip:hover {
+  background: var(--chip-hover);
+}
+.lf-chip-badge {
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lf-chip-more {
+  background: none;
+  color: var(--text-3);
+}
+
+/* Buttons, in RemNote's style */
+.lf-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--on-accent) !important;
+  font-weight: 600;
+  text-decoration: none;
+}
+.lf-button:hover {
+  filter: brightness(0.95);
+}
+.lf-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.lf-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text-3) !important;
+  font-size: 13px;
+}
+.lf-link:hover {
+  color: var(--text-2) !important;
+}
+
+/* Connect */
+.lf-connect {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 64px;
+  text-align: center;
+}
+.lf-connect-card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.lf-connect-card p {
+  margin: 0;
+  color: var(--text-2);
+}
+.lf-mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.lf-code {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0;
+}
+.lf-code span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--chip);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.lf-code .lf-code-gap {
+  width: 10px;
+  border: 0;
+  background: none;
+}
+.lf-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+.lf-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: lf-spin 0.8s linear infinite;
+}
+@keyframes lf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lf-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--rn-clr-content-negative, rgb(219 54 21));
+}
