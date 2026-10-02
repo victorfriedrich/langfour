@@ -1346,8 +1346,9 @@ def push(rows: list[dict], sb=None) -> int:
     return written
 
 
-def sync(lang: str, ranked: list[dict], top_n: int = TOP_N, sb=None) -> tuple[int, int]:
-    """Make the language's queue match this selection. Returns (written, deleted).
+def sync(lang: str, ranked: list[dict], top_n: int = TOP_N,
+         sb=None) -> tuple[list[dict], int]:
+    """Make the language's queue match this selection. Returns (picks, deleted).
 
     push() alone only ever added rows, so every --push stacked a fresh top
     `top_n` on whatever a channel already had: a legacy channel with 11
@@ -1369,16 +1370,20 @@ def sync(lang: str, ranked: list[dict], top_n: int = TOP_N, sb=None) -> tuple[in
     if sb is None:
         from supabase_client import supabase as sb  # verifies service_role
 
-    existing, page = [], 1000          # PostgREST returns at most 1,000 rows a request
+    existing, page = [], 1000          # PostgREST caps rows per request; page under it
     while True:
-        rows = (sb.table("video_queue").select("video_id,channel_id,status,source")
+        rows = (sb.table("video_queue").select("video_id,channel_id,status,source,attempts")
                 .eq("lang", lang).order("video_id")
                 .range(len(existing), len(existing) + page - 1).execute().data)
         existing += rows
         if len(rows) < page:
             break
+    # Only untouched rows are replaced. A pending row with attempts > 0 was
+    # reclaimed from a worker that died on it; re-inserting it would reset the
+    # counter that stops ingest from claiming it a fourth time.
     kept = [r for r in existing
-            if not (r["status"] == "pending" and r["source"] == "discovery")]
+            if not (r["status"] == "pending" and r["source"] == "discovery"
+                    and not r["attempts"])]
     used = Counter(r["channel_id"] for r in kept if r["channel_id"])
     queued = {r["video_id"] for r in kept}
 
@@ -1390,8 +1395,10 @@ def sync(lang: str, ranked: list[dict], top_n: int = TOP_N, sb=None) -> tuple[in
         picks.append(v)
 
     deleted = len(sb.table("video_queue").delete().eq("lang", lang)
-                  .eq("source", "discovery").eq("status", "pending").execute().data or [])
-    return push(picks, sb), deleted
+                  .eq("source", "discovery").eq("status", "pending").eq("attempts", 0)
+                  .execute().data or [])
+    push(picks, sb)
+    return picks, deleted
 
 
 def report(db: sqlite3.Connection) -> None:
@@ -1541,18 +1548,20 @@ def main() -> None:
     if a.stage in ("classify", "expand", "select", "add") and not a.lang:
         sys.exit(f"{a.stage} needs --lang")
     if a.stage == "select":
-        rows = select(db, a.lang, g, a.top)
+        if a.push:
+            # Every candidate, not the top-n cut: sync() fills each channel's
+            # free slots, which are fewer than top-n once some are transcribed.
+            # --out then gets what was actually queued.
+            rows, deleted = sync(a.lang, select(db, a.lang, g, None), a.top)
+            print(f"queue synced: {len(rows):,} pending rows written, "
+                  f"{deleted:,} replaced")
+        else:
+            rows = select(db, a.lang, g, a.top)
         if a.out:
             a.out.parent.mkdir(parents=True, exist_ok=True)
             a.out.write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")
             print(f"wrote {a.out}")
-        if a.push:
-            # Every candidate, not the top-n cut: sync() fills each channel's
-            # free slots, which are fewer than top-n once some are transcribed.
-            written, deleted = sync(a.lang, select(db, a.lang, g, None), a.top)
-            print(f"queue synced: {written:,} pending rows written, "
-                  f"{deleted:,} replaced")
-        elif not a.out:
+        if not a.push and not a.out:
             print("dry run: pass --push to queue, --out to inspect")
         return
 

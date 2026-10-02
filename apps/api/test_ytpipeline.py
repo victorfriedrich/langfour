@@ -1194,8 +1194,8 @@ def test_sync_counts_transcribed_videos_against_the_channel_cap():
 def test_sync_replaces_pending_discovery_rows_instead_of_stacking():
     """Pushing again after expand: the old picks go, the new top 15 replaces them."""
     sb = FakeSupabase([queued(f"stale{i}", channel_id="UC1") for i in range(15)])
-    written, deleted = yp.sync("es", candidates_for("UC1", 30), top_n=15, sb=sb)
-    assert (written, deleted) == (15, 15)
+    picks, deleted = yp.sync("es", candidates_for("UC1", 30), top_n=15, sb=sb)
+    assert (len(picks), deleted) == (15, 15)
     assert {r["video_id"] for r in sb.rows} == {f"UC1_{i}" for i in range(15)}
 
 
@@ -1232,3 +1232,13 @@ def test_sync_refuses_an_empty_selection():
     with pytest.raises(ValueError, match="empty selection"):
         yp.sync("es", [], sb=sb)
     assert sb.row("keep_me")
+
+
+def test_sync_leaves_reclaimed_rows_and_their_attempt_count_alone():
+    """A row reclaimed after crashing the worker three times is parked: ingest
+    never claims it again. Re-inserting it would reset attempts to 0."""
+    import ingest
+    sb = FakeSupabase([queued("UC1_0", channel_id="UC1", attempts=3)])
+    yp.sync("es", candidates_for("UC1", 3), top_n=2, sb=sb)
+    assert sb.row("UC1_0")["attempts"] == 3
+    assert [r["video_id"] for r in ingest.pending(sb, "es", 10)] == ["UC1_1"]
