@@ -12,8 +12,11 @@ With a middleware, a newly added endpoint is protected unless someone
 deliberately adds it to PUBLIC_PATHS.
 """
 
+import hashlib
 import logging
 import time
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPBearer
@@ -35,6 +38,11 @@ PUBLIC_PATHS = {
     "/docs",
     "/redoc",
     "/openapi.json",
+    # RemNote pairing (remnote_sync.py). `start` hands out nothing but a code
+    # and a secret; `claim` is authenticated by that secret, and only returns
+    # a token after a signed-in user approved the code.
+    "/pair/remnote/start",
+    "/pair/remnote/claim",
 }
 
 # ---------------------------------------------------------------------------
@@ -93,6 +101,99 @@ def verify_token(token: str):
     return user
 
 
+# ---------------------------------------------------------------------------
+# Personal access tokens (sql/remnote_sync.sql).
+#
+# The RemNote plugin cannot hold a Supabase session, so the web app issues it a
+# long-lived token. A token names its purpose in its prefix, and each purpose
+# is confined to one path prefix: a leaked sync token can push review history
+# and read the user's learning words, and nothing else. In the other direction,
+# a Supabase session is not accepted on those paths, so each endpoint has
+# exactly one kind of caller.
+# ---------------------------------------------------------------------------
+ACCESS_TOKEN_SCOPES = {
+    # token prefix -> (api_tokens.purpose, the only path prefix it may reach)
+    "lf_rn_": ("remnote_sync", "/sync/remnote/"),
+}
+
+
+def hash_access_token(token: str) -> str:
+    """Tokens are 32 random bytes, so an unsalted SHA-256 is enough: there is
+    no dictionary to attack, and a deterministic hash is what makes the lookup
+    an indexed equality match."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _access_token_scope(token: str) -> tuple[str, str] | None:
+    for prefix, scope in ACCESS_TOKEN_SCOPES.items():
+        if token.startswith(prefix):
+            return scope
+    return None
+
+
+class AuthUnavailable(Exception):
+    """The token could not be checked, as opposed to being wrong. Answered with
+    503: a client that drops its credentials on 401 must not do so because the
+    database blinked."""
+
+
+def verify_access_token(token: str, purpose: str):
+    """Return a user-shaped object for a live personal access token, or None.
+    Raises AuthUnavailable when the lookup itself fails.
+
+    Shares the session-token cache, so revoking a token takes effect within
+    _TOKEN_TTL_SECONDS rather than immediately."""
+    cached = _cache_get(token)
+    if cached is not None:
+        return cached
+
+    try:
+        result = (
+            _supabase.table("api_tokens")
+            .select("id, user_id")
+            .eq("token_hash", hash_access_token(token))
+            .eq("purpose", purpose)
+            .is_("revoked_at", "null")
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("Access token lookup failed: %s", exc)
+        raise AuthUnavailable from exc
+
+    if not result.data:
+        return None
+    row = result.data[0]
+
+    # Only on a cache miss, so at most once per TTL window per token.
+    try:
+        _supabase.table("api_tokens").update(
+            {"last_used_at": datetime.now(UTC).isoformat()}
+        ).eq("id", row["id"]).execute()
+    except Exception as exc:
+        logger.warning("Could not record access token use: %s", exc)
+
+    user = SimpleNamespace(id=row["user_id"], token_purpose=purpose)
+    _cache_put(token, user)
+    return user
+
+
+def _authenticate(token: str, path: str):
+    """Pick the verifier for this token and path. Returns (user, error)."""
+    scope = _access_token_scope(token)
+    token_only_paths = [p for _, p in ACCESS_TOKEN_SCOPES.values() if path.startswith(p)]
+
+    if scope is None:
+        if token_only_paths:
+            return None, "This endpoint takes a personal access token"
+        return verify_token(token), None
+
+    purpose, allowed_prefix = scope
+    if not path.startswith(allowed_prefix):
+        return None, "This token is not valid for this endpoint"
+    return verify_access_token(token, purpose), None
+
+
 def _extract_bearer(request: Request) -> str | None:
     header = request.headers.get("authorization") or request.headers.get("Authorization")
     if not header:
@@ -104,7 +205,7 @@ def _extract_bearer(request: Request) -> str | None:
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Rejects any request without a valid Supabase bearer token."""
+    """Rejects any request without a valid Supabase or personal access token."""
 
     async def dispatch(self, request: Request, call_next):
         # CORS preflight carries no credentials by design.
@@ -122,11 +223,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Missing bearer token"},
             )
 
-        user = verify_token(token)
+        try:
+            user, error = _authenticate(token, path)
+        except AuthUnavailable:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Could not check the token. Try again shortly."},
+            )
         if user is None:
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Invalid authentication credentials"},
+                content={"detail": error or "Invalid authentication credentials"},
             )
 
         # Downstream handlers read this instead of re-verifying.

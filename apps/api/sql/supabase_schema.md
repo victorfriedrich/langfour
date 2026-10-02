@@ -26,7 +26,7 @@ Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 
 | Table | Columns | Keys and constraints |
 |---|---|---|
-| `userdata` | `user_id`, `languages text[]`, `default_language`, `known_words_updated_at` | PK `user_id`; FK → `auth.users`; `default_language` in the four codes |
+| `userdata` | `user_id`, `languages text[]`, `default_language`, `known_words_updated_at`, `review_provider` | PK `user_id`; FK → `auth.users`; `default_language` in the four codes; `review_provider` in `langfour, remnote`, default `langfour` |
 | `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known`; SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
 | `flashcardtests` | `id`, `user_id`, `word_id`, `test_type`, `test_result`, `tested_at` | PK `id`; `test_type` in `flashcard, typing`; index `(user_id, word_id, test_result)` |
 | `usertranslations` | `id`, `user_id`, `word_id`, `custom_translation`, `created_at` | PK `id`; index `(user_id, word_id)` |
@@ -37,6 +37,31 @@ Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 Policies: `*_select_own`, `*_insert_own`, `*_update_own`, `*_delete_own` on
 each, except `user_roles`, which has `select_own` only (roles are granted
 with `service_role`).
+
+### RemNote sync (`remnote_sync.sql`, applied 2026-09-26)
+
+| Table | Columns | Keys and constraints |
+|---|---|---|
+| `srs_notes` | `id`, `user_id`, `word_id`, `provider`, `external_id`, `created_at`, `removed_at` | PK `id` (identity); FK `(user_id, word_id) → userwords` on delete cascade; unique `(user_id, provider, word_id)` and `(user_id, provider, external_id)`; `provider` in `remnote` |
+| `srs_cards` | `id`, `note_id`, `external_id`, `kind`, `next_due_at` | PK `id` (identity); FK `note_id → srs_notes` on delete cascade; unique `(note_id, external_id)`; `kind` in `forward, backward, cloze`; index on `note_id` |
+| `srs_reviews` | `card_id`, `reviewed_at`, `outcome` | PK `(card_id, reviewed_at)`; FK `card_id → srs_cards` on delete cascade; `outcome` in `again, hard, good, easy` |
+| `api_tokens` | `id`, `user_id`, `purpose`, `token_hash`, `created_at`, `last_used_at`, `revoked_at` | PK `id`; unique `token_hash`; partial unique `(user_id, purpose) where revoked_at is null`; `purpose` in `remnote_sync` |
+| `srs_sync_leases` | `user_id`, `holder`, `expires_at` | PK `user_id`; FK → `auth.users` |
+| `api_token_pairings` | `id`, `purpose`, `secret_hash`, `user_code`, `user_id`, `approved_at`, `created_at`, `expires_at` | PK `id`; unique `secret_hash` and `user_code`; FK `user_id → auth.users`; `purpose` in `remnote_sync`. Applied as migration `remnote_token_pairings` |
+
+Policies: `srs_*_select_own` on the three `srs_` data tables (cards and
+reviews check ownership through `srs_notes`). `api_tokens`,
+`api_token_pairings` and `srs_sync_leases` have none: only the API reads or
+writes them.
+
+### Known words (`known_words.sql`, applied 2026-10-01)
+
+`user_known_words` is a view (`security_invoker`, so RLS applies): one row
+per known word with `source` `declared` (userwords.status = 'known') or
+`reviews` (learned in Langfour's or RemNote's reviews; rule mirrors
+`apps/remnote-plugin/src/stats.ts`). Read by the recommender and the
+Vocabulary page; see the functions `known_words_summary` and
+`get_known_words_page` below.
 
 ### Ingestion
 
@@ -87,16 +112,19 @@ name in each app; `none` means nothing in the repo calls it today.
 | `get_words_by_ids(word_ids int[])` | table(word_id, word, translation) | web |
 | `get_words_with_many_forms()` | table(id, root) | api |
 | `get_words_with_wordforms_cursor(language_param, last_fetched_word_id, fetch_limit)` | table(word_id, word, wordform) | api, loads the word cache at boot |
+| `get_known_words_page(language_filter, search_term, cursor_word_id, page_size)` | table(word_id, word, translation, source) | web. Reads `user_known_words` |
 | `initialize_account(_language_level varchar)` | void | web |
 | `initialize_account(_language text, _language_level text)` | void | web |
 | `insert_flashcard_test(_word_id, _test_type, _test_result)` | void | web |
 | `is_admin()` | boolean | RLS policies. `SECURITY DEFINER`, reads `user_roles` |
 | `load_unseen_words()` | table(word_id, root, translation) | web |
+| `known_words_summary(language_filter)` | table(declared, from_reviews) | web. Reads `user_known_words` |
 | `mark_video_as_seen(input_video_id)` | void | web |
 | `move_words_to_userwords(_word_ids int[])` | void | extension |
 | `move_words_to_userwords(_word_ids int[], _status, _source)` | void | none |
 | `recall_efficiency_last_7_days()` | numeric | web |
 | `set_user_default_language(_language)` | void | web, extension |
+| `srs_acquire_sync_lease(p_user_id uuid, p_holder text, p_seconds int)` | boolean | api. Execute granted to `service_role` only; takes a user id for that reason |
 | `set_userwords_status(_word_ids int[], _status)` | void | web |
 | `total_words_known()` | integer | web |
 | `total_words_known(language_filter)` | integer | web |

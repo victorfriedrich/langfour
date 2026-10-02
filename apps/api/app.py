@@ -21,6 +21,9 @@ from nlp_processing import (
     translate_section,
 )
 from recommender import Recommender
+from remnote_sync import pair_router as remnote_pair_router
+from remnote_sync import sync_router as remnote_sync_router
+from remnote_sync import web_router as remnote_web_router
 from text_article_parsing import parse_article
 from utils import get_video_words
 from videoparsing import main as process_video
@@ -57,8 +60,39 @@ _extension_id = os.getenv("EXTENSION_ID", "").strip()
 if _extension_id:
     ALLOWED_ORIGINS.append(f"chrome-extension://{_extension_id}")
 
+
+
+class PathScopedCORSMiddleware:
+    """The allowlist above, except under `open_prefixes`.
+
+    The RemNote plugin runs in a sandboxed iframe whose Origin is not a fixed
+    host we could list (it is `null`, or localhost while developing). Its
+    endpoints authenticate with a personal access token in the Authorization
+    header, or with a pairing secret in the body, and never with cookies, so a
+    wildcard origin without credentials grants a page nothing it does not
+    already have: without the token or secret, the request still fails.
+    """
+
+    def __init__(self, app, open_prefixes: tuple[str, ...], **strict):
+        self.open_prefixes = open_prefixes
+        self.strict = CORSMiddleware(app, **strict)
+        self.open = CORSMiddleware(
+            app,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Sync-Run"],
+        )
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "") if scope["type"] == "http" else ""
+        handler = self.open if path.startswith(self.open_prefixes) else self.strict
+        await handler(scope, receive, send)
+
+
 app.add_middleware(
-    CORSMiddleware,
+    PathScopedCORSMiddleware,
+    open_prefixes=("/sync/remnote/", "/pair/remnote/"),
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -67,6 +101,9 @@ app.add_middleware(
 
 # Include the flashcards endpoints with a prefix.
 app.include_router(flashcards_router, prefix="/flashcards", tags=["flashcards"])
+app.include_router(remnote_web_router, prefix="/integrations/remnote", tags=["remnote"])
+app.include_router(remnote_sync_router, prefix="/sync/remnote", tags=["remnote"])
+app.include_router(remnote_pair_router, prefix="/pair/remnote", tags=["remnote"])
 
 # Client now comes from supabase_client, which verifies the key is
 # service_role before the app is allowed to start.
