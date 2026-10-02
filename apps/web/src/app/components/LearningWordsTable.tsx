@@ -6,7 +6,7 @@
  * ------------------------------------------------------------------ */
 
 import React, { useState, useEffect, useRef, useCallback, useContext } from 'react';
-import { ArrowUp, ArrowDown, Check, ChevronDown, Filter, Download } from 'lucide-react';
+import { ArrowUp, ArrowDown, Check, ChevronDown, Filter, Download, Search, X } from 'lucide-react';
 import { supabase } from '@/lib/supabaseclient';
 import { UserContext } from '@/context/UserContext';
 
@@ -19,14 +19,13 @@ import { getDaysUntilReview } from '../utils/dateUtils';
 /* coloured “days‑due” pill */
 function getDuePill(due: string) {
   const l = due.toLowerCase();
-  if (l === 'due today') return { label: 'Due Today', color: 'bg-red-200' };
+  if (l === 'due today') return { label: 'Due today', color: 'text-rose-600' };
   const n = parseInt(due, 10);
-  if (isNaN(n)) return { label: due, color: 'bg-gray-200' };
-  if (n < 0) return { label: 'Overdue', color: 'bg-red-200' };
-  if (n === 0) return { label: 'Due Today', color: 'bg-red-200' };
-  if (n <= 3) return { label: due, color: 'bg-orange-200' };
-  if (n <= 7) return { label: due, color: 'bg-yellow-200' };
-  return { label: due, color: 'bg-green-200' };
+  if (isNaN(n)) return { label: due, color: 'text-gray-400' };
+  if (n < 0) return { label: 'Overdue', color: 'text-rose-600' };
+  if (n === 0) return { label: 'Due today', color: 'text-rose-600' };
+  if (n <= 3) return { label: due, color: 'text-amber-600' };
+  return { label: due, color: 'text-gray-400' };
 }
 
 /* dropdown */
@@ -51,7 +50,7 @@ const SourcesDropdown: React.FC<SourcesDropdownProps> = ({ sources, current, onC
 
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-2 px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200 transition-colors text-md font-medium text-gray-700">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900">
         <Filter size={16} />
         <span className="truncate max-w-40 lg:max-w-none">{label}</span>
         <ChevronDown size={14} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
@@ -98,7 +97,7 @@ const ExportDropdown: React.FC<ExportDropdownProps> = ({ onSelect }) => {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="p-2 rounded-md bg-gray-100 hover:bg-gray-200 transition-colors"
+        className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
         aria-label="Export"
       >
         <Download size={16} />
@@ -136,13 +135,45 @@ interface LearningWordsTableProps {
   onMovedToKnown?: () => void;
   onSourceChange?: (s: string | null) => void;
   source?: string | null;
+  /** Langfour's due dates; hidden when another system (RemNote) schedules. */
+  showDue?: boolean;
+  /** How far along each word is, from the progress data (word id -> stage). */
+  stages?: Map<number, 'new' | 'learning' | 'learned'>;
+  /** All learning words in the current language, for the header. */
+  total?: number;
+  /** Called once, when the first page has loaded (or failed). */
+  onReady?: () => void;
 }
+
+// The marks of the legend above, so a row reads like the legend.
+const STAGE_DOT = {
+  learned: { className: 'bg-indigo-700', label: 'Learned' },
+  learning: { className: 'bg-indigo-400', label: 'Learning' },
+  new: { className: 'bg-gray-200', label: 'Not started' },
+} as const;
 
 const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
   onMovedToKnown,
   onSourceChange,
   source = null,
+  showDue = true,
+  stages,
+  total,
+  onReady,
 }) => {
+  const searchRef = useRef<HTMLInputElement>(null);
+  // "/" jumps to search, as in most tools people already know.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+      if (e.key === '/' && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   /* source dropdown */
   const [sources, setSources] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState<string | null>(source);
@@ -206,6 +237,14 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
       setWords((prev) => [...prev, ...newWords]);
     }
   }, [fetched, cursor]);
+
+  const reported = useRef(false);
+  useEffect(() => {
+    if (!isLoading && cursor === 0 && !reported.current) {
+      reported.current = true;
+      onReady?.();
+    }
+  }, [isLoading, cursor, onReady]);
 
   /* selection */
   const [selectedWords, setSelectedWords] = useState<number[]>([]);
@@ -317,13 +356,25 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
 
   /* render */
   return (
-    <div className="bg-white mt-10 shadow-md rounded-lg flex flex-col h-full">
+    // No scroll box of its own: the list continues the page under the progress.
+    <section>
       {/* header */}
-      <div className="flex items-center bg-gray-100 px-4 py-3 rounded-t-lg gap-4">
-        <h2 className="text-lg font-semibold text-gray-700">Your Learning Words</h2>
+      <div className="flex flex-wrap items-center gap-3 pb-3">
+        <h2 className="font-semibold text-gray-900">
+          Your words
+          {total !== undefined && <span className="ml-2 font-normal tabular-nums text-gray-400">{total.toLocaleString()}</span>}
+        </h2>
 
         {/* right‑aligned group */}
-        <div className="flex items-center gap-4 ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={toggleDirection}
+            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            aria-label={direction === 'ASC' ? 'Oldest first' : 'Newest first'}
+            title={direction === 'ASC' ? 'Oldest first' : 'Newest first'}
+          >
+            {direction === 'ASC' ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+          </button>
           <ExportDropdown onSelect={handleExport} />
           <SourcesDropdown
             sources={sources}
@@ -333,45 +384,30 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
               onSourceChange?.(s);
             }}
           />
-          <input
-            type="text"
-            placeholder="Search…"
-            className="w-64 border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:border-gray-400"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <label className="relative ml-2">
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="Search"
+              className="w-48 rounded-lg border border-gray-200 py-1.5 pl-8 pr-7 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {!search && (
+              <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-gray-200 px-1 text-[10px] text-gray-400">/</kbd>
+            )}
+          </label>
         </div>
       </div>
 
-      <style jsx global>{`
-        .hide-scrollbar {
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-        }
-        .hide-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-      `}</style>
-
       {/* table */}
-      <div className="flex-grow overflow-auto pb-16 hide-scrollbar">
+      <div>
         <table
-          className="w-full min-w-max table-auto"
+          className="w-full table-auto"
           onMouseDown={(e) => e.shiftKey && e.preventDefault()}
         >
-          <thead className="bg-gray-50 sticky top-0 z-10">
-            <tr>
-              <th className="w-12 px-3 py-3 text-gray-500 uppercase text-xs font-medium">
-                <button onClick={toggleDirection} className="text-gray-400 hover:text-black transition-colors duration-200" aria-label="Toggle order">
-                  {direction === 'ASC' ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
-                </button>
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Word</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Translation</th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-48">Days&nbsp;to&nbsp;practice</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 text-sm">
+          <tbody className="divide-y divide-gray-100 text-sm">
             {words.map((w, i) => {
               const last = i === words.length - 1;
               const { label, color } = getDuePill(w.review_due);
@@ -379,48 +415,67 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
                 <tr
                   key={w.word_id}
                   ref={last ? lastRowRef : null}
-                  className="hover:bg-gray-50 cursor-pointer"
+                  className="group cursor-pointer hover:bg-gray-50"
                   onClick={(e) => handleRowClick(e, i, w.word_id)}
                 >
-                  <td className="w-12 px-3 py-4">
+                  <td className="w-10 py-2.5 pl-1 pr-3">
                     <input
                       type="checkbox"
                       checked={selectedWords.includes(w.word_id)}
                       onChange={(e) => handleRowClick(e as any, i, w.word_id)}
-                      className="form-checkbox h-4 w-4 text-indigo-600"
+                      className={`form-checkbox h-4 w-4 text-indigo-600 ${
+                        selectedWords.length ? '' : 'opacity-0 group-hover:opacity-100'
+                      }`}
                       onClick={(e) => e.stopPropagation()}
                     />
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap font-medium text-gray-700">{w.word}</td>
-                  <td className="px-3 py-4 whitespace-nowrap text-gray-600">{w.translation}</td>
-                  <td className="px-3 py-4 whitespace-nowrap text-right w-24">
-                    <span className={`inline-block px-3 py-1 rounded-full text-black font-medium ${color}`}>{label}</span>
+                  <td className="w-56 whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900">
+                    {stages?.has(w.word_id) && (
+                      <span
+                        className={`mr-2.5 inline-block h-1.5 w-1.5 -translate-y-px rounded-full ${STAGE_DOT[stages.get(w.word_id)!].className}`}
+                        title={STAGE_DOT[stages.get(w.word_id)!].label}
+                      />
+                    )}
+                    {w.word}
                   </td>
+                  <td className="w-full whitespace-nowrap py-2.5 text-gray-500">{w.translation}</td>
+                  {showDue && (
+                    <td className={`whitespace-nowrap py-2.5 pr-1 text-right text-xs font-medium ${color}`}>{label}</td>
+                  )}
                 </tr>
               );
             })}
           </tbody>
         </table>
 
-        {isLoading && <p className="text-center py-4 text-gray-500">Loading…</p>}
-        {error && <p className="text-center py-4 text-red-500">{error}</p>}
-        {!isLoading && words.length === 0 && <p className="text-center py-4 text-gray-500">No words found.</p>}
-        {!isLoading && !hasMore && words.length > 0 && <p className="text-center py-4 text-gray-500">You have seen all words.</p>}
+        {isLoading && (
+          <div className="divide-y divide-gray-100" aria-label="Loading">
+            {Array.from({ length: words.length ? 2 : 6 }, (_, i) => (
+              <div key={i} className="flex items-center gap-6 py-3 pl-11">
+                <span className="h-3 w-28 animate-pulse rounded bg-gray-100" />
+                <span className="h-3 w-40 animate-pulse rounded bg-gray-100" />
+              </div>
+            ))}
+          </div>
+        )}
+        {error && <p className="py-4 text-center text-sm text-red-500">{error}</p>}
+        {!isLoading && words.length === 0 && (
+          <p className="py-10 text-center text-sm text-gray-500">{search ? `No words match “${search}”.` : 'No words yet.'}</p>
+        )}
       </div>
-      <div className="bg-white bg-opacity-50 backdrop-blur-sm p-4 border-t sticky bottom-0 left-0 right-0">
-        <button
-          className={`w-full py-2 px-4 font-semibold rounded-md transition-colors duration-200 ${
-            selectedWords.length > 0
-              ? 'bg-indigo-500 text-white hover:bg-indigo-600'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          }`}
-          disabled={selectedWords.length === 0}
-          onClick={handleMoveToKnown}
-        >
-          Move {selectedWords.length} {selectedWords.length === 1 ? 'Word' : 'Words'} to Known Words
-        </button>
-      </div>
-    </div>
+      {/* Floating action bar while words are selected */}
+      {selectedWords.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full bg-gray-900 py-1.5 pl-4 pr-1.5 text-sm text-white shadow-lg">
+          <span className="mr-2 tabular-nums">{selectedWords.length} selected</span>
+          <button className="rounded-full bg-white px-3 py-1 font-medium text-gray-900 hover:bg-gray-100" onClick={handleMoveToKnown}>
+            I already know these
+          </button>
+          <button className="rounded-full p-1.5 text-gray-400 hover:text-white" onClick={() => setSelectedWords([])} aria-label="Clear selection">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+    </section>
   );
 };
 
