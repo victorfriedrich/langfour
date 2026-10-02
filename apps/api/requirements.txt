@@ -1,5 +1,8 @@
 boto3==1.35.36
 fastapi==0.115.0
+# videoparsing checks that a fetched caption track actually reads as the
+# language it is labelled with. Shared with ytpipeline's channel detection.
+lingua-language-detector==2.0.2
 moviepy==1.0.3
 numpy==2.1.1
 openai==1.48.0
@@ -10,4 +13,11 @@ pytubefix==7.1rc1
 scipy==1.14.1
 supabase==2.7.4
 uvicorn==0.30.6
-youtube-transcript-api==0.6.2
+youtube-transcript-api==1.2.4
+# flashcards.py decompresses collection.anki21b, the format recent Anki
+# writes. Nothing else pulls zstandard in, so without it every modern
+# .apkg import fails with a 500 that only appears in the container.
+zstandard==0.25.0
+# videothumbnailcreation.py imports PIL directly. It resolves today only
+# as moviepy -> imageio -> pillow; declared so it survives moviepy moving.
+pillow==12.3.0
