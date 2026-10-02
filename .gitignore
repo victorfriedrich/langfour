@@ -203,6 +203,7 @@ apps/api/data/seeds/*.lock
 apps/api/data/seeds/*.sqlite
 apps/api/data/seeds/*.sqlite-shm
 apps/api/data/seeds/*.sqlite-wal
+apps/api/data/seeds/*.sqlite.bak*
 apps/api/data/cc_seed.json
 apps/api/data/pool_*.json
 apps/api/data/yt_*_api.json

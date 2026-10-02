@@ -37,7 +37,6 @@ class Recommender:
         self.max_word_ids = {}
         self.matrices = {}
         self.total_words_per_doc = {}
-        self.user_known_words_cache = {}
         
         # Supabase
         from supabase_client import supabase as _shared_supabase
@@ -401,12 +400,17 @@ class Recommender:
             return []
     
     async def get_known_words(self, user_id: str) -> list[int]:
+        """Words the user knows: declared known, or learned in reviews
+        (sql/known_words.sql). A word only saved, or still being learned,
+        does not count, so it shows up as new in a video."""
         start_time = time.time()
         try:
             known_word_ids = set()
             page = 0
             while True:
-                response = self.supabase.table("userwords").select("word_id").eq("user_id", user_id).range(page*1000, (page+1)*1000-1).execute()
+                response = (self.supabase.table("user_known_words").select("word_id")
+                            .eq("user_id", user_id).order("word_id")
+                            .range(page*1000, (page+1)*1000-1).execute())
                 if not response.data:
                     break
                 known_word_ids.update(word['word_id'] for word in response.data)
@@ -416,7 +420,6 @@ class Recommender:
             logger.debug(
                 "Fetched %d known words in %.2fs", len(known_word_ids), end_time - start_time
             )
-            self.user_known_words_cache[user_id] = list(known_word_ids)
             return list(known_word_ids)
 
         except Exception:
