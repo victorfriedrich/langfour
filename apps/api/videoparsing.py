@@ -153,9 +153,14 @@ def fetch_transcript(video_id: str, language: str):
     if not matching:
         raise NoTranscriptFound(video_id, [language], available)
     # Exact code first, then regional variants in the order YouTube listed them.
-    # find_transcript itself prefers a manually created track over an ASR one.
     matching.sort(key=lambda c: (c.lower() != target, codes.index(c)))
-    return available.find_transcript(matching).fetch()
+    # YouTube's automatic track first, the creator's upload only without one: the
+    # automatic track is what was actually said, while an uploaded track can be
+    # edited, condensed or translated. find_transcript() would do the opposite.
+    try:
+        return available.find_generated_transcript(matching).fetch()
+    except NoTranscriptFound:
+        return available.find_manually_created_transcript(matching).fetch()
 
 
 def main(url, language: str, use_transcript_api=True):

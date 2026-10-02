@@ -33,20 +33,23 @@ def chosen(language, manual=(), generated=()):
         vp.YouTubeTranscriptApi.list = lambda _self, _vid: tracks
         picked = {}
         for transcript in tracks:
-            transcript.fetch = lambda t=transcript: picked.setdefault("code", t.language_code)
+            transcript.fetch = lambda t=transcript: picked.setdefault(
+                "track", (t.language_code, "auto" if t.is_generated else "manual"))
         vp.fetch_transcript("v1", language)
-        return picked.get("code")
+        return picked.get("track")
     finally:
         vp.YouTubeTranscriptApi.list = original
 
 
 @pytest.mark.parametrize("language,manual,generated,expected", [
-    ("pt", (), ("pt-BR",), "pt-BR"),          # the bug: bare code, regional track
-    ("en", (), ("en-US",), "en-US"),
-    ("de", (), ("de-DE", "en"), "de-DE"),     # the right regional, not the other language
-    ("es", (), ("es-419",), "es-419"),
-    ("es", ("es",), ("es-419", "en"), "es"),  # exact code beats a regional variant
-    ("es", ("es",), ("es",), "es"),           # manual beats ASR
+    ("pt", (), ("pt-BR",), ("pt-BR", "auto")),         # the bug: bare code, regional track
+    ("en", (), ("en-US",), ("en-US", "auto")),
+    ("de", (), ("de-DE", "en"), ("de-DE", "auto")),    # the right regional, not the other language
+    ("es", (), ("es-419",), ("es-419", "auto")),
+    ("es", (), ("es", "es-419"), ("es", "auto")),      # exact code beats a regional variant
+    ("es", ("es",), ("es",), ("es", "auto")),          # automatic beats the creator's upload
+    ("es", ("es",), ("es-419", "en"), ("es-419", "auto")),  # ... even a regional one
+    ("es", ("es-MX",), (), ("es-MX", "manual")),       # the upload when there is no automatic track
 ])
 def test_regional_caption_tracks_are_matched_on_the_primary_subtag(
         language, manual, generated, expected):
