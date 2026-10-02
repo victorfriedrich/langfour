@@ -22,10 +22,17 @@ load_dotenv()
 # this module does not require a DeepInfra key.
 
 def download_video(url):
+    """The audio track only, as the file yt-dlp wrote. pytubefix's ANDROID
+    client started failing every download with HTTP 400; its metadata calls
+    in main() still work, so only the download moved."""
+    import yt_dlp
     try:
-        video = pytube.YouTube(url, 'ANDROID')
-        stream = video.streams.filter(only_audio=True).first()
-        audio_file = stream.download()
+        start_time = time.time()
+        with yt_dlp.YoutubeDL({"format": "bestaudio[ext=m4a]/bestaudio",
+                               "outtmpl": "%(id)s.%(ext)s", "quiet": True,
+                               "no_warnings": True, "noprogress": True}) as ydl:
+            audio_file = ydl.prepare_filename(ydl.extract_info(url, download=True))
+        print(f"Audio downloaded in {time.time() - start_time:.2f} seconds")
         return audio_file
     except Exception as e:
         print(f"Error occurred during video download: {e}")
