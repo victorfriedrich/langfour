@@ -1173,3 +1173,72 @@ def test_expand_does_not_start_a_channel_it_cannot_finish(db):
     yp.expand(db, yt, "es", yp.Gates())
     assert yt.used == 0 and yt.paged == 0
     assert db.execute("SELECT expanded_at FROM channels").fetchone()[0] is None
+
+
+def candidates_for(cid, n, score=0.5):
+    """Ranked selection rows for one channel, best first."""
+    return [{"video_id": f"{cid}_{i}", "channel_id": cid, "lang": "es", "title": "t",
+             "duration_s": 600, "views": 1, "score": round(score - i / 1000, 4)}
+            for i in range(n)]
+
+
+def test_sync_counts_transcribed_videos_against_the_channel_cap():
+    """A legacy channel with 11 transcripts gets 4 more, not 15 more."""
+    sb = FakeSupabase([queued(f"old{i}", channel_id="UC1", status="done", source="legacy")
+                       for i in range(11)])
+    yp.sync("es", candidates_for("UC1", 30), top_n=15, sb=sb)
+    fresh = [r for r in sb.rows if r["status"] == "pending"]
+    assert [r["video_id"] for r in fresh] == ["UC1_0", "UC1_1", "UC1_2", "UC1_3"]
+
+
+def test_sync_replaces_pending_discovery_rows_instead_of_stacking():
+    """Pushing again after expand: the old picks go, the new top 15 replaces them."""
+    sb = FakeSupabase([queued(f"stale{i}", channel_id="UC1") for i in range(15)])
+    picks, deleted = yp.sync("es", candidates_for("UC1", 30), top_n=15, sb=sb)
+    assert (len(picks), deleted) == (15, 15)
+    assert {r["video_id"] for r in sb.rows} == {f"UC1_{i}" for i in range(15)}
+
+
+def test_sync_drops_channels_that_left_the_selection_but_keeps_other_sources():
+    sb = FakeSupabase([queued("gone", channel_id="UC_gone"),
+                       queued("asked_for", channel_id="UC_gone", source="manual"),
+                       queued("finished", channel_id="UC_gone", status="done")])
+    yp.sync("es", candidates_for("UC1", 2), sb=sb)
+    left = {r["video_id"] for r in sb.rows}
+    assert "gone" not in left
+    assert {"asked_for", "finished", "UC1_0", "UC1_1"} <= left
+
+
+def test_sync_skips_videos_already_in_the_queue_and_takes_the_next():
+    sb = FakeSupabase([queued("UC1_0", channel_id="UC1", status="failed")])
+    yp.sync("es", candidates_for("UC1", 5), top_n=2, sb=sb)
+    assert sb.row("UC1_0")["status"] == "failed"              # not reset, not re-queued
+    assert [r["video_id"] for r in sb.rows if r["status"] == "pending"] == ["UC1_1"]
+
+
+def test_sync_reads_the_queue_past_one_page():
+    """PostgREST stops at 1,000 rows a request; a single read would miss the rest
+    and hand the channel a full 15 again."""
+    sb = FakeSupabase([queued(f"d{i:04}", channel_id=f"UC{i}", status="done")
+                       for i in range(1_000)]
+                      + [queued(f"x{i}", channel_id="UC_last", status="done")
+                         for i in range(15)])
+    yp.sync("es", candidates_for("UC_last", 20), top_n=15, sb=sb)
+    assert not [r for r in sb.rows if r["status"] == "pending"]
+
+
+def test_sync_refuses_an_empty_selection():
+    sb = FakeSupabase([queued("keep_me", channel_id="UC1")])
+    with pytest.raises(ValueError, match="empty selection"):
+        yp.sync("es", [], sb=sb)
+    assert sb.row("keep_me")
+
+
+def test_sync_leaves_reclaimed_rows_and_their_attempt_count_alone():
+    """A row reclaimed after crashing the worker three times is parked: ingest
+    never claims it again. Re-inserting it would reset attempts to 0."""
+    import ingest
+    sb = FakeSupabase([queued("UC1_0", channel_id="UC1", attempts=3)])
+    yp.sync("es", candidates_for("UC1", 3), top_n=2, sb=sb)
+    assert sb.row("UC1_0")["attempts"] == 3
+    assert [r["video_id"] for r in ingest.pending(sb, "es", 10)] == ["UC1_1"]

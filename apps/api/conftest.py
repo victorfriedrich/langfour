@@ -21,7 +21,7 @@ class FakeQuery:
     # postgrest 0.16: select(self, *columns, count=None). No `head`.
     def __init__(self, rows):
         self.rows, self.filters, self.orders = rows, [], []
-        self.op = self.payload = self.limit_n = None
+        self.op = self.payload = self.limit_n = self.span = None
         self.count_mode = None
         self.ignore_duplicates = False
 
@@ -38,6 +38,14 @@ class FakeQuery:
         if isinstance(rows, list):
             assert len({frozenset(r) for r in rows}) == 1, "bulk rows must share one key set"
         self.op, self.payload, self.ignore_duplicates = "upsert", rows, ignore_duplicates
+        return self
+
+    def delete(self):
+        self.op = "delete"
+        return self
+
+    def range(self, start, end):
+        self.span = (start, end)
         return self
 
     def eq(self, k, v):
@@ -66,8 +74,13 @@ class FakeQuery:
             for k, desc in reversed(self.orders):
                 match.sort(key=lambda r: (r.get(k) is None, r.get(k) or 0), reverse=desc)
             match = match[:self.limit_n] if self.limit_n else match
+            if self.span:
+                match = match[self.span[0]:self.span[1] + 1]
             return SimpleNamespace(data=[dict(r) for r in match],
                                    count=total if self.count_mode else None)
+        if self.op == "delete":
+            self.rows[:] = [r for r in self.rows if r not in match]
+            return SimpleNamespace(data=[dict(r) for r in match], count=None)
         if self.op == "update":
             for r in match:
                 r.update(self.payload)

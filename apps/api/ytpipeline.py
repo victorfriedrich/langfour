@@ -1282,7 +1282,7 @@ def usable_videos(db: sqlite3.Connection, lang: str,
 
 
 def queue_rows(lang: str, videos: Sequence[tuple], rank: dict[str, float],
-               top_n: int) -> list[dict]:
+               top_n: int | None) -> list[dict]:
     """Per-channel top `top_n`, scored so the result is comparable across
     channels: the channel's rank carries most of it, the video's own score
     breaks ties within the channel."""
@@ -1316,7 +1316,8 @@ def score(minutes: int, views: int, lo: float, hi: float) -> float:
     return (1 - VIEW_BIAS) * short + VIEW_BIAS * seen
 
 
-def select(db: sqlite3.Connection, lang: str, g: Gates, top_n: int = TOP_N) -> list[dict]:
+def select(db: sqlite3.Connection, lang: str, g: Gates,
+           top_n: int | None = TOP_N) -> list[dict]:
     """The deliverable: queue rows for every channel that cleared the gates,
     ordered so the transcription budget goes to the best creators first."""
     passed, _funnel = qualified(db, lang, g, need_llm=True)
@@ -1324,7 +1325,8 @@ def select(db: sqlite3.Connection, lang: str, g: Gates, top_n: int = TOP_N) -> l
     rank = rank_channels(passed)
     videos = [v for v in usable_videos(db, lang) if v[0] in keep]
     out = queue_rows(lang, videos, rank, top_n)
-    print(f"{len({v['channel_id'] for v in out}):,} channels, {len(out):,} videos selected")
+    what = "videos selected" if top_n else "candidates ranked"
+    print(f"{len({v['channel_id'] for v in out}):,} channels, {len(out):,} {what}")
     return out
 
 
@@ -1342,6 +1344,61 @@ def push(rows: list[dict], sb=None) -> int:
                                              ignore_duplicates=True).execute()
         written += len(res.data or [])
     return written
+
+
+def sync(lang: str, ranked: list[dict], top_n: int = TOP_N,
+         sb=None) -> tuple[list[dict], int]:
+    """Make the language's queue match this selection. Returns (picks, deleted).
+
+    push() alone only ever added rows, so every --push stacked a fresh top
+    `top_n` on whatever a channel already had: a legacy channel with 11
+    transcripts got 15 more, and a channel pushed before expand got a second 15
+    after it. Here a channel's rows that are not pending discovery rows --
+    done, processing, failed, or submitted by someone -- use up its slots, and
+    the pending discovery rows are replaced outright, which also re-scores them
+    and drops channels that stopped passing the gates.
+
+    `ranked` must hold every candidate, best first within each channel, not a
+    top-n cut: free slots go to the next video down when the first ones are
+    already in the queue."""
+    from languages import require_code
+    require_code(lang)
+    if not ranked:
+        # Replacing with nothing would empty the queue: an empty selection is a
+        # broken store or a typo in the gates, not a request to stop.
+        raise ValueError("empty selection; refusing to replace the queue with it")
+    if sb is None:
+        from supabase_client import supabase as sb  # verifies service_role
+
+    existing, page = [], 1000          # PostgREST caps rows per request; page under it
+    while True:
+        rows = (sb.table("video_queue").select("video_id,channel_id,status,source,attempts")
+                .eq("lang", lang).order("video_id")
+                .range(len(existing), len(existing) + page - 1).execute().data)
+        existing += rows
+        if len(rows) < page:
+            break
+    # Only untouched rows are replaced. A pending row with attempts > 0 was
+    # reclaimed from a worker that died on it; re-inserting it would reset the
+    # counter that stops ingest from claiming it a fourth time.
+    kept = [r for r in existing
+            if not (r["status"] == "pending" and r["source"] == "discovery"
+                    and not r["attempts"])]
+    used = Counter(r["channel_id"] for r in kept if r["channel_id"])
+    queued = {r["video_id"] for r in kept}
+
+    picks = []
+    for v in ranked:
+        if v["video_id"] in queued or used[v["channel_id"]] >= top_n:
+            continue
+        used[v["channel_id"]] += 1
+        picks.append(v)
+
+    deleted = len(sb.table("video_queue").delete().eq("lang", lang)
+                  .eq("source", "discovery").eq("status", "pending").eq("attempts", 0)
+                  .execute().data or [])
+    push(picks, sb)
+    return picks, deleted
 
 
 def report(db: sqlite3.Connection) -> None:
@@ -1491,14 +1548,20 @@ def main() -> None:
     if a.stage in ("classify", "expand", "select", "add") and not a.lang:
         sys.exit(f"{a.stage} needs --lang")
     if a.stage == "select":
-        rows = select(db, a.lang, g, a.top)
+        if a.push:
+            # Every candidate, not the top-n cut: sync() fills each channel's
+            # free slots, which are fewer than top-n once some are transcribed.
+            # --out then gets what was actually queued.
+            rows, deleted = sync(a.lang, select(db, a.lang, g, None), a.top)
+            print(f"queue synced: {len(rows):,} pending rows written, "
+                  f"{deleted:,} replaced")
+        else:
+            rows = select(db, a.lang, g, a.top)
         if a.out:
             a.out.parent.mkdir(parents=True, exist_ok=True)
             a.out.write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")
             print(f"wrote {a.out}")
-        if a.push:
-            print(f"queued {push(rows):,} new rows")
-        elif not a.out:
+        if not a.push and not a.out:
             print("dry run: pass --push to queue, --out to inspect")
         return
 
