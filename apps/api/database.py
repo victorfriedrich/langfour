@@ -99,9 +99,14 @@ def initialize_cache():
                 if root_word not in word_cache[language]['words']:
                     word_cache[language]['words'][root_word] = word_id
 
-                # Add wordform to the wordform cache only if it exists
+                # Add wordform to the wordform cache only if it exists. The
+                # first root wins: roots arrive in ascending id order, and a
+                # form shared by two roots is usually a real word plus a junk
+                # copy created later (an English or misspelt root carrying the
+                # same Spanish forms). Overwriting let the newer, junk root
+                # capture the form -- 'editaron' linked to 'edit'.
                 if wordform:
-                    word_cache[language]['wordforms'][wordform] = word_id
+                    word_cache[language]['wordforms'].setdefault(wordform, word_id)
 
             # Update the last fetched word ID for pagination
             last_fetched_word_id = records[-1]['word_id']
@@ -184,7 +189,8 @@ def save_to_supabase(root: str, forms: set, language: str, source: str | None = 
             # cache (re)load.
             if not flagged:
                 for form in forms:
-                    word_cache[language]['wordforms'][form.lower()] = word_id
+                    # A new root never takes over a form another root owns.
+                    word_cache[language]['wordforms'].setdefault(form.lower(), word_id)
 
         return word_id
 
@@ -338,7 +344,7 @@ def refresh_cache():
             max_cached_wordform_id = 0
         new_forms_response = supabase.table("wordforms").select("word_id, form").gt("word_id", max_cached_wordform_id).or_("flagged.is.null,flagged.eq.false").execute().data
         for form in new_forms_response:
-            word_cache[language]['wordforms'][form['form'].lower()] = form['word_id']
+            word_cache[language]['wordforms'].setdefault(form['form'].lower(), form['word_id'])
 
 def add_and_flag_wordform(wordform: str, root_id: int, language: str, flagged: bool = True) -> int:
     """
@@ -372,7 +378,7 @@ def add_and_flag_wordform(wordform: str, root_id: int, language: str, flagged: b
         # Add the new wordform to the cache, but only if it's not flagged --
         # see the matching comment in save_to_supabase().
         if not flagged:
-            word_cache[language]['wordforms'][wordform.lower()] = root_id
+            word_cache[language]['wordforms'].setdefault(wordform.lower(), root_id)
         
         return root_id
     except Exception as e:

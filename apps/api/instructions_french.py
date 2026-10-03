@@ -61,6 +61,7 @@ INSTRUCTION_ROOT_FORM = """For the word '{word}', return a JSON object with:
   - for nouns: the singular form with article ("le", "la", or "l'"),
   - for adjectives: the masculine singular,
   - otherwise: the word itself.
+- A diminutive or augmentative is not a word of its own: the key is its base word (the base noun with its article, or the base adjective).
 
 Return ONLY the JSON object.
 

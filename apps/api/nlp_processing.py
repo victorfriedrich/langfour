@@ -280,7 +280,12 @@ def add_to_dictionary(word: str, source: str, language: str):
         type = word_root_info.get("type")
         key = word_root_info.get("key")
 
-        forms = generate_alternatives(key, type, language)
+        forms = set(generate_alternatives(key, type, language))
+        # The token itself belongs to the new root even when the generated
+        # forms leave it out -- a diminutive whose key is its base noun, say --
+        # or it is looked up as unknown again in the next transcript.
+        if word != key:
+            forms.add(word)
 
         flagged, translation = _review(key, type, list(forms), language)
 
