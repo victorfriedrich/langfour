@@ -36,6 +36,8 @@ async function remnoteWords(): Promise<WordCards[]> {
       .from('srs_notes')
       .select('id, word_id, userwords!inner(words(root, language)), srs_cards(next_due_at, srs_reviews(reviewed_at, outcome))')
       .is('removed_at', null)
+      // Cards turned off in RemNote: the sync marks the word disabled.
+      .neq('userwords.status', 'disabled')
       .order('id'),
   );
   return rows.map((row) => ({
