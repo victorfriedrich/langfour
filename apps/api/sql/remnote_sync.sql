@@ -202,43 +202,13 @@ create policy srs_reviews_select_own on public.srs_reviews
 -- word stays known; only learning <-> disabled is synced (apps/api/remnote_sync.py).
 --
 -- 'disabled' is neither learning nor known: user_known_words already looks
--- only at those two, and the readers below that took "not known" to mean
--- learning now say so.
+-- only at those two, and the two list readers below now leave it out.
+-- (Applied as migration userwords_disabled_status, which also changed the
+-- uncalled get_learning_and_unknown_words to filter on status = 'learning'.)
 -- ---------------------------------------------------------------------------
 alter table public.userwords drop constraint if exists userwords_status_check;
 alter table public.userwords add constraint userwords_status_check
     check (status in ('learning', 'known', 'disabled'));
-
-create or replace function public.get_learning_and_unknown_words(_word_ids integer[])
- returns table(word_id integer, status text)
- language plpgsql
- set search_path to 'public', 'pg_temp'
-as $function$
-BEGIN
-    RETURN QUERY
-    -- Hardcoded thresholds for ease and repetition
-    -- Words in UserWords but below the hardcoded thresholds are marked as "learning"
-    SELECT uw.word_id, 'learning' AS status
-    FROM "userwords" uw
-    WHERE uw.user_id = auth.uid()
-    AND uw.word_id = ANY(_word_ids)
-    AND (uw.ease_factor < 2 OR uw.repetition < 5)  -- Hardcoded ease < 2 and repetition < 5
-    AND uw.status = 'learning'
-
-    UNION ALL
-
-    -- Words not in UserWords but present in the provided word ID array are marked as "unknown"
-    SELECT w.id, 'unknown' AS status
-    FROM "words" w
-    WHERE w.id = ANY(_word_ids)
-    AND NOT EXISTS (
-        SELECT 1
-        FROM "userwords" uw
-        WHERE uw.word_id = w.id
-        AND uw.user_id = auth.uid()
-    );
-END;
-$function$;
 
 create or replace function public.get_learning_words(order_direction text, cursor_word_id integer, search_term text, page_size integer, language_filter text, source_filter text)
  returns table(word_id integer, word text, translation text, status text, review_due text, source text)
