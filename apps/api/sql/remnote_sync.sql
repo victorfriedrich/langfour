@@ -192,3 +192,159 @@ create policy srs_reviews_select_own on public.srs_reviews
     using (exists (select 1 from public.srs_cards c
                    join public.srs_notes n on n.id = c.note_id
                    where c.id = card_id and n.user_id = (select auth.uid())));
+
+-- ---------------------------------------------------------------------------
+-- Disabled in RemNote. Turning a Rem's flashcards off there means "stop
+-- practising this word", so the sync moves a learning word to 'disabled' and
+-- turning the cards back on returns it to 'learning'. A status rather than a
+-- deleted row: deleting would cascade through srs_notes to the word's cards
+-- and review history, and the word would be offered again as new. A known
+-- word stays known; only learning <-> disabled is synced (apps/api/remnote_sync.py).
+--
+-- 'disabled' is neither learning nor known: user_known_words already looks
+-- only at those two, and the readers below that took "not known" to mean
+-- learning now say so.
+-- ---------------------------------------------------------------------------
+alter table public.userwords drop constraint if exists userwords_status_check;
+alter table public.userwords add constraint userwords_status_check
+    check (status in ('learning', 'known', 'disabled'));
+
+create or replace function public.get_learning_and_unknown_words(_word_ids integer[])
+ returns table(word_id integer, status text)
+ language plpgsql
+ set search_path to 'public', 'pg_temp'
+as $function$
+BEGIN
+    RETURN QUERY
+    -- Hardcoded thresholds for ease and repetition
+    -- Words in UserWords but below the hardcoded thresholds are marked as "learning"
+    SELECT uw.word_id, 'learning' AS status
+    FROM "userwords" uw
+    WHERE uw.user_id = auth.uid()
+    AND uw.word_id = ANY(_word_ids)
+    AND (uw.ease_factor < 2 OR uw.repetition < 5)  -- Hardcoded ease < 2 and repetition < 5
+    AND uw.status = 'learning'
+
+    UNION ALL
+
+    -- Words not in UserWords but present in the provided word ID array are marked as "unknown"
+    SELECT w.id, 'unknown' AS status
+    FROM "words" w
+    WHERE w.id = ANY(_word_ids)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM "userwords" uw
+        WHERE uw.word_id = w.id
+        AND uw.user_id = auth.uid()
+    );
+END;
+$function$;
+
+create or replace function public.get_learning_words(order_direction text, cursor_word_id integer, search_term text, page_size integer, language_filter text, source_filter text)
+ returns table(word_id integer, word text, translation text, status text, review_due text, source text)
+ language plpgsql
+ set search_path to 'public', 'pg_temp'
+as $function$
+BEGIN
+  RETURN QUERY
+  WITH flashcard_correct_tests AS (
+    SELECT
+      ft.word_id,
+      COUNT(*) AS correct_count
+    FROM FlashcardTests ft
+    WHERE ft.user_id = auth.uid()::uuid
+      AND ft.test_result = true
+    GROUP BY ft.word_id
+  ),
+  user_words_with_status AS (
+    SELECT
+      uw.word_id,
+      w.root                AS word,
+      COALESCE(ut.custom_translation, w.translation) AS translation,
+      (
+        CASE
+          WHEN uw.status = 'known' THEN 'known'
+          WHEN uw.status = 'learning'
+               AND COALESCE(fc.correct_count, 0) > 0
+            THEN CAST(fc.correct_count AS text)
+          WHEN uw.status = 'learning' THEN 'new'
+          ELSE uw.status
+        END
+      )::text              AS status,
+      uw.next_review_due_at,
+      COALESCE(fc.correct_count, 0) AS correct_count,
+      uw.source            AS source
+    FROM UserWords uw
+    JOIN words w
+      ON uw.word_id = w.id
+    LEFT JOIN UserTranslations ut
+      ON uw.word_id = ut.word_id
+      AND uw.user_id = ut.user_id
+    LEFT JOIN flashcard_correct_tests fc
+      ON uw.word_id = fc.word_id
+    WHERE uw.user_id = auth.uid()::uuid
+      AND (language_filter IS NULL OR w.language = language_filter)
+      AND (source_filter   IS NULL OR uw.source = source_filter)
+      AND (
+        (order_direction = 'DESC' AND uw.word_id < cursor_word_id)
+        OR (order_direction <> 'DESC' AND uw.word_id > cursor_word_id)
+        OR cursor_word_id = 0
+      )
+      AND (
+        search_term IS NULL
+        OR w.root ILIKE '%' || search_term || '%'
+        OR COALESCE(ut.custom_translation, w.translation) ILIKE '%' || search_term || '%'
+      )
+  )
+  SELECT
+    uws.word_id,
+    uws.word,
+    uws.translation,
+    uws.status,
+    CASE
+      WHEN uws.next_review_due_at::date = CURRENT_DATE THEN 'due today'
+      WHEN uws.next_review_due_at IS NULL            THEN 'no review date'
+      ELSE (uws.next_review_due_at::date - CURRENT_DATE)::text
+    END AS review_due,
+    uws.source
+  FROM user_words_with_status uws
+  WHERE uws.status NOT IN ('known', 'disabled')
+  ORDER BY
+    (uws.status <> 'new') DESC,
+    CASE WHEN order_direction = 'DESC' THEN uws.word_id END DESC,
+    CASE WHEN order_direction = 'ASC'  OR order_direction IS NULL THEN uws.word_id END ASC
+  FETCH NEXT page_size ROWS ONLY;
+END;
+$function$;
+
+create or replace function public.get_userwords_filtered(language_filter text, due_type text, page_size integer, p_source text default null::text)
+ returns table(word_id integer, word_root text, translation text, next_review_due_at timestamp without time zone)
+ language plpgsql
+ set search_path to 'public', 'pg_temp'
+as $function$
+BEGIN
+    RETURN QUERY
+    SELECT
+        uw.word_id,
+        w.root AS word_root,
+        COALESCE(ut.custom_translation, w.translation) AS translation,
+        uw.next_review_due_at
+    FROM userwords            AS uw
+    JOIN words                AS w  ON uw.word_id = w.id
+    LEFT JOIN usertranslations ut
+           ON ut.word_id = w.id
+          AND ut.user_id = auth.uid()
+    WHERE uw.user_id = auth.uid()
+      AND uw.status <> 'disabled'
+      AND w.language = language_filter
+      AND (p_source IS NULL OR uw.source = p_source)     -- ← only filters if supplied
+      AND (
+            (due_type = 'today'   AND uw.next_review_due_at::date = CURRENT_DATE) OR
+            (due_type = 'overdue' AND uw.next_review_due_at <  CURRENT_DATE)      OR
+            (due_type = 'both'    AND (uw.next_review_due_at < CURRENT_DATE
+                                    OR  uw.next_review_due_at::date = CURRENT_DATE))
+          )
+    ORDER BY uw.next_review_due_at
+    FETCH NEXT page_size ROWS ONLY;
+END;
+$function$;

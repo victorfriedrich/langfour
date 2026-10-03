@@ -27,7 +27,7 @@ Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 | Table | Columns | Keys and constraints |
 |---|---|---|
 | `userdata` | `user_id`, `languages text[]`, `default_language`, `known_words_updated_at`, `review_provider` | PK `user_id`; FK → `auth.users`; `default_language` in the four codes; `review_provider` in `langfour, remnote`, default `langfour` |
-| `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known`; SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
+| `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known, disabled` (`disabled`: flashcards turned off in RemNote, set by the sync; see `remnote_sync.sql`); SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
 | `flashcardtests` | `id`, `user_id`, `word_id`, `test_type`, `test_result`, `tested_at` | PK `id`; `test_type` in `flashcard, typing`; index `(user_id, word_id, test_result)` |
 | `usertranslations` | `id`, `user_id`, `word_id`, `custom_translation`, `created_at` | PK `id`; index `(user_id, word_id)` |
 | `userwordinteraction` | `id`, `user_id`, `word_id`, `location`, `seen_at` | PK `id`. Never written to; read only by `get_user_counts_with_wordforms` |
