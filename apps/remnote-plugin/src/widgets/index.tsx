@@ -8,15 +8,17 @@ import {
   SETTING_LINK_EXISTING,
   SLOT_WORD_ID,
 } from '../constants';
+import { watchForChanges } from '../live';
 import { describeSync, linkExistingFlashcards, syncNow } from '../sync';
 
 let timer: ReturnType<typeof setInterval> | undefined;
+let stopWatching: (() => void) | undefined;
 
 async function syncAndReport(plugin: ReactRNPlugin, { quiet }: { quiet: boolean }) {
   try {
     const summary = await syncNow(plugin);
     // Background runs stay silent unless something happened or went wrong.
-    if (!quiet || summary.error || summary.created || summary.removed) {
+    if (!quiet || summary.error || summary.created || summary.removed || summary.disabled || summary.enabled) {
       await plugin.app.toast(describeSync(summary));
     }
   } catch (error) {
@@ -115,13 +117,16 @@ async function onActivate(plugin: ReactRNPlugin) {
   // In the background: RemNote finishes loading the plugin only once
   // onActivate returns. Sync after RemNote has loaded the knowledge base;
   // before that, Rems that exist but have not arrived yet would look deleted.
-  void plugin.app
-    .waitForInitialSync()
-    .then(() => syncAndReport(plugin, { quiet: true }));
+  // Answers and turned-off cards are sent as they happen from then on.
+  void plugin.app.waitForInitialSync().then(() => {
+    stopWatching = watchForChanges(plugin);
+    return syncAndReport(plugin, { quiet: true });
+  });
 }
 
 async function onDeactivate(_: ReactRNPlugin) {
   if (timer) clearInterval(timer);
+  stopWatching?.();
 }
 
 declareIndexPlugin(onActivate, onDeactivate);

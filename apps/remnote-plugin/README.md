@@ -20,16 +20,21 @@ go back to Langfour so it knows how well each word is learned.
   your own card and deletes the copy, but only copies inside the Langfour
   document that were never reviewed.
 - **Reports reviews.** Every graded review RemNote records (Again, Hard,
-  Good, Easy) and each card's next due date are sent to Langfour.
+  Good, Easy) and each card's next due date are sent to Langfour, a few
+  seconds after you answer the card.
 - **Shows progress.** **Langfour: Open progress** shows how many words you
   have learned (every card at an interval of 3+ weeks), how that number grew
   over 90 days, which words you learned this week, and which keep slipping.
   Click a word to open its Rem.
 - **Respects deletions.** If you delete a card's Rem, Langfour records that and
   does not create the card again.
+- **Stops words you turn off.** Turning a word's flashcards off in RemNote, or
+  deleting its Rem, stops the word in Langfour too; turning them back on, or
+  restoring the Rem, resumes it. Its review history is kept either way.
 
-Syncing is automatic: when RemNote starts, every hour while it is open, and
-when you open the progress page. **Langfour: Sync now** exists in the command
+Syncing is automatic: when RemNote starts (desktop or mobile), every hour
+while it is open, and when you open the progress page. Answers and turned-off
+cards are sent as they happen in between. **Langfour: Sync now** exists in the command
 palette for troubleshooting. Disconnecting in Langfour revokes the token; the
 plugin notices on its next sync and asks to connect again.
 

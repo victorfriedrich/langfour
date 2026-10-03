@@ -6,11 +6,11 @@
   "repoUrl": "https://github.com/victorfriedrich/langfour",
   "version": {
     "major": 0,
-    "minor": 2,
+    "minor": 3,
     "patch": 0
   },
   "theme": [],
-  "enableOnMobile": false,
+  "enableOnMobile": true,
   "description": "Turns the words you save in Langfour into RemNote flashcards and reports your reviews back, so RemNote schedules and Langfour knows how well each word is learned.",
   "requestNative": false,
   "requiredScopes": [
