@@ -142,6 +142,28 @@ def apply(sb, language: str, files: list[str]) -> None:
                     kept += 1
                     words.append({"id": rid, "status": "flagged", "audit": None,
                                   "status_reason": f"{source} suggests: {target}"})
+    # merge_roots adds the source's bare root as a form of the target. That is
+    # right for a misspelling (reyna -> la reina) but wrong for a mislabelled
+    # root whose forms are already the target's (el milk: leche -> la leche),
+    # which would make "milk" count as Spanish. Merge only when the bare root is
+    # one of the source's own forms, or the source has none.
+    sforms = forms_of(sb, [m["src"] for m in merges])
+    roots = {}
+    for i in range(0, len(merges), 500):
+        for r in (sb.table("words").select("id, root")
+                  .in_("id", [m["src"] for m in merges[i:i + 500]]).execute().data):
+            roots[r["id"]] = r["root"]
+    safe = []
+    for m in merges:
+        f = sforms.get(m["src"], [])
+        if not f or bare(roots.get(m["src"], "")) in f:
+            safe.append(m)
+        else:
+            kept += 1
+            words.append({"id": m["src"], "status": "flagged", "audit": None,
+                          "status_reason": m["reason"].replace("merged into", "suggests")
+                          + " (root is not one of its forms)"})
+    merges = safe
     # apply_word_audit overwrites audit; keep the stored one.
     ids = [w["id"] for w in words]
     stored = {}
@@ -156,7 +178,7 @@ def apply(sb, language: str, files: list[str]) -> None:
         sb.rpc("merge_roots", {"payload": merges[i:i + 50]}).execute()
     c = Counter(w["status"] for w in words)
     print(f"applied: valid {c['valid']:,}, invalid {c['invalid']:,}, merged {len(merges):,}, "
-          f"corrections kept flagged (target not a valid root) {kept:,}")
+          f"corrections kept flagged {kept:,}")
 
 
 def main() -> None:

@@ -94,26 +94,43 @@ grant execute on function public.apply_word_audit(jsonb, jsonb) to service_role;
 
 -- Merge a root into the root it should have been, for scripts/review_flagged.py.
 -- The source's forms move to the target unless the target already has them
--- (wordforms is unique on (word_id, form)), the source's own bare word becomes a
--- form of the target, and the source is left invalid. User rows that point at
--- the source are not moved here.
+-- (wordforms is unique on (word_id, form)). The source's own bare word becomes a
+-- form of the target only when the source has no forms: then it is the word
+-- seen in transcripts (sacaran -> sacar). A source with forms has a root that is
+-- only a label (el milk: leche), which must not become Spanish. User rows move
+-- to the target with their RemNote notes and tests, unless the user already has
+-- the target; those stay on the source. The source is left invalid.
 create or replace function public.merge_roots(payload jsonb)
 returns integer
 language plpgsql
 set search_path = public
 as $$
-declare m record; merged integer := 0;
+declare m record; merged integer := 0; had_forms boolean; moved uuid[];
 begin
   for m in select * from jsonb_to_recordset(payload) as x(src integer, dst integer, reason text) loop
     continue when m.src = m.dst;
+    had_forms := exists (select 1 from wordforms where word_id = m.src);
     update wordforms f set word_id = m.dst
      where f.word_id = m.src
        and not exists (select 1 from wordforms g where g.word_id = m.dst and g.form = f.form);
     delete from wordforms where word_id = m.src;
-    insert into wordforms (word_id, form, status)
-    select m.dst, lower(regexp_replace(w.root, '^(el|la|los|las|el/la) ', '')), 'valid'
-      from words w where w.id = m.src
-    on conflict (word_id, form) do nothing;
+    if not had_forms then
+      insert into wordforms (word_id, form, status)
+      select m.dst, lower(regexp_replace(w.root, '^(el|la|los|las|el/la) ', '')), 'valid'
+        from words w where w.id = m.src
+      on conflict (word_id, form) do nothing;
+    end if;
+    select coalesce(array_agg(u.user_id), '{}') into moved from userwords u
+     where u.word_id = m.src
+       and not exists (select 1 from userwords d where d.user_id = u.user_id and d.word_id = m.dst);
+    insert into userwords (user_id, word_id, status, source, created_at, last_reviewed_at,
+                           next_review_due_at, ease_factor, repetition, interval_days)
+    select user_id, m.dst, status, source, created_at, last_reviewed_at,
+           next_review_due_at, ease_factor, repetition, interval_days
+      from userwords where word_id = m.src and user_id = any(moved);
+    update srs_notes set word_id = m.dst where word_id = m.src and user_id = any(moved);
+    update flashcardtests set word_id = m.dst where word_id = m.src and user_id = any(moved);
+    delete from userwords where word_id = m.src and user_id = any(moved);
     update words set status = 'invalid', status_reason = m.reason where id = m.src;
     merged := merged + 1;
   end loop;
