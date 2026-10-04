@@ -45,10 +45,15 @@ Before applying, check each `out_` file: same ids in the same order as its batch
 
 ## User data
 
-`merge_roots` moves the source's `userwords`, `srs_notes` and `flashcardtests` rows to the target, unless the user already has the target (then they stay on the source), and adds the source's bare root as a form only when the source has no forms. Only apply a correction whose root is still `flagged`: re-merging an already merged root would add its bare root to the target again.
+`merge_roots` moves the source's `userwords`, `srs_notes` and `flashcardtests` rows to the target. A user who already has the target keeps that row; it becomes known if the source was, takes the source's review progress if further along, and gets the source's tests and RemNote note. The source row is then deleted, unless the user has a note on both (two Rems for one word). The source's bare root becomes a form of the target only when the source has no forms. Only apply a correction whose root is still `flagged`: re-merging an already merged root would add its bare root to the target again.
 
-## Status (Spanish, 2026-10-04, done)
+## Lessons from the Spanish run
 
-- All 83 batches are reviewed and applied. 1,518 roots stay `flagged`, each with an agent's suggested root in `status_reason` whose target is not a valid root.
-- On 2026-10-04 a cleanup fixed earlier merges: 345 English or label words removed from Spanish roots (more → más, red → rojo), bien, la radio and the verb molar restored, and 538 user rows moved from merged roots to their targets. A CSV backup taken before it is in `apps/api/data/backup-2026-10-04/`.
-- The batch and output files are in `apps/api/data/review/es/` (untracked).
+- Jev flagged the right roots; the damage came after, in steps that ignored forms. The article rule merged "debate" (holding debatir's conjugation) into el debate; it now requires the source's forms to be just the word and its plural. Renaming a flagged root keeps its forms, which can be invented conjugations (chalaa, chalaaba): check forms after any rename.
+- Strict agents drop ~3-5% of rare real words. A rescue pass that lists only the mistakes, on the `i` verdicts, brought back 468 of 13,291.
+
+## Status (Spanish, 2026-10-05, done)
+
+- No roots are `flagged`: 35,185 valid, 38,062 invalid.
+- 2026-10-04: 345 English or label forms removed, bien / la radio / molar restored, 538 user rows moved. 2026-10-05: the last 1,518 flagged roots decided by hand (837 renamed to their correct root, 632 merged, 40 invalid, 11 wrongly invalid targets such as os and nato revived); verb conjugations removed from 15 nouns (el debate, el censor, el vasar…); 2,875 duplicate user rows merged into their target; 468 rare words rescued.
+- A CSV backup from before the 2026-10-04 cleanup is in `apps/api/data/backup-2026-10-04/`. The batch, output and rescue files are in `apps/api/data/review/es/` (untracked).

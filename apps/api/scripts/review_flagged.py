@@ -68,9 +68,12 @@ def rule(root: str, forms: list[str], rid: int, by_bare: dict, owner: dict) -> t
                 return "c", oroot
     b = bare(root)
     # Same word, different article: "corral" -> "el corral". Exact spelling only:
-    # accents tell different words apart (papa/papá, te/té).
+    # accents tell different words apart (papa/papá, te/té). Only when the forms
+    # are that word and its plural: "debate" with debatir's conjugation is the
+    # verb, not el debate, and merging it moved those forms onto the noun.
     candidates = by_bare.get(b, set()) - {root}
-    if len(candidates) == 1:
+    own = {b, b + "s", b + "es"}
+    if len(candidates) == 1 and set(forms) <= own:
         return "c", next(iter(candidates))
     if re.search(r"([a-záéíóúüñ])\1\1", b):            # bueeeeeno, chaaaan
         return "i", None
