@@ -33,3 +33,10 @@ On a pilot of 292 roots against hand labels, before the "prefer `i`, be strict o
 - 8 junk roots called valid.
 
 The rules in `prepare` settle about 3% of the flagged roots, mostly English copies of Spanish verbs and article mix-ups.
+
+## Status (Spanish, 2026-10-04)
+
+- `prepare` ran once and wrote `auto.tsv` and `batch_000`–`batch_082` (41,313 roots). `auto.tsv` is applied: 668 invalid, 442 merged.
+- Applied: batches 002–011. In review when the session ended: 000–001 and 012–021, applied if their `out_*.tsv` exists.
+- **To continue:** don't re-run `prepare`; the batch numbering would shift. Re-applying a file gives the same result, so it is harmless. Review the batches without an `out_` file, starting at 022, then `apply`.
+- The batch and output files are in `apps/api/data/review/es/` (untracked). If they're gone, run `prepare` again: it only picks up roots that are still `flagged`, so the new batches cover exactly what's left.
