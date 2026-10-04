@@ -14,26 +14,39 @@ forms):
   root    yes/no: is the root a correctly spelled word in dictionary form
   form_N  yes/no per form: does this form belong to this root
 
+A second, small request asks about the root alone: with its forms in view,
+Jev rated junk roots that had copied a real verb's Spanish forms (an English
+"edit" carrying "editaron", a misspelt "estudar" carrying "estudió") as valid,
+root included. On its own the root scores low.
+
 Statuses (sql/word_status.sql):
-  valid    p(valid) > VALID_ABOVE
+  valid    p(valid) > VALID_ABOVE and p(root alone) >= ROOT_ALONE_FROM
   invalid  p(invalid) >= INVALID_FROM and p(root) < INVALID_ROOT_BELOW
   flagged  everything else; Claude reviews these and sets valid or invalid
 A form scoring below FORM_FLAG_BELOW is flagged on its own, under any root.
+
+--resolve-flagged settles part of the flagged roots with two more questions
+about the root alone (is it another language, is it misspelled) on top of the
+stored scores. The rules (resolve() below) held at ~95% on two hand-labelled
+samples of flagged roots (198 and 99) and settle about 40% of them; the rest
+are mostly real words in the wrong form, which need a correction, not a label.
 The thresholds come from a hand-labelled sample of 128 roots: Jev never called
 junk valid, but it does call real words invalid, so invalid needs both signals.
 
-Forms containing a space are not sent: transcripts are matched one word at a
-time, so they can never link, and they are left for a cleanup rule. The raw
-probabilities are stored in words.audit / wordforms.audit_score, so the
-thresholds can be re-tuned without new requests. Only unverified roots are
-picked up, so a run can be stopped and resumed.
+One root per request, many in flight: packing several roots into one request
+was faster but blunted the per-form check (a junk form scored 0.82 instead of
+0.25). The raw probabilities are stored in words.audit / wordforms.audit_score,
+so the thresholds can be re-tuned without new requests. Only unverified roots
+are picked up, so a run can be stopped and resumed.
 """
 import argparse
+import asyncio
 import json
 import os
+import queue
 import sys
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 from dotenv import load_dotenv
@@ -50,6 +63,9 @@ VALID_ABOVE = 0.7
 INVALID_FROM = 0.7
 INVALID_ROOT_BELOW = 0.1
 FORM_FLAG_BELOW = 0.3
+ROOT_ALONE_FROM = 0.4
+WRITE_CHUNK = 100     # roots per database write; API requests time out at 8 s
+FORMS_PER_READ = 10_000
 
 LANGUAGE_NAMES = {"es": "Spanish", "fr": "French", "it": "Italian", "de": "German"}
 
@@ -96,72 +112,251 @@ def questions(language: str, forms: list[str]) -> dict:
     return q
 
 
-def ask(client: httpx.Client, state: dict, q: dict) -> dict:
+def resolve_questions(language: str) -> dict:
+    name = LANGUAGE_NAMES[language]
+    return {
+        "foreign": {"type": "noul",
+                    "instructions": (f"Is `root` a word of a language other than {name}, such as "
+                                     "English, Catalan, Portuguese, Italian or German?"),
+                    "criteria": {"true": "Yes, it belongs to another language.",
+                                 "false": f"No, it is {name} or not a word at all."}},
+        "typo": {"type": "noul",
+                 "instructions": (f"Is `root` a misspelling, a fragment, or a run-together of {name} "
+                                  "words, rather than a correctly spelled word?"),
+                 "criteria": {"true": "Yes, it is misspelled, cut off or run together.",
+                              "false": "No, it is spelled correctly."}},
+    }
+
+
+def resolve(audit: dict, foreign: float, typo: float) -> tuple[str, str] | None:
+    """A definite status for a flagged root, or None to leave it flagged."""
+    p, root = audit["p"], audit["root"]
+    if (p["invalid"] >= 0.5 and root < 0.15) or (foreign >= 0.9 and root < 0.2):
+        return "invalid", f"jev resolved: invalid {p['invalid']:.2f}, foreign {foreign:.2f}, root {root:.2f}"
+    if p["valid"] >= 0.4 and foreign < 0.15 and typo < 0.5 and root >= 0.4:
+        return "valid", f"jev resolved: valid {p['valid']:.2f}, foreign {foreign:.2f}, typo {typo:.2f}, root {root:.2f}"
+    return None
+
+
+def root_alone_question(language: str) -> dict:
+    name = LANGUAGE_NAMES[language]
+    return {"root": {
+        "type": "noul",
+        "instructions": (f"Is `root` a correctly spelled {name} word in dictionary form? Regional, "
+                         "colloquial, rare and technical words count. Nouns are written with "
+                         "their article, verbs in the infinitive, other words as they are."),
+        "criteria": {"true": f"A correctly spelled {name} word in dictionary form.",
+                     "false": "Misspelled, a word of another language, a proper noun, or an inflected form."},
+    }}
+
+
+RETRYABLE = {408, 429, 500, 502, 503, 504, 529}      # 529: TypeSafe overloaded
+
+
+async def ask(client: httpx.AsyncClient, state: dict, q: dict) -> dict:
     """One decision request, retried on rate limits and transient errors."""
     for attempt in range(5):
         try:
-            r = client.post(URL, json={"model": MODEL, "state": state, "questions": q})
-            if r.status_code == 200:
-                body = r.json()
-                if "answers" in body:
-                    return body
-            if r.status_code not in (408, 429, 500, 502, 503, 504) and r.status_code != 200:
+            r = await client.post(URL, json={"model": MODEL, "state": state, "questions": q})
+            if r.status_code == 200 and "answers" in (body := r.json()):
+                return body
+            if r.status_code not in RETRYABLE:
                 raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
         except httpx.HTTPError:
             pass
-        time.sleep(2 ** attempt)
+        await asyncio.sleep(2 ** attempt)
     raise RuntimeError("Jev did not answer after 5 attempts")
 
 
-def verdict(entry: dict, client: httpx.Client, language: str) -> tuple[dict, list[dict], float]:
-    """The root's row and its forms' rows for apply_word_audit, and the cost."""
-    forms = [f for f in entry["forms"] if " " not in f["form"]]
-    state = {"root": entry["root"], "forms": [f["form"] for f in forms]}
-    body = ask(client, state, questions(language, state["forms"]))
+def verdict(entry: dict, body: dict, alone: float) -> tuple[dict, list[dict]]:
+    """The root's row and its forms' rows for apply_word_audit."""
     a = body["answers"]
     p = a["entry"]["probabilities"]
     root_p = a["root"]["noul"]
 
-    if p["valid"] > VALID_ABOVE:
-        status, reason = "valid", f"jev valid {p['valid']:.2f}"
+    if p["valid"] > VALID_ABOVE and alone >= ROOT_ALONE_FROM:
+        status, reason = "valid", f"jev valid {p['valid']:.2f}, root alone {alone:.2f}"
     elif p["invalid"] >= INVALID_FROM and root_p < INVALID_ROOT_BELOW:
         status, reason = "invalid", f"jev invalid {p['invalid']:.2f}, root {root_p:.2f}"
     else:
         status = "flagged"
         reason = (f"jev unsure: valid {p['valid']:.2f}, questionable {p['questionable']:.2f}, "
-                  f"invalid {p['invalid']:.2f}, root {root_p:.2f}")
+                  f"invalid {p['invalid']:.2f}, root {root_p:.2f}, root alone {alone:.2f}")
 
     root_row = {"id": entry["id"], "status": status, "status_reason": reason,
                 "audit": {"model": body.get("model"), "choice": a["entry"]["choice"],
-                          "p": p, "root": root_p}}
+                          "p": p, "root": root_p, "root_alone": alone}}
     form_rows = []
-    for i, f in enumerate(forms):
+    for i, f in enumerate(entry["forms"]):
         score = a[f"form_{i}"]["noul"]
-        if score < FORM_FLAG_BELOW:
-            form_rows.append({"id": f["id"], "status": "flagged", "score": score,
-                              "status_reason": f"jev: form of this root {score:.2f}"})
-        else:
-            form_rows.append({"id": f["id"], "status": "valid", "score": score, "status_reason": None})
-    return root_row, form_rows, (body.get("usage") or {}).get("cost") or 0.0
+        flagged = score < FORM_FLAG_BELOW
+        form_rows.append({"id": f["id"], "status": "flagged" if flagged else "valid", "score": score,
+                          "status_reason": f"jev: form of this root {score:.2f}" if flagged else None})
+    return root_row, form_rows
 
 
-def unverified(sb, language: str, after: int, page: int) -> list[dict]:
-    """The next page of unverified roots with their forms."""
-    words = (sb.table("words").select("id, root").eq("language", language)
-             .eq("status", "unverified").gt("id", after).order("id").limit(page).execute().data)
-    return attach_forms(sb, words)
+# ──────────────────────────────────────────────────────────────── data ──
 
+def load(sb, language: str, ids: list[int] | None, status: str = "unverified") -> list[dict]:
+    """Every root to audit, with its forms, read up front: reading page by page
+    between batches of requests left Jev idle and timed out under load."""
+    if ids:
+        words = sb.table("words").select("id, root").in_("id", ids).execute().data
+    else:
+        words, after = [], 0
+        while True:
+            page = (sb.table("words").select("id, root").eq("language", language)
+                    .eq("status", status).gt("id", after).order("id")
+                    .limit(FORMS_PER_READ).execute().data)
+            words += page
+            if len(page) < FORMS_PER_READ:
+                break
+            after = page[-1]["id"]
 
-def attach_forms(sb, words: list[dict]) -> list[dict]:
+    def forms_of(ids: list[int]) -> list[dict]:
+        for attempt in range(3):
+            try:
+                rows = (sb.table("wordforms").select("id, word_id, form").in_("word_id", ids)
+                        .limit(FORMS_PER_READ).execute().data)
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
+        if len(rows) == FORMS_PER_READ and len(ids) > 1:    # may be cut off: split
+            half = len(ids) // 2
+            return forms_of(ids[:half]) + forms_of(ids[half:])
+        return rows
+
+    # One request at a time: the shared client drops connections when several
+    # threads use it at once.
     forms: dict[int, list[dict]] = {}
-    # 50 roots a request: a verb carries ~30-100 forms, and a larger chunk could
-    # run past the server's row cap and silently drop forms.
-    for i in range(0, len(words), 50):
-        ids = [w["id"] for w in words[i:i + 50]]
-        for f in (sb.table("wordforms").select("id, word_id, form").in_("word_id", ids)
-                  .limit(10_000).execute().data):
+    for i in range(0, len(words), 200):
+        for f in forms_of([w["id"] for w in words[i:i + 200]]):
             forms.setdefault(f["word_id"], []).append(f)
     return [{**w, "forms": forms.get(w["id"], [])} for w in words]
+
+
+class Writer:
+    """Every database write on one thread, in order. Writing from several
+    threads through one shared client cut connections (timeouts, SSL errors)
+    and stretched a 15-minute run to 107 minutes."""
+
+    def __init__(self, sb):
+        self.sb, self.queue = sb, queue.Queue()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def put(self, results: list[tuple[dict, list[dict]]]) -> None:
+        self.queue.put(results)
+
+    def close(self) -> None:
+        self.queue.put(None)
+        self.thread.join()
+
+    def _run(self) -> None:
+        while (results := self.queue.get()) is not None:
+            write(self.sb, results)
+
+
+def write(sb, results: list[tuple[dict, list[dict]]]) -> None:
+    for i in range(0, len(results), WRITE_CHUNK):
+        chunk = results[i:i + WRITE_CHUNK]
+        payload = {"words_payload": [r for r, _ in chunk],
+                   "forms_payload": [f for _, fs in chunk for f in fs]}
+        for attempt in range(3):
+            try:
+                sb.rpc("apply_word_audit", payload).execute()
+                break
+            except Exception as exc:
+                # A failed chunk rolls back: its roots stay unverified and the
+                # next run audits them again.
+                print(f"  write failed ({attempt + 1}/3): {str(exc)[:120]}", flush=True)
+                time.sleep(2 ** attempt)
+
+
+# ──────────────────────────────────────────────────────────────── run ──
+
+async def audit(entries: list[dict], language: str, parallel: int, on_batch) -> tuple[int, int, float]:
+    """Ask Jev about every entry, `parallel` requests in flight, handing results
+    to `on_batch` every WRITE_CHUNK roots. Returns (done, failed, cost)."""
+    sem = asyncio.Semaphore(parallel)
+    pending: list[tuple[dict, dict, list[dict]]] = []
+    done = failed = 0
+    cost = 0.0
+    limits = httpx.Limits(max_connections=parallel, max_keepalive_connections=parallel)
+    headers = {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}
+    async with httpx.AsyncClient(timeout=120, limits=limits, headers=headers) as client:
+        async def one(e: dict):
+            nonlocal done, failed, cost
+            forms = [f["form"] for f in e["forms"]]
+            async with sem:
+                try:
+                    body, alone = await asyncio.gather(
+                        ask(client, {"root": e["root"], "forms": forms}, questions(language, forms)),
+                        ask(client, {"root": e["root"]}, root_alone_question(language)))
+                except Exception as exc:
+                    failed += 1
+                    print(f"  {e['root']}: {str(exc)[:120]}", flush=True)
+                    return
+            root_row, form_rows = verdict(e, body, alone["answers"]["root"]["noul"])
+            cost += sum((b.get("usage") or {}).get("cost") or 0.0 for b in (body, alone))
+            pending.append((e, root_row, form_rows))
+            done += 1
+            if len(pending) >= WRITE_CHUNK:
+                batch = pending[:]
+                pending.clear()
+                on_batch(batch)
+
+        await asyncio.gather(*(one(e) for e in entries))
+        if pending:
+            on_batch(pending[:])
+    return done, failed, cost
+
+
+async def resolve_flagged(sb, language: str, parallel: int, dry_run: bool) -> None:
+    roots, after = [], 0
+    while True:
+        page = (sb.table("words").select("id, root, audit").eq("language", language)
+                .eq("status", "flagged").not_.is_("audit", "null").gt("id", after)
+                .order("id").limit(FORMS_PER_READ).execute().data)
+        roots += page
+        if len(page) < FORMS_PER_READ:
+            break
+        after = page[-1]["id"]
+    print(f"resolving {len(roots):,} flagged roots", flush=True)
+
+    writer = None if dry_run else Writer(sb)
+    sem = asyncio.Semaphore(parallel)
+    totals: dict[str, int] = {}
+    pending: list[tuple[dict, list]] = []
+    limits = httpx.Limits(max_connections=parallel, max_keepalive_connections=parallel)
+    headers = {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}
+    async with httpx.AsyncClient(timeout=120, limits=limits, headers=headers) as client:
+        async def one(w: dict):
+            async with sem:
+                try:
+                    body = await ask(client, {"root": w["root"]}, resolve_questions(language))
+                except Exception as exc:
+                    print(f"  {w['root']}: {str(exc)[:120]}", flush=True)
+                    return
+            foreign, typo = body["answers"]["foreign"]["noul"], body["answers"]["typo"]["noul"]
+            decided = resolve(w["audit"], foreign, typo)
+            status = decided[0] if decided else "flagged"
+            totals[status] = totals.get(status, 0) + 1
+            if decided:
+                pending.append(({"id": w["id"], "status": decided[0], "status_reason": decided[1],
+                                 "audit": {**w["audit"], "foreign": foreign, "typo": typo}}, []))
+            if writer and len(pending) >= WRITE_CHUNK:
+                writer.put(pending[:])
+                pending.clear()
+
+        await asyncio.gather(*(one(w) for w in roots))
+    if writer:
+        if pending:
+            writer.put(pending)
+        writer.close()
+    print("resolved: " + "  ".join(f"{k} {v:,}" for k, v in sorted(totals.items())), flush=True)
 
 
 def main() -> None:
@@ -170,68 +365,56 @@ def main() -> None:
     p.add_argument("language")
     p.add_argument("--ids", type=int, nargs="+", help="audit these roots, whatever their status")
     p.add_argument("--limit", type=int, help="stop after this many roots")
-    p.add_argument("--workers", type=int, default=32)
+    p.add_argument("--status", default="unverified",
+                   help="audit roots with this status (default: unverified; e.g. valid to re-check)")
+    p.add_argument("--parallel", type=int, default=200, help="requests in flight")
     p.add_argument("--dry-run", action="store_true", help="print verdicts, write nothing")
+    p.add_argument("--resolve-flagged", action="store_true",
+                   help="settle flagged roots with two more questions (see resolve())")
     p.add_argument("--out", help="also append every verdict to this JSONL file")
     a = p.parse_args()
 
     from supabase_client import supabase as sb  # verifies service_role
     language = require_code(a.language)
-    client = httpx.Client(timeout=120, headers={"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"})
-    out = open(a.out, "a", encoding="utf-8") if a.out else None  # noqa: SIM115 -- closed at the end of main
+    if a.resolve_flagged:
+        asyncio.run(resolve_flagged(sb, language, a.parallel, a.dry_run))
+        return
+    started = time.time()
+    entries = load(sb, language, a.ids, a.status)[:a.limit]
+    print(f"auditing {len(entries):,} {LANGUAGE_NAMES[language]} roots "
+          f"({sum(len(e['forms']) for e in entries):,} forms), loaded in {time.time() - started:.0f}s",
+          flush=True)
 
-    def pages():
-        if a.ids:
-            yield attach_forms(sb, sb.table("words").select("id, root").in_("id", a.ids).execute().data)
-            return
-        after = 0
-        while True:
-            batch = unverified(sb, language, after, 500)
-            if not batch:
-                return
-            yield batch
-            after = batch[-1]["id"]
+    totals: dict[str, int] = {}
+    writer = None if a.dry_run else Writer(sb)
+    out = open(a.out, "a", encoding="utf-8") if a.out else None  # noqa: SIM115 -- closed below
 
-    done, cost, totals, started = 0, 0.0, {}, time.time()
-    with ThreadPoolExecutor(max_workers=a.workers) as pool:
-        for batch in pages():
-            if a.limit:
-                batch = batch[:max(0, a.limit - done)]
-            if not batch:
-                break
-            def safe(e):
-                # One failing root stays unverified and is picked up next run.
-                try:
-                    return verdict(e, client, language)
-                except Exception as exc:
-                    print(f"  {e['root']}: {exc}", flush=True)
-                    return None
-            pairs = [(r, e) for r, e in zip(pool.map(safe, batch), batch, strict=True) if r]
-            results, batch_ok = [r for r, _ in pairs], [e for _, e in pairs]
-            roots = [r for r, _, _ in results]
-            forms = [f for _, fs, _ in results for f in fs]
-            if not a.dry_run:
-                sb.rpc("apply_word_audit", {"words_payload": roots, "forms_payload": forms}).execute()
-            for (root, fs, c), entry in zip(results, batch_ok, strict=True):
-                cost += c
-                totals[root["status"]] = totals.get(root["status"], 0) + 1
-                if out:
-                    out.write(json.dumps({"root": entry["root"], **root,
-                                          "forms": {f["form"]: r["score"] for f, r in
-                                                    zip([f for f in entry["forms"] if " " not in f["form"]], fs, strict=True)}},
-                                         ensure_ascii=False) + "\n")
-                if a.dry_run:
-                    flagged = [f["form"] for f, r in zip([f for f in entry["forms"] if " " not in f["form"]], fs, strict=True)
-                               if r["status"] == "flagged"]
-                    print(f"  {entry['root'][:28]:28} {root['status']:8} {root['status_reason']}"
-                          + (f"  forms flagged: {', '.join(flagged)}" if flagged else ""))
-            done += len(batch)
-            print(f"{done:,} roots  " + "  ".join(f"{k} {v:,}" for k, v in sorted(totals.items()))
-                  + f"  [${cost:.4f}, {time.time() - started:.0f}s]", flush=True)
-            if a.limit and done >= a.limit:
-                break
+    def on_batch(batch):
+        if writer:
+            writer.put([(r, fs) for _, r, fs in batch])
+        for e, r, fs in batch:
+            totals[r["status"]] = totals.get(r["status"], 0) + 1
+            if out:
+                out.write(json.dumps({"root": e["root"], **r, "forms": {
+                    f["form"]: fr["score"] for f, fr in zip(e["forms"], fs, strict=True)}},
+                    ensure_ascii=False) + "\n")
+            if a.dry_run:
+                bad = [f["form"] for f, fr in zip(e["forms"], fs, strict=True) if fr["status"] == "flagged"]
+                print(f"  {e['root'][:28]:28} {r['status']:8} {r['status_reason']}"
+                      + (f"  forms flagged: {', '.join(bad)}" if bad else ""))
+        n = sum(totals.values())
+        if n % 2000 < WRITE_CHUNK or n == len(entries):
+            print(f"{n:,}/{len(entries):,}  " + "  ".join(f"{k} {v:,}" for k, v in sorted(totals.items()))
+                  + f"  [{time.time() - started:.0f}s]", flush=True)
+
+    done, failed, cost = asyncio.run(audit(entries, language, a.parallel, on_batch))
+    if writer:
+        print("finishing database writes...", flush=True)
+        writer.close()
     if out:
         out.close()
+    print(f"done: {done:,} audited, {failed:,} failed (still unverified), "
+          f"${cost:.4f}, {time.time() - started:.0f}s")
 
 
 if __name__ == "__main__":
