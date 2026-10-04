@@ -91,3 +91,35 @@ $$;
 
 revoke all on function public.apply_word_audit(jsonb, jsonb) from public, anon, authenticated;
 grant execute on function public.apply_word_audit(jsonb, jsonb) to service_role;
+
+-- Merge a root into the root it should have been, for scripts/review_flagged.py.
+-- The source's forms move to the target unless the target already has them
+-- (wordforms is unique on (word_id, form)), the source's own bare word becomes a
+-- form of the target, and the source is left invalid. User rows that point at
+-- the source are not moved here.
+create or replace function public.merge_roots(payload jsonb)
+returns integer
+language plpgsql
+set search_path = public
+as $$
+declare m record; merged integer := 0;
+begin
+  for m in select * from jsonb_to_recordset(payload) as x(src integer, dst integer, reason text) loop
+    continue when m.src = m.dst;
+    update wordforms f set word_id = m.dst
+     where f.word_id = m.src
+       and not exists (select 1 from wordforms g where g.word_id = m.dst and g.form = f.form);
+    delete from wordforms where word_id = m.src;
+    insert into wordforms (word_id, form, status)
+    select m.dst, lower(regexp_replace(w.root, '^(el|la|los|las|el/la) ', '')), 'valid'
+      from words w where w.id = m.src
+    on conflict (word_id, form) do nothing;
+    update words set status = 'invalid', status_reason = m.reason where id = m.src;
+    merged := merged + 1;
+  end loop;
+  return merged;
+end;
+$$;
+
+revoke all on function public.merge_roots(jsonb) from public, anon, authenticated;
+grant execute on function public.merge_roots(jsonb) to service_role;
