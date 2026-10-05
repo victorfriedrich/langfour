@@ -61,6 +61,10 @@ The number of invalid roots says little: most are junk. What matters is how much
 - Common forms were held only by junk roots or by nobody: *hay* (on "the hay"), *sea/sean* (on "sear"), *dime*, *verte*, *hecha*.
 Reviving those roots and attaching the forms took coverage from 90.4% to 96.9% of word tokens; the rest is mostly names, English and letters.
 
+## After a review: relink the transcripts
+
+Merges and status changes do not reach the stored transcripts. Run `python3 scripts/reparse.py es` (dry run), then `--write`, then delete `data/processed/es/document_term_matrix.npz` and its `.meta.json` so the recommender rebuilds. On 2026-10-05 this relinked 4.15M of 21.6M word tokens (como was on "please", tiene on "tenir", hay on "the hay"); a tarball of the files from before is in `apps/api/data/backup-2026-10-05-processed/`.
+
 ## Status (Spanish, 2026-10-05, done)
 
 - No roots are `flagged`: 35,185 valid, 38,062 invalid.
