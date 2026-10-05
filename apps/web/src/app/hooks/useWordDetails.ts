@@ -13,6 +13,9 @@ export const useWordDetails = (wordIds: number[]) => {
   const [words, setWords] = useState<Word[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The ids `words` was fetched for. Until it matches, the details are not in
+  // yet -- even on the render before the fetch below has started.
+  const [loadedKey, setLoadedKey] = useState('');
   // Callers pass a fresh array on every render; depend on its contents, or
   // the effect re-runs, resets state and renders again without end.
   const key = wordIds.join(',');
@@ -55,11 +58,12 @@ export const useWordDetails = (wordIds: number[]) => {
         setError(err instanceof Error ? err.message : 'Failed to fetch word details');
       } finally {
         setLoading(false);
+        setLoadedKey(key);
       }
     };
 
     fetchWordDetails();
   }, [key]);
 
-  return { words, loading, error };
+  return { words, loading, error, ready: !key || loadedKey === key };
 };

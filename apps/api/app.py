@@ -168,6 +168,7 @@ class WordRecommendationResponse(BaseModel):
     word_ids: list[int]
     improvements: list[float]
     frequencies: list[int]
+    total_videos: int
 
 class MissingWordsRequest(BaseModel):
     language_code: str
@@ -247,7 +248,8 @@ async def get_word_recommendations(
     return WordRecommendationResponse(
         word_ids=word_ids,
         improvements=improvements,
-        frequencies=frequencies
+        frequencies=frequencies,
+        total_videos=recommender.count_documents(language, category if category else None),
     )
 
 @app.get(
