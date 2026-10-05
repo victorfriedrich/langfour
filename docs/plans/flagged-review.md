@@ -50,10 +50,12 @@ Before applying, check each `out_` file: same ids in the same order as its batch
 ## Lessons from the Spanish run
 
 - Jev flagged the right roots; the damage came after, in steps that ignored forms. The article rule merged "debate" (holding debatir's conjugation) into el debate; it now requires the source's forms to be just the word and its plural. Renaming a flagged root keeps its forms, which can be invented conjugations (chalaa, chalaaba): check forms after any rename.
-- Strict agents drop ~3-5% of rare real words. A rescue pass that lists only the mistakes, on the `i` verdicts, brought back 468 of 13,291.
+- Strict agents drop ~3-5% of rare real words. A rescue pass that lists only the mistakes, on the `i` verdicts, brought back 468 of 13,291 (batches 034-082) and far fewer in 000-033, where the review was less strict. Read rescues before applying: agents also "rescue" names and English.
+- Jev's root score separates real words from junk only weakly (rescued median 0.37, junk 0.19) and its form scores barely at all (invented conjugations score ~0.85; the flag line is 0.3). The root-alone veto also let through roots that copy a real verb's forms (romp, usare, seguire); find those by form overlap with another valid root.
+- "-ares" forms are not junk: on -ar verbs they are the archaic future subjunctive, on nouns in -ar/-er/-ir they are plurals.
 
 ## Status (Spanish, 2026-10-05, done)
 
 - No roots are `flagged`: 35,185 valid, 38,062 invalid.
-- 2026-10-04: 345 English or label forms removed, bien / la radio / molar restored, 538 user rows moved. 2026-10-05: the last 1,518 flagged roots decided by hand (837 renamed to their correct root, 632 merged, 40 invalid, 11 wrongly invalid targets such as os and nato revived); verb conjugations removed from 15 nouns (el debate, el censor, el vasar…); 2,875 duplicate user rows merged into their target; 468 rare words rescued.
+- 2026-10-04: 345 English or label forms removed, bien / la radio / molar restored, 538 user rows moved. 2026-10-05: the last 1,518 flagged roots decided by hand (837 renamed to their correct root, 632 merged, 40 invalid, 11 wrongly invalid targets such as os and nato revived); verb conjugations removed from 15 nouns (el debate, el censor, el vasar…); 2,875 duplicate user rows merged into their target; 468 rare words rescued; 2026-10-05 second pass: batches 000-033 rescued, the 2,645 highest Jev-scored invalid roots read by hand (107 more fixed), 31 valid copy roots merged into the verb they copy, and stray forms that are another word's root removed (lama on llamar, regla on siglar).
 - A CSV backup from before the 2026-10-04 cleanup is in `apps/api/data/backup-2026-10-04/`. The batch, output and rescue files are in `apps/api/data/review/es/` (untracked).
