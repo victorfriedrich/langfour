@@ -3,10 +3,8 @@
 
     python3 scripts/language_flagging.py [language]
 
-Stage 2 of four. This writes cognate = "invalid" as a review flag; the web app's
-WordValidation component lists those rows, and you either delete them or clear
-the flag. Deleting is what makes reparse.py necessary: transcripts on disk still
-carry the deleted word ids, and reparse.py re-resolves them.
+This writes status = "flagged" for unverified roots that need human review.
+WordValidation lists those rows for approval. Audited decisions are left alone.
 
 An earlier variant of this script gave the model each root's first six wordforms
 instead of its translation. That is arguably better evidence and is worth porting
@@ -94,8 +92,9 @@ def flag_non_language_words(non_language_words: list[str], all_words: list[dict]
     print("flagging " + str(non_language_words))
     word_ids_to_flag = [word['id'] for word in all_words if word['root'] in non_language_words]
     for word_id in word_ids_to_flag:
-        supabase.table("words").update({"cognate": "invalid"}).eq("id", word_id).execute()
-        #supabase.table("words").update({"flagged": True}).eq("id", word_id).execute()
+        (supabase.table("words")
+         .update({"status": "flagged", "status_reason": "Language check: needs review"})
+         .eq("id", word_id).eq("status", "unverified").execute())
 
 def main(language: str, offset: int = 0):
     batch_size = 40

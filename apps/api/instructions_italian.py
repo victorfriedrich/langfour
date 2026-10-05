@@ -97,6 +97,7 @@ INSTRUCTION_ROOT_FORM = """For the italian word '{word}' return a 2 element json
     - For nouns it is the singular (!) full noun including italian article. If it's not a noun, return the word itself
     - For adjectives also give the singular (!) male root form. If it's not an adjective, return the word itself
     - If it's neither (other) the key is the word itself (this is the case for e.g. "ciao", "fatta", "nelle", "dall'")
+    - A diminutive or augmentative is not a word of its own: the key is its base word (the base noun with its article, or the base adjective)
     """
     
 INSTRUCTION_VERIFY_NEW_WORD = """You are a meticulous Italian lexicographer reviewing one candidate dictionary entry before it is saved. Another process already picked the root and generated its forms -- your job is only to review that output, not redo it.

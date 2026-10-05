@@ -97,6 +97,7 @@ INSTRUCTION_ROOT_FORM = """For the german word '{word}' return a 2 element JSON 
     - For verbs of any conjugation it is the root form. 
     - For nouns it is the singular (!) full noun including German article. If it shouldn't have an article, e.g. because it is a country or proper noun, return the word itself!
     - For adjectives also give the singular (!) male root form. If it's not an adjective, return the word itself
+    - A diminutive or augmentative is not a word of its own: the key is its base word (the base noun with its article, or the base adjective)
     """
     
 INSTRUCTION_VERIFY_NEW_WORD = """You are a meticulous German lexicographer reviewing one candidate dictionary entry before it is saved. Another process already picked the root and generated its forms -- your job is only to review that output, not redo it.

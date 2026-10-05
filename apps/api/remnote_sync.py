@@ -283,6 +283,16 @@ class SyncStore:
             linked.update((r["word_id"], r["external_id"]) for r in res.data or [])
         return linked
 
+    def word_ids_for_rems(self, user_id: str, rem_ids: list[str]) -> dict[str, int]:
+        """Existing note mappings are authoritative after a dictionary merge."""
+        words: dict[str, int] = {}
+        for chunk in _chunks(rem_ids):
+            res = (self.db.table("srs_notes").select("word_id, external_id")
+                   .eq("user_id", user_id).eq("provider", PROVIDER)
+                   .in_("external_id", chunk).execute())
+            words.update((r["external_id"], r["word_id"]) for r in res.data or [])
+        return words
+
     def upsert_notes(self, rows: list[dict]) -> list[dict]:
         if not rows:
             return []
@@ -483,18 +493,23 @@ def apply_push(store: SyncStore, user_id: str, req: PushRequest,
     # another (a copied Rem, or two devices creating one each), since taking
     # over the note would delete the first Rem's cards and their reviews; and
     # a second note for the same word or Rem within this push.
-    owned = store.owned_word_ids(user_id, list({n.word_id for n in req.notes}))
+    # A merge moves srs_notes to the destination word, while the Rem keeps
+    # sending its original word id. Resolve by this user's existing Rem mapping
+    # before ownership and duplicate checks; new Rems still use their supplied id.
+    mapped = store.word_ids_for_rems(user_id, list({n.rem_id for n in req.notes}))
+    owned = store.owned_word_ids(user_id, list({mapped.get(n.rem_id, n.word_id) for n in req.notes}))
     linked = store.linked_rems(user_id, list(owned))
     notes: dict[int, NoteIn] = {}
     seen_rems: set[str] = set()
     rejected: set[int] = set()
     for note in req.notes:
-        if (note.word_id not in owned
-                or linked.get(note.word_id, note.rem_id) != note.rem_id
-                or note.word_id in notes or note.rem_id in seen_rems):
+        word_id = mapped.get(note.rem_id, note.word_id)
+        if (word_id not in owned
+                or linked.get(word_id, note.rem_id) != note.rem_id
+                or word_id in notes or note.rem_id in seen_rems):
             rejected.add(note.word_id)
             continue
-        notes[note.word_id] = note
+        notes[word_id] = note
         seen_rems.add(note.rem_id)
 
     saved = store.upsert_notes([

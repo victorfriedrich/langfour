@@ -80,7 +80,7 @@ const WordCategories: React.FC<WordCategoriesProps> = ({
   const displayedWords = useMemo(() => {
     const rank = new Map((recommendations?.word_ids ?? []).map((id, i) => [id, i]));
     return wordDetails
-      .filter((w) => !addedIds.includes(w.word_id) && w.cognate !== 'invalid')
+      .filter((w) => !addedIds.includes(w.word_id) && w.status !== 'invalid')
       .sort((a, b) => (rank.get(a.word_id) ?? Infinity) - (rank.get(b.word_id) ?? Infinity));
   }, [wordDetails, addedIds, recommendations]);
 
