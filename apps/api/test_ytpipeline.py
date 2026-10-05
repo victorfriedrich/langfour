@@ -1242,3 +1242,13 @@ def test_sync_leaves_reclaimed_rows_and_their_attempt_count_alone():
     yp.sync("es", candidates_for("UC1", 3), top_n=2, sb=sb)
     assert sb.row("UC1_0")["attempts"] == 3
     assert [r["video_id"] for r in ingest.pending(sb, "es", 10)] == ["UC1_1"]
+
+
+def test_videos_under_eight_minutes_are_not_usable(db):
+    """The uploads playlist includes Shorts, and score() gives anything under
+    8 minutes full marks for length, so without a floor they outranked real
+    videos on view count alone."""
+    add_channel(db, "UC1")
+    add_videos(db, "UC1", 1, duration=479, prefix="short")
+    add_videos(db, "UC1", 1, duration=480, prefix="long")
+    assert [v[1] for v in yp.usable_videos(db, "es")] == ["longUC10"]

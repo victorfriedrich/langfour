@@ -75,7 +75,10 @@ CRAWLS = [f"CC-MAIN-{c}" for c in ["2026-34", "2026-30", "2026-25", "2026-21", "
 
 # Video selection, carried over from the Selenium script it replaced so results
 # stay comparable: prefer short, prefer viewed, never longer than 33 minutes.
-MAX_MINUTES, TOP_N, VIEW_BIAS = 33, 15, 0.9
+# The minimum is new. The Selenium script read a channel's Videos tab, which
+# never lists Shorts; the uploads playlist does, and score() gives anything
+# under 8 minutes full marks for length, so Shorts outranked real videos.
+MIN_MINUTES, MAX_MINUTES, TOP_N, VIEW_BIAS = 8, 33, 15, 0.9
 MUSIC_CATEGORY = "10"
 KEY_RE = re.compile(r"([?&]key=)[^&\s\"'<>]+")
 
@@ -1262,11 +1265,11 @@ def rank_channels(rows: Sequence[dict]) -> dict[str, float]:
 
 # ─────────────────────────────────────────────────────── stage: select ──
 
-# Usable at all: long enough to carry speech, short enough to sit through, not
+# Usable at all: long enough to be worth transcribing, short enough to sit through, not
 # live, and not music. Music is judged per video, not per channel, so an
 # artist's interview survives and their music videos do not.
 USABLE_VIDEO = """v.live = 'none' AND COALESCE(v.category_id, '') != ?
-                  AND v.duration_s BETWEEN 60 AND ?"""
+                  AND v.duration_s BETWEEN ? AND ?"""
 
 
 def usable_videos(db: sqlite3.Connection, lang: str,
@@ -1274,7 +1277,7 @@ def usable_videos(db: sqlite3.Connection, lang: str,
     sql = f"""SELECT v.channel_id, v.video_id, v.title, COALESCE(v.views, 0), v.duration_s
               FROM videos v JOIN channels c USING (channel_id)
               WHERE COALESCE(c.audio_lang, c.lang) = ? AND {USABLE_VIDEO}"""
-    args: list[Any] = [lang, MUSIC_CATEGORY, MAX_MINUTES * 60]
+    args: list[Any] = [lang, MUSIC_CATEGORY, MIN_MINUTES * 60, MAX_MINUTES * 60]
     if channel_id:
         sql += " AND v.channel_id = ?"
         args.append(channel_id)

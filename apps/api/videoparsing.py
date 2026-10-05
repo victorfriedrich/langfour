@@ -22,10 +22,17 @@ load_dotenv()
 # this module does not require a DeepInfra key.
 
 def download_video(url):
+    """The audio track only, as the file yt-dlp wrote. pytubefix's ANDROID
+    client started failing every download with HTTP 400; its metadata calls
+    in main() still work, so only the download moved."""
+    import yt_dlp
     try:
-        video = pytube.YouTube(url, 'ANDROID')
-        stream = video.streams.filter(only_audio=True).first()
-        audio_file = stream.download()
+        start_time = time.time()
+        with yt_dlp.YoutubeDL({"format": "bestaudio[ext=m4a]/bestaudio",
+                               "outtmpl": "%(id)s.%(ext)s", "quiet": True,
+                               "no_warnings": True, "noprogress": True}) as ydl:
+            audio_file = ydl.prepare_filename(ydl.extract_info(url, download=True))
+        print(f"Audio downloaded in {time.time() - start_time:.2f} seconds")
         return audio_file
     except Exception as e:
         print(f"Error occurred during video download: {e}")
@@ -45,7 +52,96 @@ def convert_to_mp3(filename):
         print(f"Error converting to MP3: {e}")
         return None
 
-def transcribe_audio(mp3_filename, video_id):
+# Whisper reads 30 seconds of audio at a time, and DeepInfra cuts a long file
+# into fixed 30-second windows. Whisper often stops a window early, and the
+# next one starts at the fixed boundary, so the end of a window is lost: on
+# test videos 6-12% of the words, whole sentences at a time. Sending pieces
+# shorter than 30 seconds, cut where the audio is quietest, keeps every piece
+# inside one window. A piece that still comes back far below speaking rate had
+# speech skipped anyway, and is split once more and retried.
+FRAME_S = 0.02                 # energy is measured per 20 ms
+PIECE_MIN_S, PIECE_MAX_S = 15.0, 28.0
+MIN_WORDS_PER_SECOND = 1.0     # normal speech is 2-3
+
+
+def frame_energy(audio_file: str):
+    """Loudness per FRAME_S, smoothed over ~300 ms so a cut lands in a pause
+    between words rather than in a one-frame dip inside one."""
+    import subprocess
+
+    import numpy as np
+    rate = 16000
+    pcm = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", audio_file,
+                          "-ac", "1", "-ar", str(rate), "-f", "s16le", "-"],
+                         capture_output=True, check=True).stdout
+    samples = np.frombuffer(pcm, np.int16).astype(np.float32)
+    hop = int(FRAME_S * rate)
+    frames = samples[: len(samples) // hop * hop].reshape(-1, hop)
+    rms = np.sqrt(np.mean(frames ** 2, axis=1))
+    return np.convolve(rms, np.ones(15) / 15, mode="same"), len(samples) / rate
+
+
+def quietest(energy, start: float, end: float) -> float:
+    i, j = int(start / FRAME_S), max(int(start / FRAME_S) + 1, int(end / FRAME_S))
+    return (i + int(energy[i:j].argmin())) * FRAME_S
+
+
+def pieces(energy, duration: float) -> list[tuple[float, float]]:
+    """(start, end) spans of PIECE_MIN_S..PIECE_MAX_S, each ending at the
+    quietest moment its window allows."""
+    cuts = [0.0]
+    while duration - cuts[-1] > PIECE_MAX_S:
+        cuts.append(quietest(energy, cuts[-1] + PIECE_MIN_S, cuts[-1] + PIECE_MAX_S))
+    return list(zip(cuts, [*cuts[1:], duration], strict=True))
+
+
+def whisper(audio_file: str, language: str) -> str:
+    """One transcription request, retried briefly: DeepInfra answers 429 when
+    busy even under its concurrency limit."""
+    for attempt in range(3):
+        try:
+            with open(audio_file, "rb") as fh:
+                result = transcription_client().audio.transcriptions.create(
+                    model=MODEL_TRANSCRIBE, file=fh, response_format="text", language=language)
+            # A bare string on OpenAI; DeepInfra may return an object instead.
+            return (result if isinstance(result, str) else result.text).strip()
+        except Exception:
+            if attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
+    return ""
+
+
+def transcribe_in_pieces(audio_file: str, language: str, transcribe=whisper) -> str:
+    """The whole file's text, transcribed as pieces all sent at once."""
+    import subprocess
+    import tempfile
+    from concurrent.futures import ThreadPoolExecutor
+
+    energy, duration = frame_energy(audio_file)
+    spans = pieces(energy, duration)
+    with tempfile.TemporaryDirectory() as tmp:
+        def piece(span):
+            start, end = span
+            path = os.path.join(tmp, f"{start:09.3f}-{end:09.3f}.m4a")   # a retry half shares the start
+            subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                            "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", audio_file,
+                            "-c:a", "aac", "-b:a", "96k", path], check=True)
+            return transcribe(path, language)
+
+        with ThreadPoolExecutor(max_workers=64) as pool:   # DeepInfra allows 200
+            texts = list(pool.map(piece, spans))
+        for i, ((start, end), text) in enumerate(zip(spans, texts, strict=True)):
+            if len(text.split()) < (end - start) * MIN_WORDS_PER_SECOND:
+                middle = quietest(energy, start + (end - start) * 0.3, start + (end - start) * 0.7)
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    retry = " ".join(pool.map(piece, [(start, middle), (middle, end)]))
+                if len(retry.split()) > len(text.split()):
+                    texts[i] = retry
+    return " ".join(t for t in texts if t)
+
+
+def transcribe_audio(mp3_filename, video_id, language):
     # Ensure the 'transcripts' directory exists
     os.makedirs("transcripts", exist_ok=True)
     
@@ -56,15 +152,7 @@ def transcribe_audio(mp3_filename, video_id):
     
     try:
         start_time = time.time()
-        with open(mp3_filename, "rb") as audio_file:
-            transcription = transcription_client().audio.transcriptions.create(
-                model=MODEL_TRANSCRIBE,
-                file=audio_file,
-                response_format="text"
-            )
-        # response_format="text" yields a bare string on OpenAI; DeepInfra may
-        # return a transcription object instead. Accept either.
-        text = transcription if isinstance(transcription, str) else transcription.text
+        text = transcribe_in_pieces(mp3_filename, language)
         with open(txt_filename, "w", encoding='utf-8') as txt_file:
             txt_file.write(text)
         end_time = time.time()
@@ -197,65 +285,49 @@ def main(url, language: str, use_transcript_api=True):
         process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
         return
 
-    # Captions when they exist, Whisper when they do not. This used to raise on
-    # a missing or disabled track, which ended the video: ingest.transcribe()
-    # caught the exception and wrote status='failed', permanently. The audio
-    # path below was unreachable from the queue, because ingest calls main()
-    # with two arguments and the default left use_transcript_api True -- so
-    # moviepy, pytubefix and the Whisper client were all shipped for a branch
-    # nothing could enter, while the library rot below silently failed
-    # every single video.
-    transcript = None
-    if use_transcript_api:
-        try:
-            start_time = time.time()
-            transcript = fetch_transcript(video_id, language)
-            print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
-        except Exception as e:
-            # Deliberately any failure, not just the library's two typed ones.
-            # youtube_transcript_api is a scraper, and a scraper's failure mode
-            # is not always a tidy exception: 0.6.2 listed caption tracks fine
-            # but returned an empty body when it fetched one, surfacing as an
-            # xml.etree ParseError that no `except` here named. Narrowing this
-            # back to (TranscriptsDisabled, NoTranscriptFound) would let the
-            # next round of rot -- and there will be one -- end videos that
-            # Whisper could have transcribed.
-            print(f"No usable '{language}' captions for {video_id} "
-                  f"({type(e).__name__}: {(str(e).splitlines() or [''])[0][:120]}); "
-                  f"falling back to audio transcription")
-
-    if transcript is not None:
-        # TODO: Localize based on language
-        # Música
-        # 1.x yields FetchedTranscriptSnippet objects, not dicts.
-        merged_text = ' '.join(
-            snippet.text for snippet in transcript if snippet.text != '[Musik]'
-        )
-        if transcript_language_matches(merged_text, language):
-            with open(txt_filename, "w", encoding='utf-8') as txt_file:
-                txt_file.write(merged_text)
-            process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
+    # Whisper first, captions only when the audio path fails. On test videos
+    # Whisper in pieces got fewer words wrong than YouTube's automatic track
+    # and is punctuated; captions are free but unpunctuated, and YouTube
+    # rate-limits caption requests under heavy use.
+    audio_file = download_video(url)
+    if audio_file:
+        transcription_file = transcribe_audio(audio_file, video_id, language)
+        cleanup_files(audio_file)
+        if transcription_file:
+            print(f"Transcription saved as: {transcription_file}")
+            process_transcription(transcription_file, video_id, title, creator, tags, views, length, date_added, language)
             return
-        print(f"Caption track for {video_id} is labelled '{language}' but reads as "
-              f"another language; ignoring it and transcribing the audio instead")
-        transcript = None
+        print(f"Audio transcription failed for {video_id}; trying captions")
+    else:
+        print(f"Audio download failed for {video_id}; trying captions")
 
-    if transcript is None:
-        mp4_filename = download_video(url)
-        if mp4_filename:
-            mp3_filename = mp4_filename
-            if mp3_filename:
-                transcription_file = transcribe_audio(mp3_filename, video_id)
-                if transcription_file:
-                    print(f"Transcription saved as: {transcription_file}")
-                    process_transcription(transcription_file, video_id, title, creator, tags, views, length, date_added, language)
-                else:
-                    print("Transcription failed.")
-                cleanup_files(mp4_filename, mp3_filename)
-            else:
-                print("MP3 conversion failed.")
-        else:
-            print("Video download failed.")
+    if not use_transcript_api:
+        return
+    try:
+        start_time = time.time()
+        transcript = fetch_transcript(video_id, language)
+        print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
+    except Exception as e:
+        # Deliberately any failure, not just the library's two typed ones:
+        # youtube_transcript_api is a scraper, and a scraper's failure mode is
+        # not always a tidy exception (0.6.2 died in xml.etree with ParseError).
+        print(f"No usable '{language}' captions for {video_id} "
+              f"({type(e).__name__}: {(str(e).splitlines() or [''])[0][:120]})")
+        return
+
+    # TODO: Localize based on language
+    # Música
+    # 1.x yields FetchedTranscriptSnippet objects, not dicts.
+    merged_text = ' '.join(
+        snippet.text for snippet in transcript if snippet.text != '[Musik]'
+    )
+    if not transcript_language_matches(merged_text, language):
+        print(f"Caption track for {video_id} is labelled '{language}' but reads as "
+              f"another language; not using it")
+        return
+    with open(txt_filename, "w", encoding='utf-8') as txt_file:
+        txt_file.write(merged_text)
+    process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
 
 def process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language):
     try:

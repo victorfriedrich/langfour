@@ -3,7 +3,7 @@
 // only copies what RemNote decided into Langfour.
 
 import type { Card, PluginRem as RemObject, RNPlugin } from '@remnote/plugin-sdk';
-import { ApiError, LangfourApi, SyncBusyError, type CardPayload, type NotePayload, type PendingWord } from './api';
+import { ApiError, LangfourApi, SyncBusyError, type CardPayload, type NotePayload, type PendingWord, type PushResult } from './api';
 import { apiUrl, forgetToken, NotConnectedError, readToken } from './connection';
 import {
   DAY_MS,
@@ -29,6 +29,8 @@ export interface SyncSummary {
   notes: number;
   reviews: number;
   removed: number;
+  disabled: number; // words stopped because their cards were turned off, or
+  enabled: number;  // resumed because they were turned back on
   rejected: number;
   error?: string;
   warning?: string; // the sync went through, but something beside it failed
@@ -41,6 +43,7 @@ export interface LinkedWord {
   language: string;
   root: string;
   cards: Card[];
+  practiced: boolean; // false once the user turns the Rem's flashcards off
 }
 
 type Direction = 'forward' | 'backward' | 'both';
@@ -91,6 +94,7 @@ export async function loadLinkedWords(plugin: RNPlugin, allCards?: Card[]): Prom
       language: languages[wordId] ?? '?',
       root: plainSides(rem.text)[0]?.trim() ?? '',
       cards: byRem.get(rem._id) ?? [],
+      practiced: await rem.getEnablePractice(),
     });
   }
   return words;
@@ -231,7 +235,7 @@ async function run(plugin: RNPlugin, { api, direction, linkExisting }: Settings,
   const since = full ? 0 : lastSuccess - OVERLAP_MS;
   const summary: SyncSummary = {
     at: startedAt, lastSuccessAt: startedAt, lastFullAt: full ? startedAt : lastFull,
-    created: 0, linked: 0, notes: 0, reviews: 0, removed: 0, rejected: 0,
+    created: 0, linked: 0, notes: 0, reviews: 0, removed: 0, disabled: 0, enabled: 0, rejected: 0,
   };
 
   const layout = new Layout(plugin);
@@ -305,6 +309,7 @@ async function run(plugin: RNPlugin, { api, direction, linkExisting }: Settings,
       word_id: w.wordId,
       rem_id: w.rem._id,
       cards: w.cards.map((c) => cardPayload(c, fresh.has(w.wordId) ? 0 : since)),
+      practiced: w.practiced,
     }));
     const result = await api.push({ notes });
     summary.notes += result.notes;
@@ -314,16 +319,31 @@ async function run(plugin: RNPlugin, { api, direction, linkExisting }: Settings,
 
   // 3. Full sweep: a Rem that is gone from RemNote is marked removed, so the
   //    word is not offered again. Reversible: the Rem coming back restores it.
-  const sweep = await api.push({ present_rem_ids: linked.map((w) => w.rem._id) });
+  //    A Rem whose flashcards are turned off disables its word in Langfour;
+  //    turning them on again makes it a learning word again.
+  const sweep = await api.push({
+    present_rem_ids: linked.map((w) => w.rem._id),
+    disabled_rem_ids: linked.filter((w) => !w.practiced).map((w) => w.rem._id),
+  });
   summary.removed = sweep.removed;
+  summary.disabled = sweep.disabled;
+  summary.enabled = sweep.enabled;
 
   return summary;
 }
 
 /** Run `work` holding the server's sync lease, and translate the errors every
  *  caller treats alike. */
+let running = 0;
+
+/** True while this device runs a sync, whose own edits to Rems are not news. */
+export function isSyncing(): boolean {
+  return running > 0;
+}
+
 async function withSync<T>(plugin: RNPlugin, work: (settings: Settings) => Promise<T>): Promise<T> {
   let settings: Settings | undefined;
+  running += 1;
   try {
     settings = await readSettings(plugin, crypto.randomUUID());
     return await work(settings);
@@ -336,8 +356,31 @@ async function withSync<T>(plugin: RNPlugin, work: (settings: Settings) => Promi
     }
     throw error;
   } finally {
+    running -= 1;
     await settings?.api.release().catch(() => undefined);
   }
+}
+
+/** Report some Rems right away, between syncs: their cards, the last day's
+ *  reviews and whether their flashcards are on. Rems that are not Langfour
+ *  words are skipped. The next sync resends anything this misses. Throws
+ *  SyncBusyError while a sync holds the server's lease. */
+export async function pushRems(plugin: RNPlugin, remIds: string[]): Promise<PushResult | null> {
+  const since = Date.now() - DAY_MS;
+  const notes: NotePayload[] = [];
+  for (const rem of (await plugin.rem.findMany(remIds)) ?? []) {
+    if (!(await rem.hasPowerup(POWERUP))) continue;
+    const wordId = Number(await rem.getPowerupProperty(POWERUP, SLOT_WORD_ID));
+    if (!Number.isInteger(wordId) || wordId <= 0) continue;
+    notes.push({
+      word_id: wordId,
+      rem_id: rem._id,
+      cards: (await rem.getCards()).map((c) => cardPayload(c, since)),
+      practiced: await rem.getEnablePractice(),
+    });
+  }
+  if (notes.length === 0) return null;
+  return withSync(plugin, ({ api }) => api.push({ notes }));
 }
 
 /** Run a sync and record its outcome. Throws, without recording anything,
@@ -354,7 +397,7 @@ export async function syncNow(plugin: RNPlugin): Promise<SyncSummary> {
       at: Date.now(),
       lastSuccessAt: previous?.lastSuccessAt ?? null,
       lastFullAt: previous?.lastFullAt ?? null,
-      created: 0, linked: 0, notes: 0, reviews: 0, removed: 0, rejected: 0,
+      created: 0, linked: 0, notes: 0, reviews: 0, removed: 0, disabled: 0, enabled: 0, rejected: 0,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -400,6 +443,7 @@ export async function linkExistingFlashcards(plugin: RNPlugin): Promise<number> 
           word_id: w.wordId,
           rem_id: w.remId,
           cards: w.cards.map((c) => cardPayload(c, 0)),
+          practiced: w.practiced,
         })),
       });
     }
@@ -415,5 +459,7 @@ export function describeSync(summary: SyncSummary): string {
   if (summary.linked) parts.push(`${plural(summary.linked, 'existing flashcard')} linked`);
   if (summary.reviews) parts.push(`${plural(summary.reviews, 'review')} reported`);
   if (summary.removed) parts.push(`${plural(summary.removed, 'deleted Rem')} noted`);
+  if (summary.disabled) parts.push(`${plural(summary.disabled, 'word')} with cards turned off stopped`);
+  if (summary.enabled) parts.push(`${plural(summary.enabled, 'word')} with cards turned back on resumed`);
   return parts.length ? `Langfour: ${parts.join(', ')}` : 'Langfour: already up to date';
 }

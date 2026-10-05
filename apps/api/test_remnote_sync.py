@@ -133,6 +133,14 @@ class FakeStore:
         self.cards = [c for c in self.cards if c["id"] not in card_ids]
         self.reviews = {k: v for k, v in self.reviews.items() if k[0] not in card_ids}
 
+    def move_words(self, user_id, word_ids, from_status, to_status):
+        moved = 0
+        for i, (w, status, *rest) in enumerate(self.userwords):
+            if w in word_ids and status == from_status:
+                self.userwords[i] = (w, to_status, *rest)
+                moved += 1
+        return moved
+
     def count_learning_words(self, user_id):
         return sum(1 for w in self.userwords if w[1] == "learning")
 
@@ -363,6 +371,87 @@ def test_a_partial_push_never_removes_anything():
 
     assert result.removed == 0
     assert all(n["removed_at"] is None for n in store.notes)
+
+
+def test_turning_cards_off_in_remnote_disables_the_word_and_on_resumes_it():
+    store = FakeStore(spanish(1, 2) + spanish(3, status="known"))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=w, rem_id=f"rem-{w}")
+                                               for w in (1, 2, 3)]), now=NOW)
+    every_rem = ["rem-1", "rem-2", "rem-3"]
+
+    off = apply_push(store, USER, PushRequest(present_rem_ids=every_rem,
+                                              disabled_rem_ids=["rem-1", "rem-3"]), now=NOW)
+    # A known word stays known: turning its cards off says nothing about it.
+    assert (off.disabled, off.enabled) == (1, 0)
+    assert [s for _, s, *_ in store.userwords] == ["disabled", "learning", "known"]
+    assert [p.word_id for p in pending_words(store, USER, 10).words] == []
+
+    on = apply_push(store, USER, PushRequest(present_rem_ids=every_rem, disabled_rem_ids=[]),
+                    now=NOW)
+    assert (on.disabled, on.enabled) == (0, 1)
+    assert [s for _, s, *_ in store.userwords] == ["learning", "learning", "known"]
+
+
+def test_a_push_right_after_turning_cards_off_stops_the_word_at_once():
+    store = FakeStore(spanish(1))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-1")]), now=NOW)
+
+    off = apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-1",
+                                                            practiced=False)]), now=NOW)
+    assert off.disabled == 1 and store.userwords[0][1] == "disabled"
+
+    on = apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-1",
+                                                           practiced=True)]), now=NOW)
+    assert on.enabled == 1 and store.userwords[0][1] == "learning"
+
+
+def test_turning_cards_off_never_deletes_their_history():
+    store = FakeStore(spanish(1))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-1",
+                                                      cards=[card("c-f", scores=(1,))])]), now=NOW)
+
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-1", cards=[],
+                                                      practiced=False)]), now=NOW)
+
+    assert [c["external_id"] for c in store.cards] == ["c-f"]
+    assert len(store.reviews) == 1
+
+
+def test_a_deleted_rem_stops_its_word_and_restoring_it_resumes_it():
+    store = FakeStore(spanish(1, 2))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-1"),
+                                               NoteIn(word_id=2, rem_id="rem-2")]), now=NOW)
+
+    gone = apply_push(store, USER, PushRequest(present_rem_ids=["rem-1"],
+                                               disabled_rem_ids=[]), now=NOW)
+    assert (gone.removed, gone.disabled) == (1, 1)
+    assert [s for _, s, *_ in store.userwords] == ["learning", "disabled"]
+
+    back = apply_push(store, USER, PushRequest(present_rem_ids=["rem-1", "rem-2"],
+                                               disabled_rem_ids=[]), now=NOW)
+    assert (back.restored, back.enabled) == (1, 1)
+    assert [s for _, s, *_ in store.userwords] == ["learning", "learning"]
+
+
+def test_a_rem_deleted_before_this_change_stops_its_word_on_the_next_sweep():
+    store = FakeStore(spanish(1))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-1")]), now=NOW)
+    store.notes[0]["removed_at"] = LONG_AGO
+
+    result = apply_push(store, USER, PushRequest(present_rem_ids=[]), now=NOW)
+
+    assert (result.removed, result.disabled) == (0, 1)
+
+
+def test_a_sweep_without_practice_state_leaves_statuses_alone():
+    # Older plugins send only present_rem_ids.
+    store = FakeStore(spanish(1, status="disabled"))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-1")]), now=NOW)
+
+    result = apply_push(store, USER, PushRequest(present_rem_ids=["rem-1"]), now=NOW)
+
+    assert (result.disabled, result.enabled) == (0, 0)
+    assert store.userwords[0][1] == "disabled"
 
 
 # -- pending ----------------------------------------------------------------

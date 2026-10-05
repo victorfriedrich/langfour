@@ -94,6 +94,8 @@ class NoteIn(BaseModel):
     rem_id: str = Field(..., min_length=1, max_length=64)
     # The complete set of cards the Rem has now: cards missing here are gone.
     cards: list[CardIn] = Field(default_factory=list, max_length=50)
+    # Whether the Rem's flashcards are turned on; null if not reported.
+    practiced: bool | None = None
 
 
 class PushRequest(BaseModel):
@@ -101,6 +103,9 @@ class PushRequest(BaseModel):
     # Every Rem the plugin still sees, sent once at the end of a sync. A note
     # whose Rem is missing is marked removed; null means "not a full sweep".
     present_rem_ids: list[str] | None = Field(None, max_length=100_000)
+    # Of those, the Rems whose flashcards are turned off; every other present
+    # Rem has them on. Null means the plugin did not report it.
+    disabled_rem_ids: list[str] | None = Field(None, max_length=100_000)
 
 
 class PushResponse(BaseModel):
@@ -109,6 +114,8 @@ class PushResponse(BaseModel):
     reviews: int  # newly recorded; resent ones are not counted again
     removed: int
     restored: int
+    disabled: int
+    enabled: int
     rejected_word_ids: list[int]
 
 
@@ -228,6 +235,18 @@ class SyncStore:
         ))
         # Ordered oldest first, so the latest translation for a word wins.
         return {r["word_id"]: r["custom_translation"] for r in rows}
+
+    def move_words(self, user_id: str, word_ids: list[int], from_status: str,
+                   to_status: str) -> int:
+        """Set the status of those of `word_ids` that are in `from_status`;
+        returns how many changed."""
+        moved = 0
+        for chunk in _chunks(word_ids):
+            res = (self.db.table("userwords").update({"status": to_status})
+                   .eq("user_id", user_id).eq("status", from_status)
+                   .in_("word_id", chunk).execute())
+            moved += len(res.data or [])
+        return moved
 
     def count_learning_words(self, user_id: str) -> int:
         res = (self.db.table("userwords").select("word_id", count="exact")
@@ -487,7 +506,9 @@ def apply_push(store: SyncStore, user_id: str, req: PushRequest,
 
     # A note's card list is complete, so a card RemNote no longer has (the
     # user switched a Rem from both directions to one) is deleted with its
-    # reviews rather than left to look forever overdue.
+    # reviews rather than left to look forever overdue. Not while the Rem's
+    # flashcards are turned off: whatever RemNote reports then, turning them
+    # back on must find the history still there.
     card_rows: list[dict] = []
     for word_id, note_id in note_id_by_word.items():
         for card in notes[word_id].cards:
@@ -498,7 +519,9 @@ def apply_push(store: SyncStore, user_id: str, req: PushRequest,
                 "next_due_at": _ms_to_iso(card.next_due_at) if card.next_due_at else None,
             })
     wanted = {(c["note_id"], c["external_id"]) for c in card_rows}
-    stale = [c["id"] for c in store.cards_for_notes(list(note_id_by_word.values()))
+    complete = [note_id for word_id, note_id in note_id_by_word.items()
+                if notes[word_id].practiced is not False]
+    stale = [c["id"] for c in store.cards_for_notes(complete)
              if (c["note_id"], c["external_id"]) not in wanted]
     store.delete_cards(stale)
 
@@ -520,6 +543,13 @@ def apply_push(store: SyncStore, user_id: str, req: PushRequest,
                                           "outcome": outcome}
     new_reviews = store.insert_reviews(list(reviews.values()))
 
+    # A word stops (learning -> disabled) when its Rem's flashcards are turned
+    # off or its Rem is deleted, and resumes (disabled -> learning) when they
+    # are back. A known word stays known. Reported per note by a push made
+    # right after the change, and for every Rem by the sweep.
+    stop = {w for w, n in notes.items() if n.practiced is False}
+    resume = {w for w, n in notes.items() if n.practiced is True}
+
     removed = restored = 0
     if req.present_rem_ids is not None:
         present = set(req.present_rem_ids)
@@ -534,12 +564,30 @@ def apply_push(store: SyncStore, user_id: str, req: PushRequest,
         store.set_removed(back, None)
         removed, restored = len(gone), len(back)
 
+        # Removed after this sweep: just now, or earlier and still missing.
+        gone_ids = set(gone)
+        stop |= {n["word_id"] for n in existing
+                 if n["id"] in gone_ids
+                 or (n["removed_at"] is not None and n["external_id"] not in present)}
+        if req.disabled_rem_ids is not None:
+            off = set(req.disabled_rem_ids)
+            for n in existing:
+                if n["external_id"] in off:
+                    stop.add(n["word_id"])
+                elif n["external_id"] in present:
+                    resume.add(n["word_id"])
+
+    disabled = store.move_words(user_id, sorted(stop), "learning", "disabled")
+    enabled = store.move_words(user_id, sorted(resume - stop), "disabled", "learning")
+
     return PushResponse(
         notes=len(saved),
         cards=len(saved_cards),
         reviews=new_reviews,
         removed=removed,
         restored=restored,
+        disabled=disabled,
+        enabled=enabled,
         rejected_word_ids=sorted(rejected),
     )
 

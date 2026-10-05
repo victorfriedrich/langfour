@@ -30,6 +30,7 @@ export interface NotePayload {
   word_id: number;
   rem_id: string;
   cards: CardPayload[];
+  practiced?: boolean; // whether the Rem's flashcards are turned on
 }
 
 export interface PushResult {
@@ -38,6 +39,8 @@ export interface PushResult {
   reviews: number;
   removed: number;
   restored: number;
+  disabled: number;
+  enabled: number;
   rejected_word_ids: number[];
 }
 
@@ -102,7 +105,7 @@ export class LangfourApi {
     return (await this.request(`/sync/remnote/pending?limit=${limit}`)).json();
   }
 
-  async push(body: { notes?: NotePayload[]; present_rem_ids?: string[] }): Promise<PushResult> {
+  async push(body: { notes?: NotePayload[]; present_rem_ids?: string[]; disabled_rem_ids?: string[] }): Promise<PushResult> {
     return (await this.request('/sync/remnote/push', { method: 'POST', body: JSON.stringify(body) })).json();
   }
 

@@ -99,3 +99,49 @@ def test_short_or_unreadable_text_is_not_rejected():
 
 def videoparsing_matches(text, language):
     return vp.transcript_language_matches(text, language)
+
+
+# ═══════════════════════════════════ Whisper on pieces cut at the quiet points ══
+
+def test_pieces_end_at_the_quietest_moment_and_stay_under_the_window():
+    import itertools
+
+    import numpy as np
+    energy = np.ones(int(100 / vp.FRAME_S))
+    energy[int(21.0 / vp.FRAME_S)] = 0.0             # a pause 21 s in
+    spans = vp.pieces(energy, 100.0)
+    assert spans[0] == (0.0, pytest.approx(21.0))
+    assert all(end - start <= vp.PIECE_MAX_S for start, end in spans)
+    assert spans[-1][1] == 100.0
+    assert all(a[1] == b[0] for a, b in itertools.pairwise(spans))   # nothing between pieces
+
+
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="needs ffmpeg")
+def test_a_piece_far_below_speaking_rate_is_split_and_retried(tmp_path):
+    """Whisper sometimes skips most of a piece. The retry splits it in two and
+    keeps whichever reading has more words."""
+    import os
+    import wave
+
+    import numpy as np
+    audio = tmp_path / "a.wav"
+    rate = 16000
+    t = np.arange(40 * rate) / rate
+    tone = (3000 * np.sin(2 * np.pi * 220 * t)).astype(np.int16)
+    tone[int(20 * rate):int(20.5 * rate)] = 0            # one pause, so two pieces
+    with wave.open(str(audio), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(tone.tobytes())
+
+    def fake_whisper(path, language):
+        import subprocess
+        seconds = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                        "-of", "csv=p=0", path], capture_output=True, text=True).stdout)
+        if seconds > 15:                                 # the first, whole-piece pass
+            return "solo dos" if os.path.basename(path).startswith("00000.000-") else "palabra " * 50
+        return "palabra " * 30                          # each half of the retry
+
+    text = vp.transcribe_in_pieces(str(audio), "es", transcribe=fake_whisper)
+    assert len(text.split()) == 30 + 30 + 50
