@@ -63,6 +63,17 @@ Reviving those roots and attaching the forms took coverage from 90.4% to 96.9% o
 
 ## After a review: relink the transcripts
 
+Deployment of the status reader fixes requires replacing
+`get_words_with_wordforms_cursor` with the definition in `apps/api/sql/word_status.sql`
+and then restarting the API to load a fresh cache. The query excludes invalid
+roots as well as invalid forms and ignores the legacy boolean `flagged` column.
+The live parser checks existing roots separately during creation, so an invalid
+root is neither matched nor recreated. Reparse uses the same validity rule.
+
+RemNote sync resolves incoming notes through the user's saved Rem ID mapping.
+After a root merge, cards that still send the source word ID therefore continue
+updating the destination word's existing note, cards, and review history.
+
 Merges and status changes do not reach the stored transcripts. Run `python3 scripts/reparse.py es` (dry run), then `--write`, then delete `data/processed/es/document_term_matrix.npz` and its `.meta.json` so the recommender rebuilds. On 2026-10-05 this relinked 4.15M of 21.6M word tokens (como was on "please", tiene on "tenir", hay on "the hay"); a tarball of the files from before is in `apps/api/data/backup-2026-10-05-processed/`.
 
 ## Status (Spanish, 2026-10-05, done)

@@ -51,3 +51,42 @@ def test_high_level_tag_json_fallback_includes_category_contract(nlp, monkeypatc
 
     assert nlp.get_high_level_tag("Laptop review", ["laptop"]) == "Products & Tech"
     assert calls == ["json_schema", "json_object"]
+
+
+@pytest.mark.parametrize('rejected, expected', [(False, 'valid'), (True, 'flagged')])
+def test_dictionary_review_returns_status(nlp, monkeypatch, rejected, expected):
+    monkeypatch.setattr(nlp, 'verify_and_translate', Mock(return_value=SimpleNamespace(
+        definitely_not_valid=rejected, translation='take out',
+    )))
+    assert nlp._review('sacar', 'verb', ['sacaran'], 'es') == (expected, 'take out')
+
+
+def test_failed_dictionary_review_stays_flagged_for_audit(nlp, monkeypatch):
+    monkeypatch.setattr(nlp, 'verify_and_translate', Mock(side_effect=TimeoutError('unavailable')))
+    assert nlp._review('sacar', 'verb', ['sacaran'], 'es') == ('flagged', None)
+
+
+def test_dictionary_creation_preserves_a_rejected_root(nlp, monkeypatch):
+    monkeypatch.setattr(nlp, 'get_word_root', Mock(return_value={'key': 'edit', 'type': 'verb'}))
+    existing = Mock(return_value={'id': 20, 'status': 'invalid'})
+    monkeypatch.setattr(nlp, 'find_dictionary_root', existing)
+    actions = {}
+    for name in ('add_wordform', 'generate_alternatives', '_review', 'save_to_supabase'):
+        actions[name] = Mock()
+        monkeypatch.setattr(nlp, name, actions[name])
+
+    assert nlp.add_to_dictionary('edit', 'video', 'es') is None
+    existing.assert_called_once_with('edit', 'es')
+    for action in actions.values():
+        action.assert_not_called()
+
+
+def test_new_form_can_still_attach_to_an_existing_valid_root(nlp, monkeypatch):
+    monkeypatch.setattr(nlp, 'get_word_root', Mock(return_value={'key': 'sacar', 'type': 'verb'}))
+    monkeypatch.setattr(nlp, 'find_dictionary_root', Mock(return_value={'id': 10, 'status': 'valid'}))
+    monkeypatch.setattr(nlp, '_review', Mock(return_value=('valid', 'take out')))
+    add = Mock(return_value=10)
+    monkeypatch.setattr(nlp, 'add_wordform', add)
+
+    assert nlp.add_to_dictionary('sacaran', 'video', 'es') == 10
+    add.assert_called_once_with('sacaran', 10, 'es', status='valid')

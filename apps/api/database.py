@@ -136,7 +136,7 @@ def initialize_cache():
 
 
 def save_to_supabase(root: str, forms: set, language: str, source: str | None = None,
-                      translation: str | None = None, flagged: bool = False):
+                      translation: str | None = None, status: str = 'unverified'):
     """
     Save a root word and its forms to Supabase and update the cache accordingly.
     :param root: The root word.
@@ -148,10 +148,8 @@ def save_to_supabase(root: str, forms: set, language: str, source: str | None = 
     :param source: The source of the word.
     :param translation: Translation for the root, generated alongside it by
         resolve_new_word() rather than fetched lazily on first user lookup.
-    :param flagged: Whether the resolver judged this entry (root + forms) as
-        not confidently a real, correctly-formed word -- same meaning and
-        same column as the flag set below on a duplicate-key collision, just
-        driven by content verification instead of a name collision.
+    :param status: Dictionary verdict shared by the new root and its forms.
+        Only invalid entries are excluded from matching.
     :return: The word ID.
     """
     language = language_key(language)
@@ -163,67 +161,78 @@ def save_to_supabase(root: str, forms: set, language: str, source: str | None = 
             "source": source,
             "language": language,
             "translation": translation,
-            "flagged": flagged,
+            "status": status,
         }).execute()
         word_id = response.data[0]['id']
 
         # Update the cache with the new word
-        word_cache[language]['words'][root.lower()] = word_id
+        if status != 'invalid':
+            word_cache[language]['words'][root.lower()] = word_id
 
         # Prepare the additional forms for insertion
-        form_entries = [{"word_id": word_id, "form": form, "flagged": flagged} for form in forms]
+        form_entries = [{"word_id": word_id, "form": form, "status": status} for form in forms]
         formstring = ""
         if len(forms) <= 4:
             formstring = str(forms)
         else:
             formstring = f"{list(forms)[:3]}..., {len(forms)} in total"
-        print(f"Added {root} ({word_id}) | {formstring} | flagged={flagged}")
+        print(f"Added {root} ({word_id}) | {formstring} | status={status}")
 
         if form_entries:
             supabase.table("wordforms").upsert(form_entries).execute()
 
-            # Update the in-memory cache too, but only when not flagged --
-            # otherwise this process would immediately start resolving
-            # future tokens to a form we just decided was wrong, the exact
-            # bug the get_words_with_wordforms_cursor filter now prevents on
-            # cache (re)load.
-            if not flagged:
+            # Match the status rule used when loading the cache from SQL.
+            if status != 'invalid':
                 for form in forms:
                     # A new root never takes over a form another root owns.
                     word_cache[language]['wordforms'].setdefault(form.lower(), word_id)
 
-        return word_id
+        return word_id if status != 'invalid' else None
 
     except Exception as e:
         if 'duplicate key value violates unique constraint' in str(e):
-            print(f"Root word '{root}' already exists in {language}. Adding new wordform and flagging.")
+            print(f"Root word '{root}' already exists in {language}. Adding new forms.")
             try:
                 # Get the existing word_id
-                response = supabase.table("words").select("id").eq("root", root).eq("language", language).limit(1).execute()
+                response = supabase.table("words").select("id, status").eq("root", root).eq("language", language).limit(1).execute()
                 existing_word_id = response.data[0]['id']
+                if response.data[0]['status'] == 'invalid':
+                    return None
 
-                # Update the root word's flagged status
-                update_fields = {"flagged": True}
+                # A duplicate name is not a verdict; retain the root's audit.
                 if translation:
-                    update_fields["translation"] = translation
-                supabase.table("words").update(update_fields).eq("id", existing_word_id).execute()
+                    supabase.table("words").update({"translation": translation}).eq("id", existing_word_id).execute()
 
-                # Add the new wordform and flag it
+                # Preserve existing form verdicts too, including invalid ones.
                 for form in forms:
-                    supabase.table("wordforms").insert({
+                    response = supabase.table("wordforms").upsert({
                         "word_id": existing_word_id,
                         "form": form,
-                        "flagged": True
-                    }).execute()
-                    # Not added to the in-memory cache: it's flagged, so it
-                    # should not be matched against going forward.
+                        "status": status,
+                    }, on_conflict="word_id,form", ignore_duplicates=True).execute()
+                    if response.data and status != 'invalid':
+                        word_cache[language]['wordforms'].setdefault(form.lower(), existing_word_id)
 
-                print(f"Added and flagged new wordform(s) for '{root}' (ID: {existing_word_id}) in {language}")
-                return existing_word_id
-            except Exception as flagging_error:
-                print(f"Error adding wordform and flagging: {flagging_error}")
+                return existing_word_id if status != 'invalid' else None
+            except Exception as form_error:
+                print(f"Error adding wordform: {form_error}")
         else:
             print(f"Error saving to Supabase: {e}")
+
+def find_dictionary_root(root: str, language: str) -> dict | None:
+    """Find an existing root, including invalid entries, without matching forms.
+
+    Creation uses this to preserve audit decisions; token matching must check
+    the returned status before using its id.
+    """
+    # Match the cache's case-insensitive names (including German nouns), but
+    # treat SQL wildcard characters as literal parts of the supplied root.
+    pattern = root.strip().replace('\\', '\\\\').replace('%', r'\%').replace('_', r'\_')
+    response = (supabase.table("words").select("id, status")
+                .ilike("root", pattern).eq("language", language_key(language))
+                .order("id").limit(1).execute())
+    return response.data[0] if response.data else None
+
 
 def identify_word_id(word: str, language: str):
     """
@@ -252,9 +261,9 @@ def identify_word_id(word: str, language: str):
     # If not found in cache, attempt to fetch from the database
     print(f"{word} not found in {language} cache")
     try:
-        response = supabase.table("words").select("id").eq("root", word_lower).eq("language", language).limit(1).execute()
-        if response.data:
-            word_id = response.data[0]['id']
+        root = find_dictionary_root(word_lower, language)
+        if root and root['status'] != 'invalid':
+            word_id = root['id']
             # Update the cache
             word_cache[language]['words'][word_lower] = word_id
             return word_id
@@ -320,44 +329,17 @@ def get_missing_words_from_db(user_id: str, word_ids: list[int], language: str) 
     return missing_words
 
 def refresh_cache():
-    """
-    Refresh the cache by fetching the latest words and word forms from the database.
-    """
-    global word_cache
-    
-    for language in SUPPORTED_LANGUAGES:
-        # Get the latest word ID in cache for the language
-        if word_cache[language]['words']:
-            max_cached_word_id = max(word_cache[language]['words'].values())
-        else:
-            max_cached_word_id = 0
+    """Reload through the status-aware RPC, including changes to older forms."""
+    initialize_cache()
 
-        # Fetch new words
-        new_words_response = supabase.table("words").select("id, root").gt("id", max_cached_word_id).eq("language", language).execute().data
-        for word in new_words_response:
-            word_cache[language]['words'][word['root'].lower()] = word['id']
-        
-        # Fetch new word forms
-        if word_cache[language]['wordforms']:
-            max_cached_wordform_id = max(word_cache[language]['wordforms'].values())
-        else:
-            max_cached_wordform_id = 0
-        new_forms_response = supabase.table("wordforms").select("word_id, form").gt("word_id", max_cached_wordform_id).or_("flagged.is.null,flagged.eq.false").execute().data
-        for form in new_forms_response:
-            word_cache[language]['wordforms'].setdefault(form['form'].lower(), form['word_id'])
-
-def add_and_flag_wordform(wordform: str, root_id: int, language: str, flagged: bool = True) -> int:
+def add_wordform(wordform: str, root_id: int, language: str,
+                 status: str = 'unverified') -> int | None:
     """
     Add a new wordform to an existing root, and update the cache.
     :param wordform: The wordform to add.
     :param root_id: The ID of the root word.
     :param language: The language of the wordform.
-    :param flagged: Whether this wordform should be marked as unverified/bad.
-        Despite the function's name, this is no longer unconditionally True:
-        the caller (add_to_dictionary) now passes the resolver's own verdict,
-        so a genuinely valid form that simply wasn't in the dictionary yet
-        isn't punished with a permanent flag just because it collided with
-        an existing root.
+    :param status: The verdict for this form, independent of the root's audit.
     :return: The root word ID.
     """
     language = language_key(language)
@@ -366,23 +348,17 @@ def add_and_flag_wordform(wordform: str, root_id: int, language: str, flagged: b
         supabase.table("wordforms").insert({
             "word_id": root_id,
             "form": wordform,
-            "flagged": flagged
+            "status": status,
         }).execute()
 
-        # Only flag the root word if the new form is actually a problem --
-        # a valid new form of an existing word is not itself evidence the
-        # root is bad.
-        if flagged:
-            supabase.table("words").update({"flagged": True}).eq("id", root_id).execute()
-
-        # Add the new wordform to the cache, but only if it's not flagged --
-        # see the matching comment in save_to_supabase().
-        if not flagged:
+        # Flagged means awaiting review, not invalid. Do not overwrite the
+        # root's independent verdict because of a new form.
+        if status != 'invalid':
             word_cache[language]['wordforms'].setdefault(wordform.lower(), root_id)
         
-        return root_id
+        return root_id if status != 'invalid' else None
     except Exception as e:
-        print(f"Error adding and flagging wordform '{wordform}' in language '{language}': {e}")
+        print(f"Error adding wordform '{wordform}' in language '{language}': {e}")
         raise
 
 def get_or_create_translation(word_id: int, language: str) -> str:

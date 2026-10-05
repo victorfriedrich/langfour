@@ -6,7 +6,7 @@ interface Word {
   word_id: number;
   word: string;
   translation: string;
-  cognate: string | null;
+  status: 'unverified' | 'valid' | 'flagged' | 'invalid';
 }
 
 export const useWordDetails = (wordIds: number[]) => {
@@ -36,19 +36,19 @@ export const useWordDetails = (wordIds: number[]) => {
 
         const { data: validityData, error: validityError } = await supabase
           .from('words')
-          .select('id, cognate')
+          .select('id, status')
           .in('id', ids);
 
         if (validityError) throw validityError;
 
-        const cognateByWordId = new Map<number, string | null>(
-          (validityData || []).map((word: { id: number; cognate: string | null }) => [word.id, word.cognate])
+        const statusByWordId = new Map<number, Word['status']>(
+          (validityData || []).map((word: { id: number; status: Word['status'] }) => [word.id, word.status])
         );
 
         setWords(
           (data || []).map((word: { word_id: number; word: string; translation: string }) => ({
             ...word,
-            cognate: cognateByWordId.get(word.word_id) ?? null,
+            status: statusByWordId.get(word.word_id) ?? 'unverified',
           }))
         );
       } catch (err) {

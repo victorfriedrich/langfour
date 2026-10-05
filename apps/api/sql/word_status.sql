@@ -11,7 +11,7 @@
 --   valid       Jev is confident it is a real word in dictionary form
 --   flagged     Jev is unsure; Claude reviews these and sets valid/invalid
 --   invalid     not a word of the language
--- on both tables. Forms of an invalid root, and invalid forms, are left out of
+-- on both tables. Invalid roots, their forms, and invalid forms are left out of
 -- the word cache; everything else still links. `flagged` and `cognate` stay
 -- until every reader has moved to `status`, then they are dropped.
 --
@@ -40,10 +40,9 @@ do $$ begin
         check (status in ('unverified', 'valid', 'flagged', 'invalid'));
 exception when duplicate_object then null; end $$;
 
--- The word cache. Same signature and grants as before; the only change is that
--- an invalid form, or any form of an invalid root, no longer reaches the cache.
--- The root itself is still returned, so the add path finds it by name instead
--- of creating it again.
+-- The word cache. Invalid roots must not shadow a valid root's forms after a
+-- merge. The add path checks existing roots separately, including invalid ones,
+-- to avoid recreating rejected entries. Same signature and grants as before.
 create or replace function public.get_words_with_wordforms_cursor(
     language_param text,
     last_fetched_word_id integer default null,
@@ -57,6 +56,7 @@ begin
     select w.id as word_id, w.root as word, w.status as word_status
     from words w
     where w.language = language_param
+      and w.status <> 'invalid'
       and (last_fetched_word_id is null or w.id > last_fetched_word_id)
     order by w.id asc
     limit fetch_limit
@@ -65,7 +65,6 @@ begin
   from selected_words sw
   left join wordforms wf
     on sw.word_id = wf.word_id
-   and (wf.flagged is null or wf.flagged = false)
    and wf.status <> 'invalid'
    and sw.word_status <> 'invalid'
   order by sw.word_id asc;

@@ -10,9 +10,9 @@ root it was linked to at ingestion. Merges, renames and status changes in the
 dictionary do not reach those files, so a token keeps pointing at whatever it
 matched back then ("ha" at a standalone root instead of haber). This resolves
 every word token again, the way the word cache does (root name first, then
-forms, the older root winning a shared form), with two differences that only
-hold here: an invalid root never matches, and a token nothing matches gets no
-id. After writing, delete the recommender's document_term_matrix.npz so it is
+forms, the older root winning a shared form, invalid roots excluded). A token
+nothing matches gets no id rather than entering dictionary creation. After
+writing, delete the recommender's document_term_matrix.npz so it is
 rebuilt from the new ids.
 """
 import argparse
