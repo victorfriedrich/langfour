@@ -54,6 +54,13 @@ Before applying, check each `out_` file: same ids in the same order as its batch
 - Jev's root score separates real words from junk only weakly (rescued median 0.37, junk 0.19) and its form scores barely at all (invented conjugations score ~0.85; the flag line is 0.3). The root-alone veto also let through roots that copy a real verb's forms (romp, usare, seguire); find those by form overlap with another valid root.
 - "-ares" forms are not junk: on -ar verbs they are the archaic future subjunctive, on nouns in -ar/-er/-ir they are plurals.
 
+## Measure coverage, not root counts
+
+The number of invalid roots says little: most are junk. What matters is how much of the corpus a valid root covers (its bare root or one of its forms). `data/processed/es/` has the transcripts; every token carries the word id it was matched to. On 2026-10-05 this measure exposed a real error that root counts hid:
+- Jev rejected Spanish words spelled like an English or French word: the prepositions *de* and *en* (1.27M tokens, ~6% of all words), *ello*, and invariable adjectives (*terrible*, *legal*, *musical*, *exterior*, ~100 -ble/-al words), always with a high "foreign" score. These were confident Jev verdicts, so the flagged review never saw them.
+- Common forms were held only by junk roots or by nobody: *hay* (on "the hay"), *sea/sean* (on "sear"), *dime*, *verte*, *hecha*.
+Reviving those roots and attaching the forms took coverage from 90.4% to 96.9% of word tokens; the rest is mostly names, English and letters.
+
 ## Status (Spanish, 2026-10-05, done)
 
 - No roots are `flagged`: 35,185 valid, 38,062 invalid.
