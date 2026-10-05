@@ -51,7 +51,7 @@ export const useMissingWords = (videoId: string) => {
 
         const { data: wordData, error: supabaseError } = await supabase
           .from('words')
-          .select('id, root, translation, cognate')
+          .select('id, root, translation, status')
           .in('id', missingWordsData.map((word: { id: number }) => word.id));
 
         if (supabaseError) {
@@ -61,14 +61,15 @@ export const useMissingWords = (videoId: string) => {
         const recommended: MissingWord[] = [];
         const flagged: MissingWord[] = [];
 
-        wordData.forEach((word: { id: number; root: string; translation: string; cognate: string | null }) => {
+        wordData.forEach((word: { id: number; root: string; translation: string; status: string }) => {
+          if (word.status === 'invalid') return;
           const base = {
             id: word.id,
             content: missingWordsData.find((w: { id: number }) => w.id === word.id)?.content || '',
             translation: word.translation,
           };
 
-          if (word.cognate === 'invalid') {
+          if (word.status === 'flagged') {
             flagged.push(base);
           } else {
             recommended.push(base);

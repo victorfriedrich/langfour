@@ -77,9 +77,10 @@ INSTRUCTION_ROOT_FORM = """For the word '{word}' return a 2 element json diction
     
     Also include a "key":
     - For verbs of any conjugation it is the root form. 
-    - For nouns it is the singular (!) full verb including spanish article
+    - For nouns it is the singular (!) full noun including spanish article
     - For adjectives also give the singular (!) male root form
     - If it's neither (other) the key is the word itself
+    - A diminutive or augmentative is not a word of its own: the key is its base word (the base noun with its article, or the base adjective)
     """
     
 INSTRUCTION_VERIFY_NEW_WORD = """You are a meticulous Spanish lexicographer reviewing one candidate dictionary entry before it is saved. Another process already picked the root and generated its forms -- your job is only to review that output, not redo it.

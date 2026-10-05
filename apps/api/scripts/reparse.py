@@ -1,140 +1,130 @@
 #!/usr/bin/env python3
-"""Repair transcripts that point at word ids no longer in the database.
+"""Re-link every word of the stored transcripts to the current dictionary.
 
-    python3 scripts/reparse.py <language> [video_id]
+    python3 scripts/reparse.py es              # dry run: what would change, per word
+    python3 scripts/reparse.py es --write      # rewrite the changed files
+    python3 scripts/reparse.py es --write VIDEO_ID
 
-Stage 4 of four, and the reason the other three are safe to run. When you delete
-words through the web app's WordValidation view — the rows language_flagging.py
-marked cognate = "invalid" — every transcript on disk still carries the deleted
-ids. This walks those files, finds ids absent from the word cache, and re-resolves
-each token against the dictionary.
-
-A token whose word is genuinely gone gets id = None, which is correct: it was
-deleted because it is not a word, so it should stop pointing at a dictionary
-entry. Re-adding it would undo the deletion you just made.
-
-With no video_id it processes every transcript for the language, which is what a
-bulk delete calls for. Pass one to repair a single video.
+Each transcript in data/processed/<lang>/ stores, for every word, the id of the
+root it was linked to at ingestion. Merges, renames and status changes in the
+dictionary do not reach those files, so a token keeps pointing at whatever it
+matched back then ("ha" at a standalone root instead of haber). This resolves
+every word token again, the way the word cache does (root name first, then
+forms, the older root winning a shared form, invalid roots excluded). A token
+nothing matches gets no id rather than entering dictionary creation. After
+writing, delete the recommender's document_term_matrix.npz so it is
+rebuilt from the new ids.
 """
+import argparse
 import json
 import os
+import re
 import sys
-from typing import Any
+from collections import Counter
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from database import identify_word_id, initialize_cache, word_cache
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from languages import to_code
-from paths import processed_dir, processed_file
+from paths import processed_dir
+
+WORD = re.compile(r"[^\W\d_]+(?:['’][^\W\d_]+)?")
 
 
-def reparse_missing_words(content: list[dict[str, Any]], word_cache: dict[str, dict[str, int]], language: str, source: str) -> list[dict[str, Any]]:
-    """Re-resolve every token whose id is no longer in the cache.
+def page(query, size=10_000):
+    rows, start = [], 0
+    while True:
+        chunk = query().range(start, start + size - 1).execute().data
+        rows += chunk
+        if len(chunk) < size:
+            return rows
+        start += size
 
-    `source` is threaded through for the disabled add_to_dictionary path below and
-    is otherwise unused -- callers pass the video id.
-    """
-    reparsed_content = []
-    
+
+def resolver(sb, language: str):
+    """token -> root id (or None), plus id -> root text for reporting."""
+    roots = page(lambda: sb.table("words").select("id, root, status")
+                 .eq("language", language).order("id"))
+    names: dict[str, int] = {}
+    for r in roots:
+        if r["status"] != "invalid":
+            names.setdefault(r["root"].lower(), r["id"])
+    live = [r["id"] for r in roots if r["status"] != "invalid"]
+    forms: dict[str, int] = {}
+    for i in range(0, len(live), 300):
+        rows = (sb.table("wordforms").select("word_id, form, status")
+                .in_("word_id", live[i:i + 300]).limit(20_000).execute().data)
+        for f in sorted(rows, key=lambda f: f["word_id"]):
+            if f["status"] != "invalid":
+                forms.setdefault(f["form"].lower(), f["word_id"])
+    text = {r["id"]: r["root"] for r in roots}
+
+    def resolve(token: str) -> int | None:
+        w = token.lower()
+        return names.get(w) or names.get(w.title()) or forms.get(w)
+    return resolve, text
+
+
+def reparse(content: list[dict], resolve) -> list[tuple[str, int | None, int | None]]:
+    """Re-link word tokens in place; return (word, old, new) for each change."""
+    changes = []
     for item in content:
-        if 'id' in item:
-            word_id = item['id']
-            word = item['content'].lower()
-            
-            # Check if the ID exists in the cache
-            id_exists = any(word_id in cache.values() for cache in word_cache[language].values())
-            
-            if not id_exists and word != "quot":
-                # Word ID is missing from the cache, so we need to reparse
-                
-                # None is the intended outcome, not a swallowed error: the word
-                # was deleted because it is not a word, so the token should stop
-                # pointing at a dictionary entry. The commented line below is the
-                # rejected alternative -- it would re-add what was just deleted.
-                try:
-                    new_id = identify_word_id(word, language)
-                except ValueError:
-                    new_id = None
-                    # new_id = add_to_dictionary(word, source, language)
-                    
-                item['id'] = new_id
-        reparsed_content.append(item)
-    
-    return reparsed_content
-
-def process_youtube_script(script_json: str, word_cache: dict[str, dict[str, int]], language: str, source: str) -> str:
-    data = json.loads(script_json)
-    data['content'] = reparse_missing_words(data['content'], word_cache, language, source)
-    return json.dumps(data, ensure_ascii=False, indent=2)
-
-def process_video_id(id: str, language: str):
-    """Repair one transcript. Requires an initialised cache -- see _ensure_cache."""
-    print(f'Initializing processing for {id}')
-    # Was a local map covering only Italian and German, so Spanish and French
-    # silently returned None and skipped every video. Normalised into
-    # `language` itself: it is also the word_cache key downstream, and
-    # converting only the path variable left the cache lookup on the long name.
-    language = to_code(language)
-
-    if not language:
-        print(f"Unsupported language: {language}")
-        return
-
-    file_path = str(processed_file(language, id))
-    
-    if not os.path.exists(file_path):
-        print(f"File not found: {file_path}")
-        return
-    
-    with open(file_path, encoding='utf-8') as f:
-        script_json = f.read()
-        updated_json = process_youtube_script(script_json, word_cache, language, id)
-    
-    # Write the updated JSON back to the file
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(updated_json)
-    
-    print(f"Processed video ID: {id}")
-
-def _ensure_cache():
-    """Fill word_cache if it is still the empty skeleton database.py defines.
-
-    Only process_all_videos_in_folder used to call initialize_cache(), so calling
-    process_video_id directly -- the obvious thing to do after deleting a single
-    word -- left every lookup missing the cache and falling through to one
-    database query per token.
-    """
-    if not any(c["words"] or c["wordforms"] for c in word_cache.values()):
-        initialize_cache()
+        token = item.get("content") or ""
+        if not WORD.fullmatch(token):
+            continue
+        old = item.get("id")
+        new = resolve(token)
+        if new != old:
+            changes.append((token.lower(), old, new))
+            if new is None:
+                item.pop("id", None)
+            else:
+                item["id"] = new
+    return changes
 
 
-def process_all_videos_in_folder(language: str):
-    _ensure_cache()
-    language = to_code(language)
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("language")
+    p.add_argument("video_id", nargs="?")
+    p.add_argument("--write", action="store_true", help="rewrite changed files (default: dry run)")
+    a = p.parse_args()
+    from supabase_client import supabase as sb  # verifies service_role
+    language = to_code(a.language)
+    folder = processed_dir(language)
+    resolve, text = resolver(sb, language)
 
-    if not language:
-        print(f"Unsupported language: {language}")
-        return
+    names = [f"{a.video_id}_processed.json"] if a.video_id else sorted(
+        f for f in os.listdir(folder) if f.endswith("_processed.json"))
+    per_word: Counter = Counter()
+    tokens = changed_tokens = changed_files = 0
+    for name in names:
+        path = os.path.join(folder, name)
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        tokens += sum(1 for t in data["content"] if WORD.fullmatch(t.get("content") or ""))
+        changes = reparse(data["content"], resolve)
+        if not changes:
+            continue
+        changed_files += 1
+        changed_tokens += len(changes)
+        for word, old, new in changes:
+            per_word[(word, old, new)] += 1
+        if a.write:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
 
-    folder_path = str(processed_dir(language)) + '/'
-    
-    if not os.path.exists(folder_path):
-        print(f"Folder not found: {folder_path}")
-        return
-    
-    for filename in os.listdir(folder_path):
-        if filename.endswith('_processed.json'):
-            video_id = filename.split('_')[0]
-            process_video_id(video_id, language)
+    label = lambda i: "-" if i is None else text.get(i, f"#{i}")  # noqa: E731
+    print(f"{len(names):,} files, {tokens:,} word tokens; {changed_tokens:,} tokens "
+          f"({changed_tokens / max(tokens, 1):.1%}) in {changed_files:,} files "
+          f"{'rewritten' if a.write else 'would change'}")
+    for (word, old, new), n in per_word.most_common(40):
+        print(f"  {n:>8,}  {word:14} {label(old)} -> {label(new)}")
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 scripts/reparse.py <language> [video_id]")
-        sys.exit(1)
-
-    lang = sys.argv[1]
-    if len(sys.argv) > 2:
-        _ensure_cache()
-        process_video_id(sys.argv[2], lang)
-    else:
-        process_all_videos_in_folder(lang)
+    main()

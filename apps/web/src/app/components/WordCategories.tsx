@@ -70,7 +70,7 @@ const WordCategories: React.FC<WordCategoriesProps> = ({
 
   // Words not added yet, and not marked invalid by the validation pipeline.
   const displayedWords = useMemo(
-    () => wordDetails.filter((w) => !addedIds.includes(w.word_id) && w.cognate !== 'invalid'),
+    () => wordDetails.filter((w) => !addedIds.includes(w.word_id) && w.status !== 'invalid'),
     [wordDetails, addedIds],
   );
 

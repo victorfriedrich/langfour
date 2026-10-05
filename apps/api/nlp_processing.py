@@ -9,7 +9,8 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 from database import (
-    add_and_flag_wordform,
+    add_wordform,
+    find_dictionary_root,
     find_root_by_wordform_id,
     get_missing_words_from_db,
     get_or_create_translation,
@@ -204,7 +205,7 @@ class WordVerdict(BaseModel):
 
     The same verdict function is called from both places add_to_dictionary()
     can write a new row (bolt-on to an existing root, or a brand-new root),
-    so `flagged` ends up driven by one identical check regardless of which
+    so `status` ends up driven by one identical check regardless of which
     of the Ozark-audit failure patterns (wrong-language root, homograph
     collision, conjugated-form-as-root, proper noun, malformed root,
     contaminated wordforms, ...) is actually present.
@@ -235,21 +236,15 @@ def verify_and_translate(root: str, type: str, forms: list[str], language: str) 
 
 
 def _review(root: str, type: str | None, forms: list[str],
-            language: str) -> tuple[bool, str | None]:
-    """(flagged, translation) for a candidate entry.
-
-    The two callers below used to disagree about a failed review: the
-    bolt-on-to-an-existing-root path left flagged=True, the new-root path
-    reset it to False. Identical verifier outages therefore produced opposite
-    records. Flagging wins, because a flagged row is reviewable and an
-    unflagged bad row is invisible.
-    """
+            language: str) -> tuple[str, str | None]:
+    """(status, translation); uncertain or failed reviews need a later audit."""
     try:
         verdict = verify_and_translate(root, type, forms, language)
-        return verdict.definitely_not_valid, (verdict.translation or None)
+        status = 'flagged' if verdict.definitely_not_valid else 'valid'
+        return status, (verdict.translation or None)
     except Exception:
         logger.exception("Could not verify %r", root)
-        return True, None
+        return 'flagged', None
 
 
 def add_to_dictionary(word: str, source: str, language: str):
@@ -259,32 +254,38 @@ def add_to_dictionary(word: str, source: str, language: str):
             print(f"Root info for {word} not found")
             raise ValueError(f"Could not determine root information for word '{word}'")
 
-        # Try to identify the word id for the root
-        try:
-            root_id = identify_word_id(word_root_info["key"], language)
+        # An invalid root is not a token match, but it still exists. Do not
+        # recreate it or attach new forms to it after an audit rejected it.
+        root = find_dictionary_root(word_root_info["key"], language)
+        if root:
+            if root['status'] == 'invalid':
+                return None
+            root_id = root['id']
             # If we found an existing root ID, attach the surface token we
             # actually saw as a new wordform of it. Verify that single form
             # against the existing root before deciding whether to flag it --
             # a genuinely valid but previously-missing inflection shouldn't
             # be punished just because it collided with something.
             if root_id:
-                flagged, _ = _review(
+                status, _ = _review(
                     word_root_info["key"], word_root_info.get("type"), [word], language
                 )
-                print(f"Added '{word}' for {word_root_info['key']} (flagged={flagged})")
-                return add_and_flag_wordform(word, root_id, language, flagged=flagged)
-        except ValueError:
-            # If the root doesn't exist, we'll continue with the normal flow to add it
-            pass
+                print(f"Added '{word}' for {word_root_info['key']} (status={status})")
+                return add_wordform(word, root_id, language, status=status)
 
         type = word_root_info.get("type")
         key = word_root_info.get("key")
 
-        forms = generate_alternatives(key, type, language)
+        forms = set(generate_alternatives(key, type, language))
+        # The token itself belongs to the new root even when the generated
+        # forms leave it out -- a diminutive whose key is its base noun, say --
+        # or it is looked up as unknown again in the next transcript.
+        if word != key:
+            forms.add(word)
 
-        flagged, translation = _review(key, type, list(forms), language)
+        status, translation = _review(key, type, list(forms), language)
 
-        return save_to_supabase(key, forms, language, source, translation=translation, flagged=flagged)
+        return save_to_supabase(key, forms, language, source, translation=translation, status=status)
     except Exception as e:
         print(f"Error adding word to dictionary: {e} ")
         return None

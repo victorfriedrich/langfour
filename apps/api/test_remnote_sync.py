@@ -93,6 +93,10 @@ class FakeStore:
     def linked_rems(self, user_id, word_ids):
         return {n["word_id"]: n["external_id"] for n in self.notes if n["word_id"] in word_ids}
 
+    def word_ids_for_rems(self, user_id, rem_ids):
+        return {n['external_id']: n['word_id'] for n in self.notes_for_user(user_id)
+                if n['external_id'] in rem_ids and n['provider'] == 'remnote'}
+
     def upsert_notes(self, rows):
         out = []
         for row in rows:
@@ -268,6 +272,66 @@ def test_push_is_idempotent():
 
     assert (len(store.notes), len(store.cards), len(store.reviews)) == (1, 1, 2)
     assert (first.reviews, again.reviews) == (2, 0)
+
+
+@pytest.mark.parametrize('already_has_target', [False, True])
+def test_reviews_keep_syncing_after_a_dictionary_merge(already_has_target):
+    store = FakeStore(spanish(1, 2) if already_has_target else spanish(1))
+    original = PushRequest(notes=[NoteIn(word_id=1, rem_id='rem-a',
+                                        cards=[card('c-f', scores=(1,))])])
+    apply_push(store, USER, original, now=NOW)
+    note_id, card_id = store.notes[0]['id'], store.cards[0]['id']
+
+    # merge_roots moves the saved mapping and removes the source userword;
+    # the Rem's powerup property still contains the source id, 1.
+    store.userwords = spanish(2)
+    store.notes[0]['word_id'] = 2
+    next_push = PushRequest(notes=[NoteIn(word_id=1, rem_id='rem-a',
+                                         cards=[card('c-f', scores=(1, 1.5))])])
+    result = apply_push(store, USER, next_push, now=NOW)
+    again = apply_push(store, USER, next_push, now=NOW)
+
+    assert result.rejected_word_ids == []
+    assert (result.notes, result.cards, result.reviews, again.reviews) == (1, 1, 1, 0)
+    assert len(store.notes) == len(store.cards) == 1
+    assert (store.notes[0]['id'], store.notes[0]['word_id']) == (note_id, 2)
+    assert store.cards[0]['id'] == card_id
+    assert len(store.reviews) == 2
+    assert next_push.notes[0].word_id == 1  # Do not mutate the caller's payload.
+
+    disabled = apply_push(store, USER, PushRequest(notes=[
+        NoteIn(word_id=1, rem_id='rem-a', practiced=False),
+    ]), now=NOW)
+    assert disabled.disabled == 1
+    assert store.userwords[0][0:2] == (2, 'disabled')
+    assert len(store.reviews) == 2
+
+
+def test_old_and_new_ids_cannot_duplicate_a_merged_note_in_one_push():
+    store = FakeStore(spanish(2))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=2, rem_id='rem-a')]), now=NOW)
+
+    result = apply_push(store, USER, PushRequest(notes=[
+        NoteIn(word_id=1, rem_id='rem-a', cards=[card('c-f', scores=(1,))]),
+        NoteIn(word_id=2, rem_id='rem-a', cards=[]),
+    ]), now=NOW)
+
+    assert result.rejected_word_ids == [2]
+    assert (result.notes, result.cards, result.reviews) == (1, 1, 1)
+    assert store.notes[0]['word_id'] == 2
+
+
+def test_rem_mapping_is_scoped_to_the_syncing_user():
+    store = FakeStore(spanish(2))
+    apply_push(store, 'other-user', PushRequest(notes=[NoteIn(word_id=2, rem_id='other-rem')]), now=NOW)
+
+    result = apply_push(store, USER, PushRequest(notes=[
+        NoteIn(word_id=1, rem_id='other-rem', cards=[card('c-f', scores=(1,))]),
+    ]), now=NOW)
+
+    assert result.rejected_word_ids == [1]
+    assert result.notes == result.reviews == 0
+    assert store.notes[0]['user_id'] == 'other-user'
 
 
 def test_words_the_user_does_not_have_are_rejected():

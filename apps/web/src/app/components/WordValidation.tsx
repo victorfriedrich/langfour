@@ -45,13 +45,13 @@ function InvalidWordsPage({ language }) {
 
         const { data: wordsData, error: wordsError } = await supabase
             .from('words')
-            .select('*, wordforms:wordforms!inner(*)') // Join with wordforms
+            .select('*, wordforms:wordforms(*)') // Include roots with no forms to review.
             // `language` is already the ISO code. This used to be
             // `language.toLowerCase()` on a display name passed in from
             // validate/page.tsx, which reached words.language via PostgREST
             // rather than an RPC and so was missed by the ISO sweep.
             .eq('language', language)
-            .eq('cognate', 'invalid')
+            .in('status', ['flagged', 'invalid'])
             .range((page - 1) * itemsPerPage, page * itemsPerPage - 1);
 
         if (wordsError) {
@@ -199,15 +199,15 @@ function InvalidWordsPage({ language }) {
     };
 
     const handlePageChange = async (newPage) => {
-        // Update selected words to remove 'invalid' translation
+        // Approve the selected dictionary roots.
         if (selectedWords.length > 0) {
             const { data, error } = await supabase
                 .from('words')
-                .update({ cognate: null })
+                .update({ status: 'valid', status_reason: 'Approved in word validation' })
                 .in('id', selectedWords)
                 .select();
 
-            if (!applied(data, error, 'Clear cognate flag')) {
+            if (!applied(data, error, 'Approve words')) {
                 return;
             }
         }
