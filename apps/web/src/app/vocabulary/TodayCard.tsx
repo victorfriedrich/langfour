@@ -1,10 +1,11 @@
 'use client';
 
 import { ArrowUpRight, Check, Play } from 'lucide-react';
-import { useRemnoteReviewUrl, type ReviewProvider } from '../hooks/useReviewProvider';
+import type { ReviewProvider } from '../hooks/useReviewProvider';
 
 interface TodayCardProps {
   provider: ReviewProvider;
+  remnoteDocumentUrl: string | null;
   due: number;
   onStartReview: () => void;
   onContextReview: () => void;
@@ -17,9 +18,8 @@ const secondary =
 
 /** What to do today. The same card whoever schedules: only the action
  *  changes, from a review here to a hand-off to RemNote. */
-export default function TodayCard({ provider, due, onStartReview, onContextReview }: TodayCardProps) {
+export default function TodayCard({ provider, remnoteDocumentUrl, due, onStartReview, onContextReview }: TodayCardProps) {
   const inRemnote = provider === 'remnote';
-  const remnoteUrl = useRemnoteReviewUrl();
 
   return (
     <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-gray-50 px-5 py-4">
@@ -42,11 +42,18 @@ export default function TodayCard({ provider, due, onStartReview, onContextRevie
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {inRemnote ? (
-          <a className={primary} href={remnoteUrl} target="_blank" rel="noreferrer">
-            Open RemNote <ArrowUpRight size={16} />
-          </a>
+          <>
+            <a className={primary} href="https://www.remnote.com/flashcards" target="_blank" rel="noreferrer">
+              All RemNote cards <ArrowUpRight size={16} />
+            </a>
+            {remnoteDocumentUrl && (
+              <a className={secondary} href={remnoteDocumentUrl} target="_blank" rel="noreferrer">
+                Langfour document <ArrowUpRight size={16} />
+              </a>
+            )}
+          </>
         ) : (
           <>
             <button className={secondary} onClick={onContextReview} disabled={due === 0}>

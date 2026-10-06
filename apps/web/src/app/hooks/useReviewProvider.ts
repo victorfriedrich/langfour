@@ -4,68 +4,46 @@ import { UserContext } from '@/context/UserContext';
 
 export type ReviewProvider = 'langfour' | 'remnote';
 
-/**
- * Who schedules this user's reviews (userdata.review_provider, see
- * apps/api/sql/remnote_sync.sql). One column read under RLS, so pages that
- * only need this do not pay for the full RemNote connection status.
- * Null while loading.
- */
-export const useReviewProvider = (): ReviewProvider | null => {
-  const { user } = useContext(UserContext);
-  const [provider, setProvider] = useState<ReviewProvider | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    supabase
-      .from('userdata')
-      .select('review_provider')
-      .eq('user_id', user.id)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) console.error('Could not read review provider:', error);
-        setProvider((data?.review_provider as ReviewProvider | undefined) ?? 'langfour');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
-  return provider;
+type ReviewSettings = {
+  provider: ReviewProvider | null;
+  remnoteDocumentUrl: string | null;
 };
+const LOADING: ReviewSettings = { provider: null, remnoteDocumentUrl: null };
 
-const REMNOTE_HOME = 'https://www.remnote.com/';
-
-/** The review queue of the user's "Langfour" document in RemNote
- *  (userdata.remnote_root_rem_id, reported by the plugin), or RemNote's home
- *  page until the plugin has synced once. */
-export const remnoteReviewUrl = (rootRemId: string | null | undefined): string =>
-  rootRemId && /^[A-Za-z0-9_-]{1,64}$/.test(rootRemId)
-    ? `https://www.remnote.com/flashcards/${rootRemId}`
-    : REMNOTE_HOME;
-
-export const useRemnoteReviewUrl = (): string => {
+/** Read scheduling and the optional document shortcut together under RLS.
+ * Linked flashcards can live outside that document, so it is never the only
+ * way to open RemNote reviews. */
+export const useReviewProvider = (): ReviewSettings => {
   const { user } = useContext(UserContext);
-  const [url, setUrl] = useState(REMNOTE_HOME);
+  const userId = user?.id;
+  const [settings, setSettings] = useState<ReviewSettings & { userId: string } | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     let cancelled = false;
     supabase
       .from('userdata')
-      .select('remnote_root_rem_id')
-      .eq('user_id', user.id)
+      .select('review_provider, remnote_root_rem_id')
+      .eq('user_id', userId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (cancelled) return;
-        if (error) console.error('Could not read the RemNote document:', error);
-        setUrl(remnoteReviewUrl(data?.remnote_root_rem_id as string | null | undefined));
+        if (error) console.error('Could not read review settings:', error);
+        const provider = data?.review_provider === 'remnote' ? 'remnote' : 'langfour';
+        const rootRemId = data?.remnote_root_rem_id;
+        setSettings({
+          userId,
+          provider,
+          remnoteDocumentUrl: provider === 'remnote' && typeof rootRemId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(rootRemId)
+            ? `https://www.remnote.com/flashcards/${rootRemId}`
+            : null,
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [userId]);
 
-  return url;
+  // Do not show the previous account's document while the next read is pending.
+  return settings?.userId === userId && settings ? settings : LOADING;
 };
