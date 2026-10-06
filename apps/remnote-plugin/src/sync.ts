@@ -321,9 +321,13 @@ async function run(plugin: RNPlugin, { api, direction, linkExisting }: Settings,
   //    word is not offered again. Reversible: the Rem coming back restores it.
   //    A Rem whose flashcards are turned off disables its word in Langfour;
   //    turning them on again makes it a learning word again.
+  //    It also reports the top-level Langfour document, which the web app and
+  //    the extension link to for reviews. Looked up, never created here.
+  const root = await plugin.rem.findByName([ROOT_DOC], null);
   const sweep = await api.push({
     present_rem_ids: linked.map((w) => w.rem._id),
     disabled_rem_ids: linked.filter((w) => !w.practiced).map((w) => w.rem._id),
+    root_rem_id: root?._id,
   });
   summary.removed = sweep.removed;
   summary.disabled = sweep.disabled;

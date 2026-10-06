@@ -106,6 +106,9 @@ class PushRequest(BaseModel):
     # Of those, the Rems whose flashcards are turned off; every other present
     # Rem has them on. Null means the plugin did not report it.
     disabled_rem_ids: list[str] | None = Field(None, max_length=100_000)
+    # The top-level "Langfour" document, so the apps can link to its review
+    # queue. Sent with the full sweep; null leaves the stored id alone.
+    root_rem_id: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class PushResponse(BaseModel):
@@ -424,6 +427,10 @@ class SyncStore:
         (self.db.table("userdata").update({"review_provider": provider})
          .eq("user_id", user_id).execute())
 
+    def set_root_rem(self, user_id: str, rem_id: str) -> None:
+        (self.db.table("userdata").update({"remnote_root_rem_id": rem_id})
+         .eq("user_id", user_id).execute())
+
 
 def get_store() -> SyncStore:
     return SyncStore(supabase)
@@ -594,6 +601,9 @@ def apply_push(store: SyncStore, user_id: str, req: PushRequest,
 
     disabled = store.move_words(user_id, sorted(stop), "learning", "disabled")
     enabled = store.move_words(user_id, sorted(resume - stop), "disabled", "learning")
+
+    if req.root_rem_id:
+        store.set_root_rem(user_id, req.root_rem_id)
 
     return PushResponse(
         notes=len(saved),

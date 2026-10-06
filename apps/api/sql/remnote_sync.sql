@@ -29,6 +29,17 @@ alter table public.userdata drop constraint if exists userdata_review_provider_c
 alter table public.userdata add constraint userdata_review_provider_check
     check (review_provider in ('langfour', 'remnote'));
 
+-- The user's top-level "Langfour" document in RemNote, reported by the plugin
+-- on every full sync. The web app and the extension link to its flashcard
+-- queue (https://www.remnote.com/flashcards/<id>), which reviews every
+-- Langfour card. Null until the plugin has synced once.
+alter table public.userdata
+    add column if not exists remnote_root_rem_id text;
+
+alter table public.userdata drop constraint if exists userdata_remnote_root_rem_id_check;
+alter table public.userdata add constraint userdata_remnote_root_rem_id_check
+    check (remnote_root_rem_id ~ '^[A-Za-z0-9_-]{1,64}$');
+
 -- ---------------------------------------------------------------------------
 -- Personal access tokens. The RemNote plugin cannot hold a Supabase session,
 -- so the web app issues a long-lived token, shown once, stored only as a

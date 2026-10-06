@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowUpRight, Check, Play } from 'lucide-react';
-import type { ReviewProvider } from '../hooks/useReviewProvider';
+import { useRemnoteReviewUrl, type ReviewProvider } from '../hooks/useReviewProvider';
 
 interface TodayCardProps {
   provider: ReviewProvider;
@@ -19,6 +19,7 @@ const secondary =
  *  changes, from a review here to a hand-off to RemNote. */
 export default function TodayCard({ provider, due, onStartReview, onContextReview }: TodayCardProps) {
   const inRemnote = provider === 'remnote';
+  const remnoteUrl = useRemnoteReviewUrl();
 
   return (
     <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-gray-50 px-5 py-4">
@@ -43,7 +44,7 @@ export default function TodayCard({ provider, due, onStartReview, onContextRevie
 
       <div className="flex gap-2">
         {inRemnote ? (
-          <a className={primary} href="https://www.remnote.com/" target="_blank" rel="noreferrer">
+          <a className={primary} href={remnoteUrl} target="_blank" rel="noreferrer">
             Open RemNote <ArrowUpRight size={16} />
           </a>
         ) : (
