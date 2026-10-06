@@ -39,9 +39,9 @@ const CATEGORY_ICONS: Record<string, LucideIcon> = {
 const SkeletonRows = ({ count }: { count: number }) => (
   <div className="divide-y divide-gray-100" aria-label="Loading">
     {Array.from({ length: count }, (_, i) => (
-      <div key={i} className="flex items-center gap-6 py-3 pl-11">
-        <span className="h-3 w-28 animate-pulse rounded bg-gray-100" />
-        <span className="h-3 w-40 animate-pulse rounded bg-gray-100" />
+      <div key={i} className="flex items-center gap-6 py-3 pl-8">
+        <span className="h-3 w-24 animate-pulse rounded bg-gray-100" />
+        <span className="h-3 w-36 animate-pulse rounded bg-gray-100" />
       </div>
     ))}
   </div>
@@ -58,21 +58,31 @@ const WordCategories: React.FC<WordCategoriesProps> = ({
   const [addedIds, setAddedIds] = useState<number[]>([]);
 
   const { recommendations, isLoading: recommendationsLoading, refreshRecommendations } = useWordRecommendations(selectedCategory);
-  const { words: wordDetails } = useWordDetails(recommendations?.word_ids || []);
+  const { words: wordDetails, ready: detailsReady } = useWordDetails(recommendations?.word_ids || []);
   const { addWordsToUserwords } = useUpdateUserwords();
 
-  // How much each word adds to understanding the category, keyed by word so
-  // it stays right after rows are filtered out.
-  const improvementById = useMemo(
-    () => new Map((recommendations?.word_ids ?? []).map((id, i) => [id, recommendations!.improvements[i] ?? 0])),
+  // Share of the topic's videos each word appears in, keyed by word so it
+  // stays right after rows are filtered out.
+  const coverageById = useMemo(
+    () =>
+      new Map(
+        (recommendations?.word_ids ?? []).map((id, i) => [
+          id,
+          { share: recommendations!.improvements[i] ?? 0, videos: recommendations!.frequencies[i] ?? 0 },
+        ]),
+      ),
     [recommendations],
   );
+  const totalVideos = recommendations?.total_videos ?? 0;
 
   // Words not added yet, and not marked invalid by the validation pipeline.
-  const displayedWords = useMemo(
-    () => wordDetails.filter((w) => !addedIds.includes(w.word_id) && w.status !== 'invalid'),
-    [wordDetails, addedIds],
-  );
+  // Word details come back in database order, so restore the API's ranking.
+  const displayedWords = useMemo(() => {
+    const rank = new Map((recommendations?.word_ids ?? []).map((id, i) => [id, i]));
+    return wordDetails
+      .filter((w) => !addedIds.includes(w.word_id) && w.status !== 'invalid')
+      .sort((a, b) => (rank.get(a.word_id) ?? Infinity) - (rank.get(b.word_id) ?? Infinity));
+  }, [wordDetails, addedIds, recommendations]);
 
   const toggleWordSelection = useCallback((id: number) => {
     setSelectedWords((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -106,7 +116,7 @@ const WordCategories: React.FC<WordCategoriesProps> = ({
     return (
       <div>
         <p className="mb-4 text-sm text-gray-500">
-          Pick a topic to see the words that come up most in its videos, ordered by how much of them they help you understand.
+          Pick a topic to see the words that come up most in its videos, ordered by how many of its videos they appear in.
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {categoriesLoading
@@ -136,52 +146,82 @@ const WordCategories: React.FC<WordCategoriesProps> = ({
 
   return (
     <div>
-      <div className="mb-2 flex items-center gap-3">
+      <div className="mb-4 flex items-center gap-2">
         <button
           onClick={() => onSelectCategory(null)}
-          className="-ml-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+          className="-ml-1.5 rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
+          aria-label="All topics"
+          title="All topics"
         >
-          <ArrowLeft size={16} /> Topics
+          <ArrowLeft size={16} />
         </button>
         <h2 className="font-semibold text-gray-900">{selectedCategory}</h2>
+        {totalVideos > 0 && (
+          <span className="text-sm tabular-nums text-gray-400">
+            {totalVideos.toLocaleString()} {totalVideos === 1 ? 'video' : 'videos'}
+          </span>
+        )}
         {displayedWords.length > 0 && (
           <button
             onClick={() => setSelectedWords(allSelected ? [] : displayedWords.map((w) => w.word_id))}
-            className="ml-auto text-sm text-gray-500 hover:text-gray-900"
+            className="ml-auto shrink-0 text-sm text-gray-500 hover:text-gray-900"
           >
             {allSelected ? 'Clear selection' : 'Select all'}
           </button>
         )}
       </div>
 
-      {recommendationsLoading && displayedWords.length === 0 ? (
+      {(recommendationsLoading || !detailsReady) && displayedWords.length === 0 ? (
         <SkeletonRows count={8} />
       ) : displayedWords.length === 0 ? (
         <p className="py-10 text-center text-sm text-gray-500">You already know the common words for this topic.</p>
       ) : (
-        <table className="w-full table-auto" onMouseDown={(e) => e.shiftKey && e.preventDefault()}>
+        <table className="w-full table-fixed" onMouseDown={(e) => e.shiftKey && e.preventDefault()}>
+          <colgroup>
+            <col className="w-8" />
+            <col className="w-[30%]" />
+            <col />
+            <col className="w-28" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-gray-200 text-left text-xs font-medium text-gray-400">
+              <th />
+              <th className="pb-2 font-medium">Word</th>
+              <th className="pb-2 font-medium">Meaning</th>
+              <th className="pb-2 text-right font-medium">In % of videos</th>
+            </tr>
+          </thead>
           <tbody className="divide-y divide-gray-100 text-sm">
-            {displayedWords.map((word, index) => (
-              <tr key={word.word_id} className="group cursor-pointer hover:bg-gray-50" onClick={(e) => handleWordClick(e, index, word.word_id)}>
-                <td className="w-10 py-2.5 pl-1 pr-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedWords.includes(word.word_id)}
-                    onChange={() => toggleWordSelection(word.word_id)}
-                    onClick={(e) => e.stopPropagation()}
-                    className={`h-4 w-4 text-indigo-600 ${selectedWords.length ? '' : 'opacity-0 group-hover:opacity-100'}`}
-                  />
-                </td>
-                <td className="w-56 whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900">{word.word}</td>
-                <td className="w-full whitespace-nowrap py-2.5 text-gray-500">{word.translation}</td>
-                <td
-                  className="whitespace-nowrap py-2.5 pr-1 text-right text-xs tabular-nums text-gray-400"
-                  title="How much more of this topic you would understand"
+            {displayedWords.map((word, index) => {
+              const selected = selectedWords.includes(word.word_id);
+              const coverage = coverageById.get(word.word_id);
+              return (
+                <tr
+                  key={word.word_id}
+                  className={`group cursor-pointer ${selected ? 'bg-indigo-50/60' : 'hover:bg-gray-50'}`}
+                  onClick={(e) => handleWordClick(e, index, word.word_id)}
                 >
-                  +{((improvementById.get(word.word_id) ?? 0) * 100).toFixed(0)}%
-                </td>
-              </tr>
-            ))}
+                  <td className="py-2 pl-1">
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => toggleWordSelection(word.word_id)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select ${word.word}`}
+                      className={`h-3.5 w-3.5 text-indigo-600 ${selectedWords.length ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                    />
+                  </td>
+                  <td className="truncate py-2 pr-4 font-medium text-gray-900">{word.word}</td>
+                  <td className="truncate py-2 pr-4 text-gray-500">{word.translation}</td>
+                  <td
+                    className="py-2 pr-1 text-right tabular-nums text-gray-500"
+                    title={coverage && totalVideos ? `Appears in ${coverage.videos} of ${totalVideos} videos` : undefined}
+                  >
+                    {Math.round((coverage?.share ?? 0) * 100)}%
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

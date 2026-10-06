@@ -5,6 +5,7 @@ interface WordRecommendations {
     word_ids: number[];
     improvements: number[];
     frequencies: number[];
+    total_videos: number;
 }
 
 export const useWordRecommendations = (category: string | null) => {
@@ -32,7 +33,8 @@ export const useWordRecommendations = (category: string | null) => {
             setRecommendations({
                 word_ids: data.word_ids,
                 improvements: data.improvements,
-                frequencies: data.frequencies
+                frequencies: data.frequencies,
+                total_videos: data.total_videos
             });
         } catch (err) {
             console.error(err);

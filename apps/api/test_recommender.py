@@ -42,6 +42,30 @@ def test_categories_come_from_loaded_manifest_data():
     ]
 
 
+
+def test_video_count_matches_word_share_denominator():
+    recommender = make_recommender(
+        [[1, 1], [1, 0], [0, 1]],
+        ["Travel", "Travel", "Cooking"],
+    )
+
+    assert recommender.count_documents("es", "Travel") == 2
+    assert recommender.count_documents("es") == 3
+    recs = recommender.recommend_words_to_learn("es", [], filter_category="Travel")
+    assert {r["word_id"]: (r["frequency"], r["improvement"]) for r in recs} == {
+        0: (2, 1.0),
+        1: (1, 0.5),
+    }
+
+
+def test_word_recommendations_rank_by_videos_then_word_id():
+    recommender = make_recommender(
+        [[0, 1, 1, 1], [0, 1, 0, 1], [1, 0, 0, 1]],
+    )
+
+    recs = recommender.recommend_words_to_learn("es", [])
+    assert [r["word_id"] for r in recs] == [3, 1, 0, 2]
+
 def test_vocabulary_coverage_is_numeric_only(monkeypatch):
     recommender = make_recommender([
         [1, 1, 0, 0],  # 50% understood

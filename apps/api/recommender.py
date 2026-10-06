@@ -562,6 +562,13 @@ class Recommender:
 
         return videos
     
+    def count_documents(self, language: str, filter_category: str | None = None) -> int:
+        self._ensure_language_loaded(language)
+        cats = self.categories[language]
+        if filter_category is None:
+            return len(cats)
+        return sum(1 for cat in cats if cat == filter_category)
+
     def recommend_words_to_learn(
             self,
             language: str,
@@ -595,8 +602,9 @@ class Recommender:
         if candidate_ids.size == 0:
             return []
 
-        # CSR is binary, so document count and frequency are currently the same.
-        order = np.lexsort((-doc_counts[candidate_ids], -doc_counts[candidate_ids]))[:n_words]
+        # Most videos first; ties go to the lower word id, which is the more
+        # common word. CSR is binary, so document count and frequency are the same.
+        order = np.lexsort((candidate_ids, -doc_counts[candidate_ids]))[:n_words]
         total_docs = matrix.shape[0]
         return [
             {

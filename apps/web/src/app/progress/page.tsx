@@ -2,6 +2,7 @@
 
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { KNEW_HINT, LEARNED_HINT } from "@/lib/knownWords";
 import { ArrowUpRight, Search } from "lucide-react";
 
 import { supabase } from "@/lib/supabaseclient";
@@ -71,37 +72,29 @@ const VocabularyPage = () => {
           <section className="mb-8">
             {summary ? (
               <>
-                <div className="flex items-baseline gap-2.5">
-                  <span className="text-5xl font-bold tracking-tight tabular-nums text-gray-900">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-semibold tracking-tight tabular-nums text-gray-900">
                     {(summary.declared + summary.from_reviews).toLocaleString()}
                   </span>
-                  <span className="text-gray-600">words you know</span>
+                  <span className="text-gray-500">words you know</span>
                 </div>
                 {/* The same marks as the rows below, so the list reads as the breakdown of this number. */}
-                <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
-                  <span className="inline-flex items-center gap-1.5">
+                <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
+                  <span className="inline-flex items-center gap-1.5" title={KNEW_HINT}>
                     <i className="h-1.5 w-1.5 rounded-full bg-gray-300" />
-                    <b className="font-semibold tabular-nums text-gray-900">{summary.declared.toLocaleString()}</b> marked as known
+                    <span className="tabular-nums text-gray-600">{summary.declared.toLocaleString()}</span> you already knew
                   </span>
-                  <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex cursor-help items-center gap-1.5" title={LEARNED_HINT}>
                     <i className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
-                    <b className="font-semibold tabular-nums text-gray-900">{summary.from_reviews.toLocaleString()}</b> learned in your reviews
+                    <span className="tabular-nums text-gray-600">{summary.from_reviews.toLocaleString()}</span> learned with flashcards
                   </span>
-                </p>
-                <p className="mt-1 text-xs text-gray-400">
-                  Words you are still learning are in{" "}
-                  <Link href="/vocabulary" className="text-indigo-600 hover:underline">
-                    Practice
-                  </Link>
-                  .
                 </p>
               </>
             ) : (
               // Same height as the summary, so nothing below moves when it arrives.
               <div aria-label="Loading">
-                <div className="h-12 w-56 animate-pulse rounded bg-gray-100" />
-                <div className="mt-3 h-4 w-80 animate-pulse rounded bg-gray-100" />
-                <div className="mt-2 h-3 w-60 animate-pulse rounded bg-gray-100" />
+                <div className="h-10 w-56 animate-pulse rounded bg-gray-100" />
+                <div className="mt-2 h-4 w-64 animate-pulse rounded bg-gray-100" />
               </div>
             )}
           </section>

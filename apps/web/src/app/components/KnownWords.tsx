@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { supabase } from '@/lib/supabaseclient';
 import { UserContext } from '@/context/UserContext';
 import { useSetUserwordsStatus } from '../hooks/useSetUserwordsStatus';
+import { KNEW_HINT, LEARNED_HINT } from '@/lib/knownWords';
 
 interface KnownWord {
   word_id: number;
@@ -118,7 +119,7 @@ const KnownWords: React.FC<{ searchTerm: string }> = ({ searchTerm }) => {
                   {/* The marks of the summary above. */}
                   <span
                     className={`mr-2.5 inline-block h-1.5 w-1.5 -translate-y-px rounded-full ${declared ? 'bg-gray-300' : 'bg-indigo-600'}`}
-                    title={declared ? 'Marked as known' : 'Learned in your reviews'}
+                    title={declared ? KNEW_HINT : LEARNED_HINT}
                   />
                   {w.word}
                 </td>
