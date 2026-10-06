@@ -537,7 +537,6 @@ export default function ExtensionDemo({ mode }: { mode: DemoMode }) {
         if (playing) {
             setAutoplay(false);
             setAdded(new Set());
-            setOpenWord(null);
         }
         clearTimeout(resumeTimer.current ?? undefined);
         resumeTimer.current = setTimeout(() => {
