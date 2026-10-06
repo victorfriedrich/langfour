@@ -6,7 +6,7 @@ export default function ConditionalSidebar() {
   const pathname = usePathname();
 
   // Hide sidebar on get‑started pages
-  if (pathname.startsWith('/get-started') || pathname.startsWith('/start-learning') || pathname.startsWith('/login')) {
+  if (pathname.startsWith('/get-started') || pathname.startsWith('/start-learning') || pathname.startsWith('/login') || pathname.startsWith('/privacy')) {
     return null;
   }
 
