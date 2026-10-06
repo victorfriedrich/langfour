@@ -1,3 +1,4 @@
+import { debugLog } from './config';
 import uniq from 'lodash-es/uniq';
 import { fetchTextNodes, logPrefix } from './utils';
 
@@ -46,16 +47,16 @@ export default function startTextMutationObserver({
   });
 
   if (targetEl && !isObserving) {
-    console.log(logPrefix, 'start observing text');
+    debugLog(logPrefix, 'start observing text');
     observingElement = targetEl;
     observer.observe(observingElement, { childList: true, subtree: true });
     isObserving = true;
   } else if (!targetEl && isObserving) {
-    console.log(logPrefix, 'stop observing text');
+    debugLog(logPrefix, 'stop observing text');
     observer?.disconnect();
     isObserving = false;
   } else if (targetEl && targetEl !== observingElement) {
-    console.log(logPrefix, 'restart observing text');
+    debugLog(logPrefix, 'restart observing text');
     observer.disconnect();
     observingElement = targetEl;
     observer.observe(observingElement, { childList: true, subtree: true });

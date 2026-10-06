@@ -33,7 +33,6 @@ export function getSubtitlesHiddenWordHTML(word: string) {
 }
 
 export function getPopupHTML(offsetBottom: number) {
-  console.log(`Popup offsetBottom: ${offsetBottom}`);
   return `
     <div class="${subPopupClassName}">
       <div class="sub-tr-popup-container" style="margin-bottom: ${offsetBottom}px;">
@@ -54,10 +53,10 @@ export function getTranslationHTML(translations: Translation[]) {
           <div class="sub-tr-dict-item">
             <div class="sub-tr-dict-item-title">
               <div class="nomargin">
-                <p>${escapeHTML(translation.root ?? 'no root')}</p>
+                ${translation.root ? `<p>${escapeHTML(translation.root)}</p>` : ''}
                 <span class="sub-tr-dict-item-text">${escapeHTML(translation.translation ?? '')}</span>
               </div>
-              <button class="sub-tr-plus-button" data-id="${escapeHTML(translation.id)}" aria-label="Add word ${escapeHTML(translation.translation)}">+</button>
+              <button class="sub-tr-plus-button" data-id="${escapeHTML(translation.id)}" aria-label="Add ${escapeHTML(translation.root ?? translation.translation)} to flashcards" title="Add to flashcards">+</button>
             </div>
           </div>
         `).join('')}

@@ -1,3 +1,4 @@
+import { debugLog } from './config';
 import {
   wrapNodeWords,
   maskTextWords,
@@ -268,7 +269,7 @@ document.addEventListener('prefs', (event: CustomEvent<Prefs>) => {
   // );
   preferredLanguage = prefs.preferredLanguage;
 
-  console.log(logPrefix, 'prefs updated:', prefs);
+  debugLog(logPrefix, 'prefs updated:', prefs);
 });
 
 setInterval(() => {
@@ -277,6 +278,6 @@ setInterval(() => {
   adjustTranslationPopupPosition();
 }, 100);
 
-console.log(logPrefix, 'initialized');
+debugLog(logPrefix, 'initialized');
 
 document.dispatchEvent(new CustomEvent<undefined>('session'));

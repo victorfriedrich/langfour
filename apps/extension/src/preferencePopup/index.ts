@@ -4,6 +4,7 @@ import { sendToActiveTab } from '../messages';
 import { getLanguageInfo, toLanguage, LanguageInfo } from '../languages';
 import type { Session } from '@supabase/supabase-js';
 import { getErrorMessage } from '../errors';
+import { WEB_URL } from '../config';
 
 // --- DOM Elements for Logged In View ---
 const loggedInPane = document.getElementById('loggedInPane') as HTMLElement;
@@ -17,8 +18,7 @@ const loggedOutPane = document.getElementById('loggedOutPane') as HTMLElement;
 const loginForm = document.getElementById('loginForm') as HTMLFormElement;
 const emailInput = document.getElementById('email') as HTMLInputElement;
 const loginBtn = document.getElementById('loginBtn') as HTMLButtonElement;
-const timerSpan = document.getElementById('timer') as HTMLElement;
-const progressCircle = document.querySelector<SVGCircleElement>('#progress-circle')!;
+const loginError = document.getElementById('loginError') as HTMLElement;
 
 
 
@@ -58,6 +58,9 @@ async function renderLanguageButtons(activeLang: string) {
       const btn = document.createElement('div');
       btn.className = 'language-button' + (info.code === activeCode ? ' active' : '');
       btn.dataset.lang = info.code;
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', String(info.code === activeCode));
+      btn.tabIndex = 0;
       const flag = document.createElement('img');
       flag.src = `https://flagcdn.com/${info.flag}.svg`;
       flag.width = 28;
@@ -67,12 +70,20 @@ async function renderLanguageButtons(activeLang: string) {
       label.textContent = info.name;
       btn.append(flag, label);
       const lang = info.code;
+      btn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          btn.click();
+        }
+      });
       btn.addEventListener('click', async () => {
         // Update active button state
-        document.querySelectorAll('.language-button').forEach((el) =>
-          el.classList.remove('active')
-        );
+        document.querySelectorAll('.language-button').forEach((el) => {
+          el.classList.remove('active');
+          el.setAttribute('aria-checked', 'false');
+        });
         btn.classList.add('active');
+        btn.setAttribute('aria-checked', 'true');
         try {
           // Call Supabase RPC to update default language
           const { error } = await supabase.rpc('set_user_default_language', { _language: lang });
@@ -101,6 +112,7 @@ function updateUIForSession(session: Session | null) {
     loggedOutPane.classList.add('hidden');
     loggedInPane.classList.remove('hidden');
     userInfoEl.textContent = session.user.email ?? '';
+    void updateReviewLink(session.user.id);
     supabase.rpc('get_user_default_language').then(({ data, error }) => {
       if (error) {
         console.error('Error getting default language:', error);
@@ -136,55 +148,54 @@ supabase.auth.getSession().then(({ data: { session } }) => {
 });
 
 // --- Login / Magic Link Flow ---
-let retryTimer = 60;
+// Three states: the form, "Sending…" on the button, then a "check your email"
+// panel with a resend countdown in place of the form.
+const RESEND_SECONDS = 60;
+const sentEmailEl = document.getElementById('sentEmail') as HTMLElement;
+const resendBtn = document.getElementById('resendBtn') as HTMLButtonElement;
+const changeEmailBtn = document.getElementById('changeEmailBtn') as HTMLButtonElement;
 let timerInterval: number | null = null;
-const TOTAL_SECONDS = 60;
 
-function setLoading(loading: boolean) {
-  loginBtn.disabled = loading;
-  if (loading) {
-    loginBtn.classList.add('loading');
-  } else {
-    loginBtn.classList.remove('loading');
-    // Reset progress circle
-    updateProgressCircle(TOTAL_SECONDS);
-  }
+function showLoginError(message: string | null) {
+  loginError.textContent = message ?? '';
+  loginError.classList.toggle('hidden', !message);
 }
 
-function updateTimerDisplay() {
-  timerSpan.textContent = retryTimer.toString();
+function setSending(sending: boolean) {
+  loginBtn.disabled = sending;
+  loginBtn.classList.toggle('loading', sending);
 }
 
-function updateProgressCircle(secondsLeft: number) {
-  // SVG circle has a circumference of 2πr = 2π*9 = ~56.55
-  // We use 60 as approx dasharray value for simplicity
-  const dashOffset = (secondsLeft / TOTAL_SECONDS) * 60;
-  progressCircle.style.strokeDashoffset = dashOffset.toString();
-}
-
-function startRetryTimer() {
-  if (timerInterval) clearInterval(timerInterval);
-  retryTimer = 60;
-  updateTimerDisplay();
-  timerInterval = window.setInterval(() => {
-    retryTimer--;
-    updateTimerDisplay();
-    if (retryTimer <= 0) {
-      stopRetryTimer();
-    }
-  }, 1000);
-}
-
-function stopRetryTimer() {
-  if (timerInterval) {
+function showSent(sent: boolean) {
+  loggedOutPane.classList.toggle('sent', sent);
+  if (!sent && timerInterval) {
     clearInterval(timerInterval);
     timerInterval = null;
   }
-  setLoading(false);
+}
+
+function startResendCountdown() {
+  if (timerInterval) clearInterval(timerInterval);
+  let secondsLeft = RESEND_SECONDS;
+  resendBtn.disabled = true;
+  resendBtn.innerHTML = 'Resend in <span id="timer"></span>s';
+  const tick = () => {
+    (document.getElementById('timer') as HTMLElement).textContent = String(secondsLeft);
+    if (secondsLeft <= 0) {
+      clearInterval(timerInterval!);
+      timerInterval = null;
+      resendBtn.disabled = false;
+      resendBtn.textContent = 'Resend link';
+    }
+    secondsLeft--;
+  };
+  tick();
+  timerInterval = window.setInterval(tick, 1000);
 }
 
 async function sendMagicLink(email: string) {
-  setLoading(true);
+  setSending(true);
+  showLoginError(null);
   try {
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -193,10 +204,14 @@ async function sendMagicLink(email: string) {
       }
     });
     if (error) throw error;
-    startRetryTimer();
+    sentEmailEl.textContent = email;
+    showSent(true);
+    startResendCountdown();
   } catch (err: unknown) {
-    alert(getErrorMessage(err, 'An unexpected error occurred'));
-    setLoading(false);
+    showSent(false);
+    showLoginError(getErrorMessage(err, 'Something went wrong. Please try again.'));
+  } finally {
+    setSending(false);
   }
 }
 
@@ -205,20 +220,61 @@ loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const email = emailInput.value.trim();
   if (!email) {
-    alert('Please enter a valid email');
+    showLoginError('Please enter your email address.');
     return;
   }
   await sendMagicLink(email);
 });
 
+resendBtn.addEventListener('click', () => {
+  const email = sentEmailEl.textContent ?? '';
+  if (!email) return;
+  resendBtn.disabled = true;
+  resendBtn.textContent = 'Sending…';
+  void sendMagicLink(email);
+});
+
+changeEmailBtn.addEventListener('click', () => {
+  showSent(false);
+  emailInput.focus();
+  emailInput.select();
+});
+
 const signUpBtn = document.getElementById('signUpBtn') as HTMLButtonElement;
 
 signUpBtn.addEventListener('click', () => {
-  window.open('https://app.langfour.com/', '_blank');
+  window.open(WEB_URL, '_blank', 'noopener');
 });
 
-document.querySelectorAll('#version').forEach(el => {
+document.querySelectorAll('#version, #version-login').forEach(el => {
   el.textContent = `v${extensionVersion}`;
+});
+
+// Quick links for the signed-in view. chrome.tabs.create opens a normal tab
+// and closes the popup, which window.open does not do reliably.
+// Reviews happen in RemNote when the user switched scheduling to it
+// (userdata.review_provider, same as the web app's TodayCard).
+const REMNOTE_URL = 'https://www.remnote.com/';
+const reviewBtn = document.getElementById('reviewBtn') as HTMLButtonElement;
+let reviewUrl = `${WEB_URL}/vocabulary`;
+
+async function updateReviewLink(userId: string) {
+  const { data, error } = await supabase
+    .from('userdata')
+    .select('review_provider')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) console.error('Could not read review provider:', error);
+  const remnote = data?.review_provider === 'remnote';
+  reviewUrl = remnote ? REMNOTE_URL : `${WEB_URL}/vocabulary`;
+  reviewBtn.textContent = remnote ? 'Review in RemNote' : 'Review flashcards';
+}
+
+reviewBtn.addEventListener('click', () => {
+  chrome.tabs.create({ url: reviewUrl });
+});
+document.getElementById('openAppBtn')?.addEventListener('click', () => {
+  chrome.tabs.create({ url: WEB_URL });
 });
 
 // Logout button event

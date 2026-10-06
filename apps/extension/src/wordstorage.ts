@@ -1,3 +1,4 @@
+import { debugLog } from './config';
 import { sendToBackground } from './messages';
 
 // Send words to background for storage
@@ -6,7 +7,7 @@ type StoredWordsResponse = { words: string[] };
 
 export function storeWords(words: string[], language: string): Promise<StorageResponse> {
     return new Promise((resolve, reject) => {
-        console.log(`Sending ${words.length} ${language} words to background for storage`);
+        debugLog(`Sending ${words.length} ${language} words to background for storage`);
 
         const wordsArray = Array.from(words);
         sendToBackground<StorageResponse>(
@@ -19,7 +20,7 @@ export function storeWords(words: string[], language: string): Promise<StorageRe
                 }
 
                 if (response && response.success) {
-                    console.log('Words successfully stored in background');
+                    debugLog('Words successfully stored in background');
                     resolve(response);
                 } else {
                     console.error('Failed to store words:', response?.error || 'Unknown error');
@@ -33,7 +34,7 @@ export function storeWords(words: string[], language: string): Promise<StorageRe
 // Get words from background storage
 export function getStoredWords(language: string): Promise<Set<string>> {
     return new Promise((resolve, reject) => {
-        console.log(`Requesting ${language} words from background storage`);
+        debugLog(`Requesting ${language} words from background storage`);
 
         sendToBackground<StoredWordsResponse>(
             { type: 'GET_WORDS', language },
@@ -44,7 +45,7 @@ export function getStoredWords(language: string): Promise<Set<string>> {
                     return;
                 }
 
-                console.log(`Received ${response.words.length} words from background`);
+                debugLog(`Received ${response.words.length} words from background`);
                 resolve(new Set(response.words));
             }
         );

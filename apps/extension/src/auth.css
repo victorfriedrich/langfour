@@ -171,3 +171,29 @@ button.loading .loading-content {
 .fa-spin {
     animation: spin 1s linear infinite;
 }
+
+
+.form-error {
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    color: #b91c1c;
+}
+
+.welcome-tips {
+    margin-top: 1.25rem;
+    padding-left: 1.1rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: #4b5563;
+    text-align: left;
+}
+
+.welcome-tips li + li { margin-top: 0.5rem; }
+
+.welcome-tips kbd {
+    padding: 0 0.3rem;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.8em;
+}

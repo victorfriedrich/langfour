@@ -1,3 +1,4 @@
+import { debugLog } from './config';
 import { supabase } from './supabaseclient';
 
 /**
@@ -48,7 +49,7 @@ export async function fetchWords(targetLanguage: string, pageSize = 1000): Promi
             }
         }
 
-        console.log(`Total words fetched: ${allWords.size}`);
+        debugLog(`Total words fetched: ${allWords.size}`);
         return allWords;
     } catch (err) {
         console.error('Error getting and setting known words:', err);

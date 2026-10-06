@@ -65,7 +65,7 @@
     
     input[type="email"]:focus {
       outline: none;
-      border-color: #FF8C00;
+      border-color: #4f46e5;
     }
     
     #loginBtn {
@@ -78,7 +78,7 @@
       font-size: 14px;
       font-weight: 500;
       color: white;
-      background-color: #FF8C00;
+      background-color: #4f46e5;
       cursor: pointer;
       transition: background-color 0.2s;
       min-width: 80px;
@@ -86,11 +86,11 @@
     }
     
     #loginBtn:hover:not(:disabled) {
-      background-color: #E67E00;
+      background-color: #4338ca;
     }
     
     #loginBtn:disabled {
-      background-color: #FFB966;
+      background-color: #a5b4fc;
       cursor: not-allowed;
     }
     
@@ -117,34 +117,54 @@
       display: none;
     }
     
-    /* Circle progress animation */
-    .progress-circle {
-      position: relative;
-      width: 16px;
-      height: 16px;
-    }
     
-    .progress-circle svg {
-      transform: rotate(-90deg);
+    .spinner { animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loginBtn.loading:disabled { background-color: #4f46e5; cursor: progress; }
+    .sent-panel { display: none; text-align: center; padding: 8px 0 4px; }
+    .sent #loginForm, .sent #loginError, .sent .or-divider, .sent #signUpBtn { display: none; }
+    .sent .sent-panel { display: block; animation: fade-in 0.25s ease-out; }
+    @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } }
+    .sent-icon {
+      display: inline-grid; place-items: center;
+      width: 44px; height: 44px; border-radius: 50%;
+      background: #eef2ff; color: #4f46e5;
     }
-    
-    .progress-circle circle {
-      stroke-dasharray: 60;
-      stroke-dashoffset: 60;
-      stroke-linecap: round;
-      stroke-width: 2px;
-      fill: none;
+    .sent-title { margin-top: 10px; font-size: 16px; font-weight: 600; }
+    .sent-text { margin-top: 6px; font-size: 13px; line-height: 1.5; color: #555; overflow-wrap: anywhere; }
+    .sent-actions { margin-top: 14px; display: flex; justify-content: center; gap: 8px; font-size: 13px; color: #aaa; }
+    .link-btn { background: none; border: none; padding: 0; font: inherit; color: #4f46e5; cursor: pointer; }
+    .link-btn:hover:not(:disabled) { text-decoration: underline; }
+    .link-btn:disabled { color: #888; cursor: default; }
+    .form-message {
+      font-size: 13px;
+      margin-top: 10px;
+      color: #555;
     }
-    
-    .progress-bg {
-      stroke: rgba(255, 255, 255, 0.3);
+    .form-message.error {
+      color: #b91c1c;
     }
-    
-    .progress-indicator {
-      stroke: white;
-      transition: stroke-dashoffset 1s linear;
+    input:focus-visible, button:focus-visible, .language-button:focus-visible {
+      outline: 2px solid #4f46e5;
+      outline-offset: 2px;
     }
-    
+    @media (prefers-color-scheme: dark) {
+      body { background-color: #1f2937; color: #e5e7eb; }
+      .version, .footer-text, .or-divider { color: #9ca3af; }
+      input[type="email"] { background: #111827; color: #f3f4f6; border-color: #374151; }
+      .or-divider:before, .or-divider:after { background: #374151; }
+      .language-button { border-color: #374151; }
+      .language-button.active { background-color: rgba(129, 140, 248, 0.18); }
+      #userInfo { color: #d1d5db; }
+      .form-message, .sent-text { color: #d1d5db; }
+      .sent-icon { background: rgba(129, 140, 248, 0.18); color: #a5b4fc; }
+      .link-btn { color: #a5b4fc; }
+      .form-message.error { color: #fca5a5; }
+      .footer-text a, .btn-outline, .quick-link { color: #a5b4fc; }
+      .quick-link { border-color: #a5b4fc; }
+      .quick-link.primary { color: #fff; border-color: #4f46e5; }
+      .btn-outline { border-color: #a5b4fc; }
+    }
     .footer-text {
       font-size: 12px;
       text-align: center;
@@ -154,7 +174,7 @@
     }
     
     .footer-text a {
-      color: #FF8C00;
+      color: #4f46e5;
       text-decoration: none;
     }
     
@@ -191,8 +211,8 @@
       width: 100%;
       padding: 12px;
       background-color: transparent;
-      border: 1px solid #FF8C00;
-      color: #FF8C00;
+      border: 1px solid #4f46e5;
+      color: #4f46e5;
       border-radius: 4px;
       font-size: 15px;
       cursor: pointer;
@@ -202,7 +222,7 @@
     }
     
     .btn-outline:hover {
-      background-color: rgba(255, 140, 0, 0.1);
+      background-color: rgba(79, 70, 229, 0.1);
     }
     
     /* Logged in view styles */
@@ -229,12 +249,12 @@
     }
     
     .language-button:hover {
-      border-color: #FF8C00;
+      border-color: #4f46e5;
     }
     
     .language-button.active {
-      border-color: #FF8C00;
-      background-color: rgba(255, 140, 0, 0.1);
+      border-color: #4f46e5;
+      background-color: rgba(79, 70, 229, 0.1);
     }
     
     .language-button img {
@@ -243,6 +263,24 @@
       border-radius: 2px;
     }
     
+    .quick-links {
+      display: flex;
+      gap: 8px;
+    }
+    .quick-link {
+      flex: 1;
+      height: 38px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #4f46e5;
+      background: transparent;
+      color: #4f46e5;
+    }
+    .quick-link:hover { background-color: rgba(79, 70, 229, 0.08); }
+    .quick-link.primary { background-color: #4f46e5; color: #fff; }
+    .quick-link.primary:hover { background-color: #4338ca; }
     .footer {
       margin-top: 20px;
       display: flex;
@@ -256,7 +294,7 @@
     }
     
     #logoutBtn {
-      background-color: #FF8C00;
+      background-color: #4f46e5;
       border: none;
       border-radius: 4px;
       padding: 8px 12px;
@@ -266,7 +304,7 @@
     }
     
     #logoutBtn:hover {
-      background-color: #E67E00;
+      background-color: #4338ca;
     }
   </style>
 </head>
@@ -298,24 +336,33 @@
             </svg>
           </span>
           <span class="loading-content">
-            <div class="progress-circle">
-              <svg width="16" height="16" viewBox="0 0 20 20">
-                <circle class="progress-bg" cx="10" cy="10" r="9"></circle>
-                <circle class="progress-indicator" id="progress-circle" cx="10" cy="10" r="9"></circle>
-              </svg>
-            </div>
-            <span>Retry (<span id="timer">60</span>s)</span>
+            <svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.55"/></svg>
+            <span>Sending…</span>
           </span>
         </button>
       </div>
     </form>
     
+    <p id="loginError" class="form-message error hidden" role="alert"></p>
+    <div id="sentPanel" class="sent-panel" role="status" aria-live="polite">
+      <div class="sent-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
+      </div>
+      <p class="sent-title">Check your email</p>
+      <p class="sent-text">We sent a sign-in link to <strong id="sentEmail"></strong>. Open it in this browser to finish signing in.</p>
+      <div class="sent-actions">
+        <button type="button" id="resendBtn" class="link-btn" disabled>Resend in <span id="timer">60</span>s</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" id="changeEmailBtn" class="link-btn">Use another email</button>
+      </div>
+    </div>
+
     <div class="or-divider">or</div>
     
     <button class="btn-outline" id="signUpBtn">Sign Up</button>
     
     <div class="footer-text">
-      By logging in, you agree to our<br><a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>
+      By logging in you accept our <a href="https://app.langfour.com/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>
     </div>
   </div>
   
@@ -329,6 +376,10 @@
     </div>
     <div id="languageButtons">
       <!-- Language buttons will be inserted here -->
+    </div>
+    <div class="quick-links">
+      <button type="button" id="reviewBtn" class="quick-link primary">Review flashcards</button>
+      <button type="button" id="openAppBtn" class="quick-link">Open Langfour</button>
     </div>
     <div class="footer">
       <div id="userInfo"></div>

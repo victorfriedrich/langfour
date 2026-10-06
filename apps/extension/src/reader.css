@@ -58,7 +58,7 @@ body {
   
   /* Article content */
   .article-content {
-    text-align: justify;
+    text-align: left;
     margin-bottom: 40px;
     line-height: 1.7;
     transition: line-height 0.3s;
@@ -118,7 +118,7 @@ body {
   /* Word popup */
   .word-popup {
     position: absolute;
-    width: 280px;
+    width: min(280px, 90vw);
     background-color: white;
     border-radius: 6px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
@@ -480,6 +480,16 @@ body {
     border-top: 1px solid #e2d1c3;
   }
   
+  /* Keyboard focus */
+  .sidebar-btn:focus-visible,
+  .sidebar-toggle:focus-visible,
+  .control-btn:focus-visible,
+  .font-option:focus-visible,
+  .flashcard-btn:focus-visible {
+    outline: 2px solid #8B4513;
+    outline-offset: -2px;
+  }
+  
   /* Custom selection highlighting */
   ::selection {
     background-color: rgba(240, 173, 78, 0.3);
@@ -490,7 +500,7 @@ body {
   @media screen and (max-width: 768px) {
     body { font-size: 17px; }
     #reader-container { padding: 25px 30px; margin: 20px auto; }
-    .word-popup { width: 250px; }
+    .word-popup { width: min(250px, 90vw); }
     .dismissable-popup { width: 90%; }
   }
     

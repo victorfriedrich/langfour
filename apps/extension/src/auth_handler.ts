@@ -1,5 +1,6 @@
 import { supabase } from './supabaseclient';
 import { sendToBackground } from './messages';
+import { debugLog } from './config';
 
 const loadingState = document.getElementById('loadingState');
 const successState = document.getElementById('successState');
@@ -25,7 +26,7 @@ supabase.auth.getSession()
     if (data.session) {
       // Store session in chrome.storage
       chrome.storage.local.set({ supabaseSession: data.session }, () => {
-        console.log('Session stored successfully');
+        debugLog('Session stored successfully');
       });
 
       // Send message to background script (and any listening content scripts)
@@ -36,7 +37,7 @@ supabase.auth.getSession()
         showState(successState);
 
         if (window.opener) {
-          window.opener.postMessage('auth_success', '*');
+          window.opener.postMessage('auth_success', window.location.origin);
         }
 
         // Close the window after a brief delay to show the success state
