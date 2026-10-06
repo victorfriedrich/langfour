@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { BookCopy, Captions, Check, Highlighter, Languages, Layers, Maximize, Play, Plus, RotateCcw, Settings, Volume2 } from 'lucide-react';
 
@@ -67,6 +67,42 @@ const popupMotion = {
     transition: { duration: 0.16, ease: [0.2, 0.8, 0.2, 1] },
 };
 
+// Keep the whole popup inside the clipped content area, including its Add
+// button. Padding bridges the gap so moving from the word does not close it.
+function WordPopup({ mode, children }: { mode: DemoMode; children: ReactNode }) {
+    const ref = useRef<HTMLSpanElement>(null);
+    const [position, setPosition] = useState({ left: 0, top: 0 });
+
+    useLayoutEffect(() => {
+        const popup = ref.current;
+        const word = popup?.parentElement;
+        const bounds = word?.closest('[data-popup-bounds]');
+        if (!popup || !word || !bounds) return;
+        const place = () => {
+            const w = word.getBoundingClientRect();
+            const b = bounds.getBoundingClientRect();
+            const width = popup.offsetWidth;
+            const height = popup.offsetHeight;
+            const above = w.top - height;
+            const below = w.bottom;
+            const preferred = mode === 'video'
+                ? (above >= b.top ? above : below)
+                : (below + height <= b.bottom ? below : above);
+            setPosition({
+                left: Math.max(b.left + 8, Math.min(w.left + (w.width - width) / 2, b.right - width - 8)) - w.left,
+                top: Math.max(b.top, Math.min(preferred, b.bottom - height)) - w.top,
+            });
+        };
+        place();
+        const observer = new ResizeObserver(place);
+        observer.observe(bounds);
+        observer.observe(popup);
+        return () => observer.disconnect();
+    }, [mode]);
+
+    return <span ref={ref} className="absolute z-20 block w-max py-2" style={position}>{children}</span>;
+}
+
 function InteractiveText({
     segments,
     mode,
@@ -134,11 +170,7 @@ function InteractiveText({
                         </button>
                         <AnimatePresence>
                             {isOpen && (
-                                <span
-                                    className={`absolute left-1/2 z-20 -translate-x-1/2 ${
-                                        mode === 'video' ? 'bottom-full pb-2.5' : 'top-full pt-2'
-                                    }`}
-                                >
+                                <WordPopup mode={mode}>
                                     <motion.span
                                         {...popupMotion}
                                         {...(mode === 'reader' && { initial: { opacity: 0, y: -6, scale: 0.96 } })}
@@ -151,7 +183,7 @@ function InteractiveText({
                                             <ReaderPopup word={seg} added={isAdded} onAdd={() => onAdd(seg.id)} />
                                         )}
                                     </motion.span>
-                                </span>
+                                </WordPopup>
                             )}
                         </AnimatePresence>
                     </span>
@@ -271,7 +303,7 @@ function VideoStage(props: StageProps) {
         reduce ? {} : { animate: { x, y }, transition: { duration, repeat: Infinity, repeatType: 'mirror' as const, ease: 'easeInOut' } };
 
     return (
-        <div className="relative h-full w-full overflow-clip bg-[#0b0d14]" onClick={props.onClose}>
+        <div data-popup-bounds className="relative h-full w-full overflow-clip bg-[#0b0d14]" onClick={props.onClose}>
             {/* An abstract "scene" in place of real footage. */}
             <motion.div
                 className="absolute -left-[10%] top-[5%] h-[70%] w-[55%] rounded-full bg-indigo-500/45 blur-[70px]"
@@ -334,7 +366,7 @@ function ReaderStage(props: StageProps) {
                     <Icon key={i} size={18} />
                 ))}
             </div>
-            <div className="relative flex-1 overflow-clip">
+            <div data-popup-bounds className="relative flex-1 overflow-clip">
                 <AddedCounter count={props.added.size} tone="light" />
                 <article className="mx-auto h-full max-w-[32rem] bg-white px-6 pt-8 shadow-[0_2px_10px_rgba(0,0,0,0.08)] md:px-10 md:pt-10">
                     <h3 className="font-[Baskerville,Georgia,serif] text-xl font-bold leading-tight text-[#1a1a1a] md:text-[28px]">
@@ -409,7 +441,7 @@ function useAutoplay({
     mode: DemoMode;
     enabled: boolean;
     stageRef: React.RefObject<HTMLDivElement | null>;
-    setOpenWord: (w: { mode: DemoMode; id: string } | null) => void;
+    setOpenWord: (id: string | null) => void;
     setAdded: (fn: (prev: Set<string>) => Set<string>) => void;
 }) {
     const [cursor, setCursor] = useState<CursorState>({ x: 0, y: 0, pressed: false, visible: false });
@@ -442,6 +474,7 @@ function useAutoplay({
         (async () => {
             await waitUntilVisible();
             await sleep(700);
+            if (cancelled) return;
             const rect = stage.getBoundingClientRect();
             setCursor({ x: rect.width * 0.82, y: rect.height * 0.86, pressed: false, visible: true });
             await sleep(500);
@@ -453,7 +486,7 @@ function useAutoplay({
                     moveTo(pointAt(`[data-word="${word.id}"]`));
                     await sleep(1100);
                     if (cancelled) return;
-                    setOpenWord({ mode, id: word.id });
+                    setOpenWord(word.id);
                     await sleep(1000);
                     if (cancelled) return;
                     moveTo(pointAt(`[data-add="${word.id}"]`));
@@ -461,6 +494,7 @@ function useAutoplay({
                     if (cancelled) return;
                     setCursor((c) => ({ ...c, pressed: true }));
                     await sleep(140);
+                    if (cancelled) return;
                     setCursor((c) => ({ ...c, pressed: false }));
                     setAdded((prev) => new Set(prev).add(word.id));
                     await sleep(1300);
@@ -487,8 +521,7 @@ function useAutoplay({
 
 export default function ExtensionDemo({ mode }: { mode: DemoMode }) {
     const [added, setAdded] = useState<Set<string>>(new Set());
-    // Remember which mode a popup belongs to, so switching tabs closes it.
-    const [openWord, setOpenWord] = useState<{ mode: DemoMode; id: string } | null>(null);
+    const [openWord, setOpenWord] = useState<string | null>(null);
     const [touched, setTouched] = useState(false);
     const reduceMotion = useReducedMotion();
     const [autoplay, setAutoplay] = useState(true);
@@ -513,8 +546,6 @@ export default function ExtensionDemo({ mode }: { mode: DemoMode }) {
             setAutoplay(true);
         }, RESUME_AFTER_MS);
     };
-    const open = openWord?.mode === mode ? openWord.id : null;
-    const setOpen = (id: string | null) => setOpenWord(id ? { mode, id } : null);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpenWord(null);
@@ -524,16 +555,16 @@ export default function ExtensionDemo({ mode }: { mode: DemoMode }) {
 
     const props: StageProps = {
         added,
-        open,
+        open: openWord,
         hinted: touched || playing ? null : FIRST_WORD[mode],
         onOpen: (id) => {
-            setOpen(id);
+            setOpenWord(id);
             setTouched(true);
         },
-        onClose: () => setOpen(null),
+        onClose: () => setOpenWord(null),
         onAdd: (id) => {
             setAdded((prev) => new Set(prev).add(id));
-            setTimeout(() => setOpenWord((cur) => (cur?.id === id ? null : cur)), 900);
+            setTimeout(() => setOpenWord((cur) => (cur === id ? null : cur)), 900);
         },
     };
 
@@ -565,19 +596,7 @@ export default function ExtensionDemo({ mode }: { mode: DemoMode }) {
                         mode === 'video' ? 'h-[clamp(240px,34vh,340px)]' : 'h-[clamp(320px,50vh,460px)]'
                     }`}
                 >
-                    {/* Crossfade: both stages overlap for a moment, so the frame is never empty. */}
-                    <AnimatePresence initial={false}>
-                        <motion.div
-                            key={mode}
-                            className="absolute inset-0"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.3, ease: 'easeOut' }}
-                        >
-                            {mode === 'video' ? <VideoStage {...props} /> : <ReaderStage {...props} />}
-                        </motion.div>
-                    </AnimatePresence>
+                    {mode === 'video' ? <VideoStage {...props} /> : <ReaderStage {...props} />}
                     <FakeCursor cursor={cursor} />
                 </div>
             </div>

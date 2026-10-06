@@ -7,8 +7,8 @@ export type ExtensionStatus =
 
 /**
  * Detects the Langfour extension without needing its ID: the extension's
- * site bridge answers a window.postMessage ping. A page that was open before
- * the install has no bridge until it is reloaded, hence the slow re-ping.
+ * site bridge answers the initial ping and announces later session changes.
+ * A page that was open before installation must be reloaded to get the bridge.
  */
 export function useExtensionStatus(): ExtensionStatus {
     const [status, setStatus] = useState<ExtensionStatus>({ state: 'checking' });
@@ -23,11 +23,9 @@ export function useExtensionStatus(): ExtensionStatus {
         window.addEventListener('message', onMessage);
         ping();
         const miss = setTimeout(() => setStatus((s) => (s.state === 'checking' ? { state: 'missing' } : s)), 1200);
-        const poll = setInterval(ping, 3000);
         return () => {
             window.removeEventListener('message', onMessage);
             clearTimeout(miss);
-            clearInterval(poll);
         };
     }, []);
 
