@@ -146,6 +146,11 @@ def parse_structured[T: BaseModel](
 
     last_error: Exception | None = None
     for i, (response_format, reasoning_cfg) in enumerate(attempts):
+        # Logged with every failure: 'length' means the reply was cut off at
+        # max_tokens, which reads as a JSON syntax error, not as truncation.
+        # reasoning_tokens tells the two causes of 'length' apart: a provider
+        # that reasons despite reasoning=off, or a model padding with whitespace.
+        finish_reason = reasoning_tokens = None
         try:
             extra = dict(kwargs)
             if reasoning_cfg is not None:
@@ -158,6 +163,9 @@ def parse_structured[T: BaseModel](
                 **extra,
             )
             choice = resp.choices[0]
+            finish_reason = getattr(choice, "finish_reason", None)
+            details = getattr(getattr(resp, "usage", None), "completion_tokens_details", None)
+            reasoning_tokens = getattr(details, "reasoning_tokens", None)
             msg = choice.message
             if getattr(msg, "refusal", None):
                 raise ModelRefusal(f"Model refused: {msg.refusal}")
@@ -179,8 +187,10 @@ def parse_structured[T: BaseModel](
             last_error = exc
             if i + 1 < len(attempts):
                 log.warning(
-                    "structured output via %s failed (%s); retrying with %s",
-                    response_format["type"], exc, attempts[i + 1][0]["type"],
+                    "structured output via %s failed (%s, finish_reason=%s, "
+                    "reasoning_tokens=%s); retrying with %s",
+                    response_format["type"], exc, finish_reason, reasoning_tokens,
+                    attempts[i + 1][0]["type"],
                 )
 
     raise RuntimeError(f"Structured output failed for {model}: {last_error}")

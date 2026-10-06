@@ -1046,7 +1046,7 @@ def qualified(db: sqlite3.Connection, lang: str, g: Gates,
 # Music is deliberately not asked about: it is a per-video fact answered by
 # category_id, and title guesses were worse. Language is settled upstream.
 CLASSIFY_PROMPT = """Video titles from the YouTube channel "{name}", which publishes in {lang}.
-Rate the channel as a whole on three 0-1 scales:
+Rate the channel as a whole on two 0-1 scales:
   sensitivity      how likely the content involves drugs, sexual content, graphic
                    violence, gambling or hate (1 = certainly)
   intellectuality  how much it explains, analyses or teaches, as opposed to
@@ -1071,7 +1071,7 @@ def verdict_for(name: str, titles: Sequence[str], lang: str) -> dict[str, float]
     prompt = CLASSIFY_PROMPT.format(name=name, lang=lang, titles="\n".join(titles))
     v = parse_structured(model=MODEL_FAST, messages=[{"role": "user", "content": prompt}],
                          schema_model=ChannelVerdict, reasoning={"enabled": False},
-                         max_tokens=200, temperature=0.2)
+                         max_tokens=800, temperature=0.2)
     def clamp(x):
         return min(1.0, max(0.0, float(x)))
     return {"sensitivity": clamp(v.sensitivity),

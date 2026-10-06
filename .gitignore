@@ -209,6 +209,12 @@ apps/api/data/pool_*.json
 apps/api/data/yt_*_api.json
 apps/api/data/videos.json
 apps/api/data/videos_*.json
+apps/api/data/yt_*_seed.json
+apps/api/data/yt_*_unresolved.json
+# Working files of the dictionary review (scripts/review_flagged.py) and
+# local database exports. The exports hold user rows; never commit them.
+apps/api/data/review/
+apps/api/data/backup-*/
 # The raw ranking-site capture IS kept: it is an immutable upstream record
 # that cannot be regenerated (starngage rate-limits, and the account may lapse).
 !apps/api/data/seeds/*_raw_*.json
