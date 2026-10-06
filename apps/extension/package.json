@@ -1,6 +1,6 @@
 {
   "name": "spotlight-lingo",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "",
   "scripts": {
     "start": "node scripts/parcel-with-env.mjs watch manifest.json --config @parcel/config-webextension --no-hmr --no-scope-hoist",
@@ -12,7 +12,8 @@
     "lint:fix": "eslint src --fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:store": "node scripts/parcel-with-env.mjs build manifest.json --config @parcel/config-webextension --no-scope-hoist --no-source-maps"
   },
   "keywords": [],
   "author": "",

@@ -11,8 +11,8 @@
   <div class="container">
     <div class="login-box">
       <div class="header">
-        <h1>Welcome Back!</h1>
-        <p>Already signed up on Langfour? Log in here.</p>
+        <h1 id="heading">Welcome Back!</h1>
+        <p id="subheading">Already signed up on Langfour? Log in here.</p>
       </div>
       
       <form id="login-form" class="login-form">
@@ -27,15 +27,23 @@
           <button type="submit" id="login-btn">
             <span class="button-content">
               <span class="button-text">Login</span>
-              <i class="fa-solid fa-paper-plane"></i>
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </span>
             <span class="loading-content">
-              <i class="fa-solid fa-circle-notch fa-spin"></i>
+              <svg class="icon fa-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.55"/></svg>
               <span>Retry (<span id="timer">60</span>s)</span>
             </span>
           </button>
         </div>
       </form>
+
+      <p id="form-error" class="form-error hidden" role="alert"></p>
+
+      <ul id="welcome-tips" class="welcome-tips hidden">
+        <li><strong>Videos:</strong> on YouTube, Netflix and Prime Video, hover a highlighted subtitle word to translate it.</li>
+        <li><strong>Articles:</strong> press <kbd>&#8984;</kbd><kbd>&#8679;</kbd><kbd>Y</kbd> (Ctrl+Shift+Y on Windows) on any page for the reader.</li>
+        <li>New here? Create your account at <a href="https://app.langfour.com" target="_blank" rel="noreferrer">app.langfour.com</a>.</li>
+      </ul>
 
       <div id="mail-prompt" class="mail-prompt hidden">
         <button id="open-mail">Open Mail</button>

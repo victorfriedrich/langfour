@@ -1,3 +1,4 @@
+import { debugLog } from './config';
 import { getPrefs } from './preferencePopup/prefs';
 import { injectCss, injectJs, logPrefix } from './utils';
 import { Language, toLanguage } from './languages';
@@ -249,7 +250,7 @@ document.addEventListener('logout', () => {
     if (chrome.runtime.lastError) {
       console.error('Error deleting session:', chrome.runtime.lastError);
     } else {
-      console.log('Session deleted successfully');
+      debugLog('Session deleted successfully');
     }
   });
 });
@@ -259,7 +260,7 @@ document.addEventListener('logout', () => {
  */
 document.addEventListener('prefs', (event: CustomEvent<Prefs>) => {
   prefs = event.detail;
-  console.log(logPrefix, 'Preferences updated:', prefs);
+  debugLog(logPrefix, 'Preferences updated:', prefs);
 });
 
 /**
@@ -301,7 +302,7 @@ window.addEventListener('message', (event) => {
     (typeof wordId === 'string' && /^\d+$/.test(wordId));
 
   if (isValidWordId) {
-    console.log('Received from translationPopup:', wordId);
+    debugLog('Received from translationPopup:', wordId);
     sendToBackground<{ success: boolean; error?: string }>(
       { type: 'ADD_WORD_TO_USERWORDS', wordId },
       (response) => {

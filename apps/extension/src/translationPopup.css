@@ -54,7 +54,7 @@
 
 .sub-tr-plus-button {
   background: transparent;
-  border: 1px solid #ffffff3d;
+  border: 1px solid #ffffff80;
   color: #fff;
   font-size: 16px;
   cursor: pointer;
@@ -74,6 +74,11 @@
   color: #ffffff;
 }
 
+.sub-tr-plus-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
 .sub-tr-translation {
   color: #fff;
   font-size: 16px;
@@ -85,7 +90,7 @@
 }
 
 .sub-tr-dict-item-ts {
-  color: #b7b7b7;
+  color: #d4d4d8;
 }
 
 .sub-tr-dict-item-pos {
@@ -125,7 +130,7 @@
 }
 
 .sub-tr-popup:hover .sub-tr-close-icon {
-  fill: #eeeeee87;
+  fill: #eeeeee;
 }
 
 .sub-tr-popup:hover .sub-tr-close-icon:hover {

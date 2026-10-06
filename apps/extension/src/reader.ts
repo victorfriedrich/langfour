@@ -9,6 +9,7 @@ import {
   translateSection,
 } from './api-service';
 import { sanitizeHTML } from './sanitizeHTML';
+import { WEB_URL } from './config';
 
 type TranslationResult = Awaited<ReturnType<typeof fetchTranslation>>;
 type TranslationHandlers = {
@@ -43,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (spinnerElement.parentNode) spinnerElement.parentNode.removeChild(spinnerElement);
 
     if (!articleResult.currentArticle) {
-      container.innerHTML = '<p class="error">No article content available.</p>';
+      container.innerHTML = '<p class="error">No article found. Open an article and press the reader shortcut (Cmd/Ctrl+Shift+Y).</p>';
       return;
     }
 
@@ -129,6 +130,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Don’t let this bubble up and trigger the document listener below
     e.stopPropagation();
+  });
+
+  // Escape dismisses any open word popup.
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeWordPopups();
   });
 
   // Handle clicks anywhere else to dismiss the popup
@@ -498,17 +504,9 @@ function initSidebar(): void {
 }
 
 function initSidebarButtons(): void {
-  const translateBtn = document.getElementById('translate-page') as HTMLElement;
   const highlightBtn = document.getElementById('toggle-highlight') as HTMLElement;
   const flashcardsBtn = document.getElementById('access-flashcards') as HTMLElement;
   const settingsBtn = document.getElementById('reader-settings') as HTMLElement;
-
-  // Translate page button handler
-  translateBtn.addEventListener('click', () => {
-    translateBtn.classList.toggle('active');
-    alert('Translating entire page...');
-    setTimeout(() => translateBtn.classList.remove('active'), 1000);
-  });
 
   // Toggle highlighting for unknown words
   highlightBtn.addEventListener('click', () => {
@@ -537,7 +535,7 @@ function initSidebarButtons(): void {
 
   // Flashcards button handler
   flashcardsBtn.addEventListener('click', () => {
-    alert('Opening flashcards interface with your saved words...');
+    window.open(`${WEB_URL}/vocabulary`, '_blank', 'noopener');
   });
 
   // Settings panel toggle

@@ -448,6 +448,13 @@ function openReaderWithError(errorMessage: string): void {
   });
 }
 
+// First run: send new users to the sign-in page with a short how-to.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/auth.html?welcome=1') });
+  }
+});
+
 // Update your command listener to use this function
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'toggle-reader') {

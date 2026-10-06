@@ -1,7 +1,7 @@
 {
-  "name": "Langfour",
-  "version": "1.1",
-  "description": "Directly translate and add words to your flashcards within YouTube and Netflix",
+  "name": "Langfour: Translate & Learn Words",
+  "version": "1.2.0",
+  "description": "Translate words and add them to your flashcards on YouTube, Netflix and Prime Video, or in a clean reader for any article.",
   "manifest_version": 3,
   "background": {
     "service_worker": "src/backgroundScript.ts",
@@ -41,6 +41,16 @@
       "js": [
         "src/contentScript.ts"
       ]
+    },
+    {
+      "matches": [
+        "https://app.langfour.com/*",
+        "http://localhost:3000/*"
+      ],
+      "js": [
+        "src/siteBridge.ts"
+      ],
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
@@ -88,5 +98,6 @@
     "activeTab",
     "scripting",
     "storage"
-  ]
+  ],
+  "homepage_url": "https://app.langfour.com"
 }

@@ -5,6 +5,7 @@
 // session-fixation hole, so both ends stay on one configuration.
 import { supabase } from './supabaseclient';
 import { debugLog } from './config';
+import { getErrorMessage } from './errors';
 
 class LoginForm {
   private form: HTMLFormElement;
@@ -23,12 +24,19 @@ class LoginForm {
     this.timerSpan = document.getElementById('timer') as HTMLSpanElement;
 
     window.addEventListener('message', (event) => {
-      if (event.data === 'auth_success') {
+      if (event.origin === window.location.origin && event.data === 'auth_success') {
         window.close();
       }
     });
 
     this.initializeEventListeners();
+
+    // First run: the background opens this page with ?welcome after install.
+    if (new URLSearchParams(window.location.search).has('welcome')) {
+      document.getElementById('heading')!.textContent = 'Welcome to Langfour';
+      document.getElementById('subheading')!.textContent = 'Sign in with your email to start saving words.';
+      document.getElementById('welcome-tips')?.classList.remove('hidden');
+    }
   }
 
   private initializeEventListeners() {
@@ -42,8 +50,9 @@ class LoginForm {
     e.preventDefault();
     const email = this.emailInput.value.trim();
 
+    this.showError(null);
     if (!email) {
-      alert('Please enter a valid email');
+      this.showError('Please enter your email address.');
       return;
     }
 
@@ -62,13 +71,16 @@ class LoginForm {
       this.mailPrompt.classList.remove('hidden');
       this.startRetryTimer();
     } catch (error) {
-      if (error instanceof Error) {
-        alert(error.message);
-      } else {
-        alert('An unexpected error occurred');
-      }
+      this.showError(getErrorMessage(error, 'Something went wrong. Please try again.'));
       this.setLoading(false);
     }
+  }
+
+  private showError(message: string | null) {
+    const el = document.getElementById('form-error');
+    if (!el) return;
+    el.textContent = message ?? '';
+    el.classList.toggle('hidden', !message);
   }
 
   private setLoading(loading: boolean) {

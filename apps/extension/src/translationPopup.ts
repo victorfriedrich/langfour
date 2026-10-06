@@ -36,7 +36,7 @@ function postToContentScript(data: { wordId: string }) {
   window.postMessage({
     source: 'translationPopup',
     payload: data
-  }, '*');
+  }, window.location.origin);
 }
 
 export function insertTranslationResult(
