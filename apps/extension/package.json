@@ -3,8 +3,8 @@
   "version": "1.1.1",
   "description": "",
   "scripts": {
-    "start": "parcel watch manifest.json --config @parcel/config-webextension --no-hmr --no-scope-hoist",
-    "build": "parcel build manifest.json --config @parcel/config-webextension --no-scope-hoist",
+    "start": "node scripts/parcel-with-env.mjs watch manifest.json --config @parcel/config-webextension --no-hmr --no-scope-hoist",
+    "build": "node scripts/parcel-with-env.mjs build manifest.json --config @parcel/config-webextension --no-scope-hoist",
     "build-server": "vercel build && cpy ./static .vercel/output --no-overwrite",
     "pack": "bestzip build/v$npm_package_version.zip dist/*",
     "analize": "parcel build manifest.json --config @parcel/config-webextension --reporter @parcel/reporter-bundle-analyzer --no-scope-hoist",
