@@ -252,22 +252,27 @@ document.querySelectorAll('#version, #version-login').forEach(el => {
 
 // Quick links for the signed-in view. chrome.tabs.create opens a normal tab
 // and closes the popup, which window.open does not do reliably.
-// Reviews happen in RemNote when the user switched scheduling to it
-// (userdata.review_provider, same as the web app's TodayCard).
-const REMNOTE_URL = 'https://www.remnote.com/';
+// The main action includes existing cards linked outside the Langfour document.
+// Keep the document queue as an optional shortcut alongside it.
 const reviewBtn = document.getElementById('reviewBtn') as HTMLButtonElement;
 let reviewUrl = `${WEB_URL}/vocabulary`;
+const documentLink = document.getElementById('remnoteDocumentLink') as HTMLAnchorElement;
 
 async function updateReviewLink(userId: string) {
   const { data, error } = await supabase
     .from('userdata')
-    .select('review_provider')
+    .select('review_provider, remnote_root_rem_id')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) console.error('Could not read review provider:', error);
   const remnote = data?.review_provider === 'remnote';
-  reviewUrl = remnote ? REMNOTE_URL : `${WEB_URL}/vocabulary`;
-  reviewBtn.textContent = remnote ? 'Review in RemNote' : 'Review flashcards';
+  reviewUrl = remnote ? 'https://www.remnote.com/flashcards' : `${WEB_URL}/vocabulary`;
+  reviewBtn.textContent = remnote ? 'All RemNote cards' : 'Review flashcards';
+  const rootRemId = data?.remnote_root_rem_id;
+  const hasDocument = remnote && typeof rootRemId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(rootRemId);
+  documentLink.classList.toggle('hidden', !hasDocument);
+  if (hasDocument) documentLink.href = `https://www.remnote.com/flashcards/${rootRemId}`;
+  else documentLink.removeAttribute('href');
 }
 
 reviewBtn.addEventListener('click', () => {

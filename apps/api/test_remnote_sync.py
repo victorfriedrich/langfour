@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 import auth
 import remnote_sync
@@ -208,6 +209,9 @@ class FakeStore:
 
     def set_review_provider(self, user_id, provider):
         self.provider = provider
+
+    def set_root_rem(self, user_id, rem_id):
+        self.root_rem_id = rem_id
 
     def active_token(self, user_id):
         return self.token
@@ -519,6 +523,19 @@ def test_a_sweep_without_practice_state_leaves_statuses_alone():
 
 
 # -- pending ----------------------------------------------------------------
+
+def test_the_sweep_stores_the_root_document_and_a_plain_push_keeps_it():
+    store = FakeStore(spanish(1))
+    apply_push(store, USER, PushRequest(present_rem_ids=[], root_rem_id="WbyvYEP9qhY1l1kE5"))
+    assert store.root_rem_id == "WbyvYEP9qhY1l1kE5"
+    apply_push(store, USER, PushRequest())
+    assert store.root_rem_id == "WbyvYEP9qhY1l1kE5"
+
+
+def test_a_root_document_id_that_is_not_an_id_is_refused():
+    with pytest.raises(ValidationError):
+        PushRequest(root_rem_id="../../evil?x=1")
+
 
 def test_pending_offers_unlinked_learning_words_with_custom_translations():
     store = FakeStore(spanish(1, 2, 3) + spanish(4, status="known"),

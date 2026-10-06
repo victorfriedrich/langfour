@@ -54,7 +54,7 @@ const PracticePage = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);
 
-  const provider = useReviewProvider();
+  const { provider, remnoteDocumentUrl } = useReviewProvider();
   const { status: remnote, error: remnoteError, disconnect } = useRemnoteConnection();
   const { user, language } = useContext(UserContext);
   const languageCode = language?.code;
@@ -162,6 +162,7 @@ const PracticePage = () => {
             {provider && (
               <TodayCard
                 provider={provider}
+                remnoteDocumentUrl={remnoteDocumentUrl}
                 due={provider === 'remnote' ? dueInRemnote : learningSet.length}
                 onStartReview={() => setShowSession(true)}
                 onContextReview={() => setShowContextReview(true)}
