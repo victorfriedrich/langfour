@@ -90,10 +90,17 @@ class PathScopedCORSMiddleware:
         await handler(scope, receive, send)
 
 
+# The Safari extension's origin is safari-web-extension://<UUID>, with a UUID
+# Safari generates per install, so it cannot be listed. As with the RemNote
+# routes below, the API authenticates with a bearer token, never cookies, so
+# letting such a page read responses grants it nothing without a token.
+SAFARI_EXTENSION_ORIGIN_REGEX = r"safari-web-extension://[0-9A-Fa-f-]+"
+
 app.add_middleware(
     PathScopedCORSMiddleware,
     open_prefixes=("/sync/remnote/", "/pair/remnote/"),
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=SAFARI_EXTENSION_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
