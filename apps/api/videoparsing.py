@@ -342,7 +342,8 @@ def process_transcription(txt_filename, video_id, title, creator, tags, views, l
         print(f"Keywords: {alternative_tags}")
         
         groups = group_text(filtered_text)
-        content = parse(groups, video_id, language)
+        # ingest.py loads a fresh cache per run, so a miss here is a real miss.
+        content = parse(groups, video_id, language, db_fallback=False)
 
 
         # Prepare the complete metadata dictionary
