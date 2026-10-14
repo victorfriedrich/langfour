@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2563eb">
   <title>Welcome Back - Login</title>
   <link rel="stylesheet" href="auth.css">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
   <div class="background-overlay"></div>
@@ -14,15 +15,17 @@
         <h1 id="heading">Welcome Back!</h1>
         <p id="subheading">Already signed up on Langfour? Log in here.</p>
       </div>
-      
+
       <form id="login-form" class="login-form">
         <div class="input-group">
-          <input 
-            type="email" 
-            id="email" 
-            required 
+          <input
+            type="email"
+            id="email"
+            required
             placeholder="Enter your email address"
             autocomplete="email"
+            autocapitalize="off"
+            spellcheck="false"
           >
           <button type="submit" id="login-btn">
             <span class="button-content">
@@ -39,10 +42,29 @@
 
       <p id="form-error" class="form-error hidden" role="alert"></p>
 
+      <form id="code-form" class="code-form hidden">
+        <p class="code-hint">Enter the code from the email, or open its link in this browser.</p>
+        <div class="input-group">
+          <input
+            type="text"
+            id="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9 ]*"
+            maxlength="12"
+            placeholder="123456"
+            aria-label="Sign-in code"
+          >
+          <button type="submit" id="code-btn">Sign in</button>
+        </div>
+        <p id="code-error" class="form-error hidden" role="alert"></p>
+      </form>
+
       <ul id="welcome-tips" class="welcome-tips hidden">
-        <li><strong>Videos:</strong> on YouTube, Netflix and Prime Video, hover a highlighted subtitle word to translate it.</li>
-        <li><strong>Articles:</strong> press <kbd>&#8984;</kbd><kbd>&#8679;</kbd><kbd>Y</kbd> (Ctrl+Shift+Y on Windows) on any page for the reader.</li>
-        <li>New here? Create your account at <a href="https://app.langfour.com" target="_blank" rel="noreferrer">app.langfour.com</a>.</li>
+        <li data-platform="desktop"><strong>Videos:</strong> on YouTube, Netflix and Prime Video, hover a highlighted subtitle word to translate it.</li>
+        <li data-platform="ios"><strong>Read any article:</strong> in Safari, tap the page menu next to the address, choose <em>Langfour</em>, then <em>Read this page</em>. Tap a word to translate it, or select a sentence.</li>
+        <li data-platform="desktop"><strong>Articles:</strong> press <kbd>&#8984;</kbd><kbd>&#8679;</kbd><kbd>Y</kbd> (Ctrl+Shift+Y on Windows) on any page for the reader, or choose <em>Read this page</em> in the extension menu.</li>
+        <li class="new-here">New here? Create your account at <a href="https://app.langfour.com" target="_blank" rel="noreferrer">app.langfour.com</a>.</li>
       </ul>
 
       <div id="mail-prompt" class="mail-prompt hidden">

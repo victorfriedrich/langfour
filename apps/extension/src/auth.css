@@ -4,6 +4,7 @@
     box-sizing: border-box;
 }
 
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     min-height: 100vh;
@@ -72,8 +73,10 @@ body {
     overflow: hidden;
 }
 
-input[type="email"] {
+input[type="email"],
+#code {
     flex-grow: 1;
+    min-width: 0;
     padding: 0.5rem 0.75rem;
     border: 1px solid #d1d5db;
     border-right: none;
@@ -84,13 +87,14 @@ input[type="email"] {
     background-color: rgba(255, 255, 255, 0.8);
 }
 
-input[type="email"]:focus {
+input[type="email"]:focus,
+#code:focus {
     outline: none;
     border-color: #3b82f6;
-    ring: 1px #3b82f6;
 }
 
-#login-btn {
+#login-btn,
+#code-btn {
     display: inline-flex;
     align-items: center;
     padding: 0.5rem 1rem;
@@ -103,13 +107,17 @@ input[type="email"]:focus {
     background-color: #2563eb;
     cursor: pointer;
     transition: background-color 0.2s;
+    white-space: nowrap;
+    flex: none;
 }
 
-#login-btn:hover:not(:disabled) {
+#login-btn:hover:not(:disabled),
+#code-btn:hover:not(:disabled) {
     background-color: #1d4ed8;
 }
 
-#login-btn:disabled {
+#login-btn:disabled,
+#code-btn:disabled {
     background-color: #93c5fd;
     cursor: not-allowed;
     filter: grayscale(70%);
@@ -196,4 +204,44 @@ button.loading .loading-content {
     border-radius: 4px;
     font-family: inherit;
     font-size: 0.8em;
+}
+
+.code-form {
+    margin-top: 1.5rem;
+}
+
+.code-hint {
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+    color: #4b5563;
+}
+
+#code {
+    font-size: 1.125rem;
+    letter-spacing: 0.15em;
+}
+
+/* Phones only; the desktop page is unchanged. */
+@media (max-width: 600px) {
+    body { overflow: auto; }
+    .container { margin-top: 0; padding: calc(env(safe-area-inset-top) + 3rem) 1.25rem 3rem; }
+    .header h1 { color: #ffffff; }
+    .header p { color: rgba(255, 255, 255, 0.85); }
+    /* The content is taller than the blue band on a phone, so the fade
+       starts further down and the tips sit on blue, in white. */
+    .background-overlay {
+        mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 55%, rgba(0, 0, 0, 0) 80%);
+        -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 55%, rgba(0, 0, 0, 0) 80%);
+    }
+    .welcome-tips, .code-hint, #open-mail { color: rgba(255, 255, 255, 0.92); }
+    .welcome-tips a { color: #fff; }
+    .welcome-tips kbd { border-color: rgba(255, 255, 255, 0.5); }
+    .form-error { color: #fee2e2; font-weight: 600; }
+    .header h1 { font-size: 1.9rem; }
+    .header p { font-size: 1rem; }
+    /* Below 16px Safari zooms the page when a field is focused. */
+    input[type="email"], #code { font-size: 16px; }
+    #code { font-size: 1.25rem; }
+    .input-group input, .input-group button { min-height: 48px; }
+    .welcome-tips { font-size: 0.95rem; }
 }

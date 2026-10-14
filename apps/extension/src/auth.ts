@@ -6,6 +6,13 @@
 import { supabase } from './supabaseclient';
 import { debugLog } from './config';
 import { getErrorMessage } from './errors';
+import { normalizeEmailCode, signInWithEmailCode } from './emailCode';
+
+// iPadOS reports itself as a Mac; touch support gives it away.
+function isIOS(): boolean {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent)
+    || (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1);
+}
 
 class LoginForm {
   private form: HTMLFormElement;
@@ -15,6 +22,7 @@ class LoginForm {
   private timerSpan: HTMLSpanElement;
   private retryTimer: number = 60;
   private timerInterval: number | null = null;
+  private sentTo: string | null = null;
 
   constructor() {
     this.form = document.getElementById('login-form') as HTMLFormElement;
@@ -35,12 +43,42 @@ class LoginForm {
     if (new URLSearchParams(window.location.search).has('welcome')) {
       document.getElementById('heading')!.textContent = 'Welcome to Langfour';
       document.getElementById('subheading')!.textContent = 'Sign in with your email to start saving words.';
-      document.getElementById('welcome-tips')?.classList.remove('hidden');
+      this.showTips();
     }
+
+    // Reinstalling, or opening this page again, while signed in should say
+    // so instead of asking for an email.
+    void chrome.storage.local.get('supabaseSession').then(({ supabaseSession }) => {
+      if (supabaseSession?.access_token) this.showSignedIn(supabaseSession.user?.email ?? null);
+    });
+  }
+
+  private showTips() {
+    const tips = document.getElementById('welcome-tips');
+    tips?.classList.remove('hidden');
+    // Safari on iOS has no keyboard shortcut and no subtitle features in
+    // this build, so show only the tips that apply.
+    const platform = isIOS() ? 'ios' : 'desktop';
+    tips?.querySelectorAll<HTMLElement>('[data-platform]').forEach((tip) => {
+      tip.classList.toggle('hidden', tip.dataset.platform !== platform);
+    });
+  }
+
+  private showSignedIn(email: string | null) {
+    document.getElementById('heading')!.textContent = 'You’re signed in';
+    document.getElementById('subheading')!.textContent = email ? `as ${email}` : 'You can close this tab.';
+    this.form.classList.add('hidden');
+    document.getElementById('code-form')?.classList.add('hidden');
+    this.mailPrompt.classList.add('hidden');
+    this.showTips();
+    document.querySelector('.welcome-tips .new-here')?.classList.add('hidden');
   }
 
   private initializeEventListeners() {
     this.form.addEventListener('submit', (e) => this.handleSubmit(e));
+    document
+      .getElementById('code-form')
+      ?.addEventListener('submit', (e) => this.handleCodeSubmit(e));
     document
       .getElementById('open-mail')
       ?.addEventListener('click', () => this.openMail());
@@ -68,12 +106,52 @@ class LoginForm {
 
       if (error) throw error;
 
-      this.mailPrompt.classList.remove('hidden');
+      // Mail apps are a tap away on a phone; the button is for desktop.
+      if (!isIOS()) this.mailPrompt.classList.remove('hidden');
       this.startRetryTimer();
+      // The code form stays up after the resend timer runs out: the code in
+      // the email is still valid until it expires.
+      this.sentTo = email;
+      document.getElementById('code-form')?.classList.remove('hidden');
+      document.getElementById('code')?.focus();
     } catch (error) {
       this.showError(getErrorMessage(error, 'Something went wrong. Please try again.'));
       this.setLoading(false);
     }
+  }
+
+  private async handleCodeSubmit(e: Event) {
+    e.preventDefault();
+    const input = document.getElementById('code') as HTMLInputElement;
+    const button = document.getElementById('code-btn') as HTMLButtonElement;
+    const code = normalizeEmailCode(input.value);
+
+    if (!this.sentTo || !code) {
+      this.showCodeError('Enter the 6-digit code from the email.');
+      return;
+    }
+
+    this.showCodeError(null);
+    button.disabled = true;
+    try {
+      await signInWithEmailCode(this.sentTo, code);
+      // Safari on iOS may ignore window.close() for a tab the user did not
+      // open from script, so leave a finished state behind either way.
+      this.stopRetryTimer();
+      this.showSignedIn(this.sentTo);
+      window.close();
+    } catch (error) {
+      this.showCodeError(getErrorMessage(error, 'That code did not work. Please try again.'));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  private showCodeError(message: string | null) {
+    const el = document.getElementById('code-error');
+    if (!el) return;
+    el.textContent = message ?? '';
+    el.classList.toggle('hidden', !message);
   }
 
   private showError(message: string | null) {
