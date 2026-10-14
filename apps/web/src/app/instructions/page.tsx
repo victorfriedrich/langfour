@@ -27,7 +27,7 @@ export default function InstructionsPage() {
               <h2 className="font-medium">Extract the downloaded file</h2>
             </div>
             <p className="text-sm text-gray-600 ml-9">
-              Locate the downloaded <code className="bg-gray-100 px-1.5 py-0.5 rounded">dist.zip</code> file and unzip it to a folder
+              Locate the downloaded <code className="bg-gray-100 px-1.5 py-0.5 rounded">langfour-extension.zip</code> file and unzip it to a folder
             </p>
           </div>
 
