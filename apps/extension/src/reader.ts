@@ -593,7 +593,9 @@ function createFlashcardButton(wordText: string, wordId: number): HTMLButtonElem
         // No answer at all: Safari can drop the reply of a save that went
         // through, so ask whether the word is now among the user's.
         void askBackground<WordProgressResponse>({ type: 'WORD_PROGRESS', wordId }).then((progress) => {
-          if (progress?.ok && progress.progress) return;
+          // word_progress also returns a row for unsaved words (status
+          // 'new'); only an active saved word confirms the write succeeded.
+          if (progress?.ok && (progress.progress?.status === 'learning' || progress.progress?.status === 'known')) return;
           console.error('Could not save word: no answer from the background');
           saveFailed(wordText, undo);
         });

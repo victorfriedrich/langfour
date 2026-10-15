@@ -51,8 +51,8 @@ as $$
             from public.wordforms wf
             join public.words w on w.id = wf.word_id
             where wf.form in (i.token, lower(i.token))
+              -- Audit status supersedes the legacy flagged column.
               and wf.status = 'valid'
-              and wf.flagged is not true
               and w.language = language_filter
               and w.status = 'valid'
         ) m
