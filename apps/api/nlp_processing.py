@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from database import (
     add_wordform,
+    cached_word_id,
     existing_wordforms,
     find_dictionary_root,
     find_root_by_wordform_id,
@@ -19,6 +20,7 @@ from database import (
     identify_word_id,
     invalid_root_ids,
     record_pending_words,
+    resolve_uncached,
     save_to_supabase,
 )
 from instructionmanager import (
@@ -321,14 +323,20 @@ def parse(groups: list[str], source: str, language: str):
                 missing_entries.append((len(result), lw, group))
             result.append(entry)
         else:
-            try:
-                wid = identify_word_id(lw, language)
-                local_cache[lw] = wid
-                result.append({"content": group, "id": wid})
-            except ValueError:
-                local_cache[lw] = None
+            wid = cached_word_id(lw, language)
+            local_cache[lw] = wid
+            if wid is None:
                 missing_entries.append((len(result), lw, group))
-                result.append({"content": group})
+            result.append({"content": group, "id": wid} if wid is not None else {"content": group})
+
+    # 1b) Roots another worker added since the cache loaded: one request for
+    # every miss, instead of one database lookup per token.
+    if missing_entries:
+        found = resolve_uncached(list(dict.fromkeys(e[1] for e in missing_entries)), language)
+        for idx, lw, _ in missing_entries:
+            if lw in found:
+                result[idx]["id"] = local_cache[lw] = found[lw]
+        missing_entries = [e for e in missing_entries if e[1] not in found]
 
     # 2) Attach each unknown token to an existing root with one Jev request
     # (word_matching.py). New roots are no longer created here: tokens Jev

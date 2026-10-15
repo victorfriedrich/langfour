@@ -19,7 +19,8 @@ def nlp(monkeypatch):
 
 
 def test_parse_propagates_jev_failure_without_adding_words(nlp, monkeypatch):
-    monkeypatch.setattr(nlp, "identify_word_id", Mock(side_effect=ValueError("unknown")))
+    monkeypatch.setattr(nlp, "cached_word_id", Mock(return_value=None))
+    monkeypatch.setattr(nlp, "resolve_uncached", Mock(return_value={}))
     monkeypatch.setattr(nlp, "CandidateIndex", Mock(return_value=Mock(candidates=Mock(return_value=[]))))
     monkeypatch.setattr(nlp, "match", Mock(side_effect=TimeoutError("unavailable")))
     add_form = Mock()
@@ -33,7 +34,8 @@ def test_parse_propagates_jev_failure_without_adding_words(nlp, monkeypatch):
 
 def test_parse_attaches_confident_matches_and_records_the_rest(nlp, monkeypatch):
     from word_matching import Match
-    monkeypatch.setattr(nlp, "identify_word_id", Mock(side_effect=ValueError("unknown")))
+    monkeypatch.setattr(nlp, "cached_word_id", Mock(return_value=None))
+    monkeypatch.setattr(nlp, "resolve_uncached", Mock(return_value={}))
     monkeypatch.setattr(nlp, "CandidateIndex", Mock(return_value=Mock(candidates=Mock(return_value=[]))))
     outcomes = {
         "editaron": Match("editaron", ["editar"], 7, "attach", 0.9, 0.9, {}),
@@ -61,7 +63,8 @@ def test_parse_attaches_confident_matches_and_records_the_rest(nlp, monkeypatch)
 def test_parse_keeps_the_verdict_of_a_form_row_the_cache_left_out(nlp, monkeypatch,
                                                                   existing, expected_id):
     from word_matching import Match
-    monkeypatch.setattr(nlp, "identify_word_id", Mock(side_effect=ValueError("unknown")))
+    monkeypatch.setattr(nlp, "cached_word_id", Mock(return_value=None))
+    monkeypatch.setattr(nlp, "resolve_uncached", Mock(return_value={}))
     monkeypatch.setattr(nlp, "CandidateIndex", Mock(return_value=Mock(candidates=Mock(return_value=[]))))
     monkeypatch.setattr(nlp, "invalid_root_ids", Mock(return_value=set()))
     monkeypatch.setattr(nlp, "match", Mock(return_value=Match("goliat", ["el goliat"], 7,
@@ -73,6 +76,20 @@ def test_parse_keeps_the_verdict_of_a_form_row_the_cache_left_out(nlp, monkeypat
 
     assert nlp.parse(["goliat"], "vid", "es")[0].get("id") == expected_id
     add_form.assert_not_called()
+
+
+def test_parse_looks_up_all_cache_misses_in_one_request(nlp, monkeypatch):
+    monkeypatch.setattr(nlp, "cached_word_id", Mock(return_value=None))
+    resolve = Mock(return_value={"recién": 5})
+    monkeypatch.setattr(nlp, "resolve_uncached", resolve)
+    jev = Mock()
+    monkeypatch.setattr(nlp, "match", jev)
+
+    result = nlp.parse(["recién", " ", "recién"], "vid", "es")
+
+    resolve.assert_called_once_with(["recién"], "es")
+    assert [r.get("id") for r in result] == [5, None, 5]
+    jev.assert_not_called()
 
 
 def test_high_level_tag_json_fallback_includes_category_contract(nlp, monkeypatch):
