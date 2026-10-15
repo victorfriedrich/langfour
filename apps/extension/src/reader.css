@@ -152,6 +152,7 @@ button { font: inherit; color: inherit; }
   color: var(--accent);
   cursor: pointer;
 }
+.icon-btn[hidden] { display: none; }
 .icon-btn[aria-expanded="true"] { background: var(--accent-soft); }
 
 /* The highlight toggle shows the highlight itself: a sample word in the new
@@ -218,21 +219,35 @@ button { font: inherit; color: inherit; }
   color: var(--text-2);
 }
 .article-meta:empty { display: none; }
-.signin-note {
-  display: block;
-  width: 100%;
+/* Signed out: one filled button under the meta line, sized to its label. */
+.signin-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 1em 0 0;
+  padding: 9px 16px;
   border: none;
-  text-align: left;
-  cursor: pointer;
-  margin: 1.2em 0 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
   font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.45;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
+.signin-cta::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+.signin-cta:active { opacity: 0.8; }
+.signin-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+body.theme-dark .signin-cta { color: #1c1c1e; }
 
 .article-content { line-height: var(--reader-line-height); overflow-wrap: break-word; }
 .article-content p { margin: 0 0 1.1em; }

@@ -18,6 +18,15 @@ export function normalizeEmailCode(raw: string): string | null {
 }
 
 /**
+ * The code in pasted text: the code alone ("123 456"), or a whole copied
+ * email or subject line ("482913 is your Langfour code"), where it is the
+ * first run of 6 to 10 digits standing on its own.
+ */
+export function findEmailCode(text: string): string | null {
+  return normalizeEmailCode(text) ?? text.match(/(?<!\d)\d{6,10}(?!\d)/)?.[0] ?? null;
+}
+
+/**
  * Exchanges the emailed code for a session and hands it to the background,
  * the same way auth_handler.ts does after a magic link. Throws with the
  * Supabase message (e.g. "Token has expired or is invalid") on failure.

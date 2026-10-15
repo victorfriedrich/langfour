@@ -167,12 +167,12 @@ function renderArticle(container: HTMLElement, article: StoredArticle): void {
     // how to unlock the rest.
     wrapWords(contentDiv);
     document.getElementById('toggle-highlight')?.setAttribute('hidden', '');
-    const note = document.createElement('button');
-    note.type = 'button';
-    note.className = 'signin-note';
-    note.textContent = 'Sign in to translate words and highlight the ones you don’t know yet.';
-    note.addEventListener('click', openSignIn);
-    header.appendChild(note);
+    const signIn = document.createElement('button');
+    signIn.type = 'button';
+    signIn.className = 'signin-cta';
+    signIn.textContent = 'Sign in to translate';
+    signIn.addEventListener('click', openSignIn);
+    header.appendChild(signIn);
     return;
   }
 
