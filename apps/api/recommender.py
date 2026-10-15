@@ -425,6 +425,26 @@ class Recommender:
         except Exception:
             logger.error("Error fetching known words from Supabase", exc_info=True)
             return []
+
+    async def get_saved_words(self, user_id: str) -> list[int]:
+        """Every word in the user's list, whatever its status. Unlike known
+        words these still count as new in a video, but a list of words to add
+        must leave them out: adding one again rewrites its learning state."""
+        try:
+            saved_word_ids = set()
+            page = 0
+            while True:
+                response = (self.supabase.table("userwords").select("word_id")
+                            .eq("user_id", user_id).order("word_id")
+                            .range(page*1000, (page+1)*1000-1).execute())
+                if not response.data:
+                    break
+                saved_word_ids.update(word['word_id'] for word in response.data)
+                page += 1
+            return list(saved_word_ids)
+        except Exception:
+            logger.error("Error fetching saved words from Supabase", exc_info=True)
+            return []
         
     async def recommend_videos(
         self, 

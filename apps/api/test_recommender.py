@@ -172,3 +172,43 @@ def test_matrix_manifest_persists_titles_and_loads_without_transcripts(tmp_path)
 
     assert loaded._try_load_cached_language("es") is True
     assert loaded.titles["es"] == ["A trip"]
+
+
+
+def test_saved_words_page_through_the_users_list():
+    rows = [{"user_id": "me", "word_id": i} for i in range(1500)]
+    rows.append({"user_id": "other", "word_id": 9999})
+
+    class Query:
+        def __init__(self):
+            self.filters = {}
+
+        def select(self, _cols):
+            return self
+
+        def eq(self, column, value):
+            self.filters[column] = value
+            return self
+
+        def order(self, _column):
+            return self
+
+        def range(self, start, end):
+            self.window = (start, end)
+            return self
+
+        def execute(self):
+            matching = [r for r in rows if all(r[k] == v for k, v in self.filters.items())]
+            start, end = self.window
+            return type("Response", (), {"data": matching[start:end + 1]})
+
+    class Client:
+        def table(self, name):
+            assert name == "userwords"
+            return Query()
+
+    recommender = make_recommender([[1]])
+    recommender.supabase = Client()
+
+    saved = asyncio.run(recommender.get_saved_words("me"))
+    assert sorted(saved) == list(range(1500))
