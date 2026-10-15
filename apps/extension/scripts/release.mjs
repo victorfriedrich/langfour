@@ -11,6 +11,7 @@
 import { existsSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import zip from 'bestzip';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const envFile = `${root}.env`;
@@ -47,7 +48,9 @@ mkdirSync(`${root}build`, { recursive: true });
 const zipPath = `${root}build/langfour-extension-${version}.zip`;
 rmSync(zipPath, { force: true });
 // Zip the contents of dist/ so manifest.json sits at the root of the archive.
-run('npx', ['bestzip', zipPath, '*'], `${root}dist`);
+// Through bestzip's API with an explicit cwd: run via npx, it zipped the
+// package directory (sources, node_modules) instead.
+await zip({ source: '*', destination: zipPath, cwd: `${root}dist` });
 console.log(`Built ${zipPath}`);
 
 if (dryRun) process.exit(0);
