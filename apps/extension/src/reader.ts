@@ -215,7 +215,14 @@ const WORD_STATUS_CLASS: Partial<Record<WordStatus, string>> = {
 async function classifyArticleWords(root: HTMLElement, language: Language): Promise<number | null> {
   const spans = Array.from(root.querySelectorAll<HTMLElement>('span.word'));
   const tokens = Array.from(new Set(spans.map((span) => span.textContent || '')));
-  const response = await askBackground<ClassifyWordsResponse>({ type: 'CLASSIFY_WORDS', language, tokens });
+  // Safari can drop the background's reply, so a request without an answer
+  // is sent again. That is cheap now: words are matched in the background
+  // without a request, and a retry during the first dictionary download
+  // (which can take longer than the default 10 s) joins that download.
+  const response = await askBackground<ClassifyWordsResponse>(
+    { type: 'CLASSIFY_WORDS', language, tokens },
+    { timeoutMs: 20_000 },
+  );
   if (!response?.ok) {
     console.warn('Could not classify words:', response ? response.error : 'no response');
     return null;

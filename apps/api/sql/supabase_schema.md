@@ -119,9 +119,11 @@ name in each app; `none` means nothing in the repo calls it today.
 | `is_admin()` | boolean | RLS policies. `SECURITY DEFINER`, reads `user_roles` |
 | `load_unseen_words()` | table(word_id, root, translation) | web |
 | `known_words_summary(language_filter)` | table(declared, from_reviews) | web. Reads `user_known_words` |
+| `lexicon_page(language_filter, after_word_id, page_words)` | table(last_word_id, entries text) | extension. The valid dictionary as text, paged by word id (lexicon.sql) |
 | `mark_video_as_seen(input_video_id)` | void | web |
 | `move_words_to_userwords(_word_ids int[])` | void | extension |
 | `move_words_to_userwords(_word_ids int[], _status, _source)` | void | none |
+| `my_word_statuses()` | jsonb [[word_id, status]] | extension. Reads `userwords`, `user_known_words` (lexicon.sql) |
 | `recall_efficiency_last_7_days()` | numeric | web |
 | `set_user_default_language(_language)` | void | web, extension |
 | `srs_acquire_sync_lease(p_user_id uuid, p_holder text, p_seconds int)` | boolean | api. Execute granted to `service_role` only; takes a user id for that reason |

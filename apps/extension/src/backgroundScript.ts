@@ -20,6 +20,8 @@ import { BACKEND_URL, debugLog } from './config';
 import { Language, toLanguage } from './languages';
 import { reviewLink } from './reviewLink';
 import { readerPageUrl, storeArticle, StoredArticle } from './readerArticles';
+import { classifyTokens } from './lexicon';
+import { clearStatuses, getLexicon, getStatuses, markLearning } from './lexiconCache';
 
 let sessionId: string | undefined;
 
@@ -188,6 +190,8 @@ async function addWordToUserwords(wordId: string | number): Promise<{ success: b
       return { success: false, error: error.message };
     }
 
+    // The next article marks it as learning without waiting for a refresh.
+    await markLearning(Number(wordId)).catch((err: unknown) => console.warn('Could not update word statuses:', err));
     return { success: true };
   } catch (err: unknown) {
     console.error('Error adding words to userwords:', err);
@@ -198,17 +202,37 @@ async function addWordToUserwords(wordId: string | number): Promise<{ success: b
   }
 }
 
-// Tokens per classify_words call; an article has a few hundred to a couple
-// of thousand distinct ones.
+// Tokens per classify_words call; an article has a few hundred to a few
+// thousand distinct ones.
 const CLASSIFY_BATCH_SIZE = 1000;
 
 /**
  * Which tokens of a text are vocabulary, and the user's status for each.
  * The dictionary decides what counts as a word (names and acronyms are
  * marked invalid there), and user_known_words decides what "known" means,
- * so the reader no longer guesses either from spelling.
+ * so the reader no longer guesses either from spelling. Answered from the
+ * background's copies of both (lexiconCache.ts), with classify_words'
+ * rules (lexicon.ts).
  */
 async function classifyWords(language: string, tokens: string[]): Promise<ClassifyWordsResponse> {
+  // The user id comes from the stored session rather than the client, which
+  // on a cold worker would first have to restore it over the network.
+  const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+  const userId: unknown = supabaseSession?.user?.id;
+  if (typeof userId !== 'string') return { ok: false, error: 'No Supabase session available' };
+  try {
+    const [lexicon, statuses] = await Promise.all([getLexicon(language), getStatuses(userId)]);
+    return { ok: true, words: classifyTokens(tokens, lexicon, statuses) };
+  } catch (error: unknown) {
+    // No dictionary yet and it could not be downloaded: ask the database
+    // about this text alone, as before.
+    console.warn('Classifying locally failed, asking classify_words:', error);
+    return classifyWordsRemotely(language, tokens);
+  }
+}
+
+/** classify_words over the text's tokens, in batches. */
+async function classifyWordsRemotely(language: string, tokens: string[]): Promise<ClassifyWordsResponse> {
   const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
   if (!(await ensureSupabaseSession(supabaseSession))) {
     return { ok: false, error: 'No Supabase session available' };
@@ -294,6 +318,40 @@ async function signOut(): Promise<{ ok: boolean }> {
   await chrome.storage.local.remove('supabaseSession');
   return { ok: true };
 }
+
+/**
+ * Downloads what classifying an article needs before the first article
+ * asks: the dictionary takes ~10 s from a cold database, once per language.
+ */
+async function prepareReader(language?: string): Promise<void> {
+  const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+  const userId: unknown = supabaseSession?.user?.id;
+  if (typeof userId !== 'string') return;
+  const { preferredLanguage } = await chrome.storage.sync.get('preferredLanguage');
+  const target = toLanguage(language ?? preferredLanguage);
+  if (!target) return;
+  await Promise.all([getLexicon(target), getStatuses(userId)]);
+}
+
+const prepareInBackground = (language?: string) => {
+  prepareReader(language).catch((error: unknown) => console.warn('Could not prepare the reader:', error));
+};
+
+// Whoever signs out (popup, reader, the web app's logout via the content
+// script), the cached word statuses belong to that user and go with them.
+// Signing in or switching language prepares the reader for the next article.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.supabaseSession) {
+    if (!changes.supabaseSession.newValue) {
+      clearStatuses().catch((error: unknown) => console.warn('Could not clear word statuses:', error));
+    } else if (!changes.supabaseSession.oldValue) {
+      prepareInBackground();
+    }
+  }
+  if (area === 'sync' && changes.preferredLanguage?.newValue) {
+    prepareInBackground(changes.preferredLanguage.newValue);
+  }
+});
 
 chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendResponse) => {
   debugLog('Background script received message:', message.type);
@@ -582,6 +640,8 @@ function showExtracted(response: ArticleExtractionResponse, tab: chrome.tabs.Tab
 // (email, then the code), and a tab opening on its own after install was
 // one screen too many.
 chrome.runtime.onInstalled.addListener((details) => {
+  // Users already signed in when this version arrives have no dictionary yet.
+  if (details.reason === 'update') prepareInBackground();
   if (details.reason === 'install' && process.env.EXTENSION_TARGET !== 'safari') {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/auth.html?welcome=1') });
   }
