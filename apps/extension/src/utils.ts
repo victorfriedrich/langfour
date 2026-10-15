@@ -1,4 +1,4 @@
-import { popupHeight, popupVerticalOffset, popupWidth } from './markup';
+import { popupHeight, popupWidth } from './markup';
 import debounce from 'lodash-es/debounce';
 import { sanitizeHTML } from './sanitizeHTML';
 
@@ -65,21 +65,31 @@ export function positionElement(
   anchorElement: HTMLElement,
   fitElement: HTMLElement,
 ) {
-  const gap = 5;
-  const anchorElementRect = anchorElement.getBoundingClientRect();
-  const fitElementRect = fitElement.getBoundingClientRect();
-  let left = anchorElementRect.x - popupWidth / 2 + anchorElementRect.width / 2;
-  const top =
-    anchorElementRect.y > popupHeight
-      ? anchorElementRect.y - popupHeight - popupVerticalOffset
-      : anchorElementRect.y + anchorElementRect.height + popupVerticalOffset;
+  const gap = 8;
+  const anchorRect = anchorElement.getBoundingClientRect();
+  const fitRect = fitElement.getBoundingClientRect();
+  // The popup's real size: it changes once the translation arrives, and
+  // index.ts repositions it every 100 ms. The constants only cover the first
+  // frame, before it has rendered.
+  const ownRect = element.getBoundingClientRect();
+  const width = ownRect.width || popupWidth;
+  const height = ownRect.height || popupHeight;
+  // Sit above the whole caption box, not just the word, so no caption line
+  // is covered; below it only when the player has no room above.
+  const captionRect = (
+    anchorElement.closest('.caption-window, .player-timedtext-text-container') ?? anchorElement
+  ).getBoundingClientRect();
 
-  if (left < fitElementRect.x) {
-    left = fitElementRect.x + gap;
+  let top = captionRect.top - height - gap;
+  if (top < fitRect.top + gap) {
+    const below = captionRect.bottom + gap;
+    top = below + height <= fitRect.bottom ? below : Math.max(fitRect.top + gap, anchorRect.top - height - gap);
   }
-  if (left + popupWidth > fitElementRect.x + fitElementRect.width) {
-    left = fitElementRect.x + fitElementRect.width - popupWidth - gap;
-  }
+  const centre = anchorRect.left + anchorRect.width / 2;
+  const left = Math.min(
+    Math.max(centre - width / 2, fitRect.left + gap),
+    fitRect.right - width - gap,
+  );
 
   element.style.left = `${left}px`;
   element.style.top = `${top}px`;
@@ -118,6 +128,60 @@ export default function addMouseEnterLeaveEventListeners({
   onLeave: (el: HTMLElement) => void;
 }) {
   let selectedElement: HTMLElement | null = null;
+
+  // Touch screens (Safari on iOS) have no hover: a tap on a word opens it, a
+  // tap on the same word or anywhere else closes it. iOS also fakes mouse
+  // events after a tap, so the hover path below stays off there.
+  if (window.matchMedia('(hover: none)').matches) {
+    const isOpen = () => document.querySelector(`.${ignoreElClassName}`) !== null;
+    const wordAt = (x: number, y: number) =>
+      (document.elementsFromPoint(x, y).find((e) => e.matches(selector)) as HTMLElement | undefined) ??
+      null;
+    // The words sit inside the video player, whose own touch handlers toggle
+    // its controls and cancel the touch, so iOS often never sends a click.
+    // Taps are therefore read from the touches themselves, at the window in
+    // the capture phase, which runs before any of the page's handlers.
+    let start: { x: number; y: number; time: number } | null = null;
+    window.addEventListener(
+      'touchstart',
+      (event) => {
+        const touch = event.touches.length === 1 ? event.touches[0] : null;
+        start = touch ? { x: touch.clientX, y: touch.clientY, time: event.timeStamp } : null;
+        if (touch && wordAt(touch.clientX, touch.clientY)) event.stopPropagation();
+      },
+      { capture: true },
+    );
+    window.addEventListener(
+      'touchend',
+      (event) => {
+        const touch = event.changedTouches[0];
+        const began = start;
+        start = null;
+        // Taps inside the popup (its + button) are the popup's own.
+        if (!touch || !began || (event.target as Element | null)?.closest?.(`.${ignoreElClassName}`)) return;
+        const isTap =
+          Math.hypot(touch.clientX - began.x, touch.clientY - began.y) < 10 &&
+          event.timeStamp - began.time < 500;
+        if (!isTap) return;
+
+        const word = wordAt(touch.clientX, touch.clientY);
+        if (word) {
+          // No click, no player controls: the tap belongs to the word.
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        const reopen = word !== null && !(word === selectedElement && isOpen());
+        if (selectedElement && isOpen()) onLeave(selectedElement);
+        selectedElement = null;
+        if (reopen && word) {
+          onEnter(word);
+          selectedElement = word;
+        }
+      },
+      { capture: true, passive: false },
+    );
+    return;
+  }
 
   document.addEventListener(
     'mousemove',

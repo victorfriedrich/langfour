@@ -22,7 +22,17 @@ const PREFIX = 'readerArticle:';
 /** Enough for Back/Forward across recent articles without growing storage forever. */
 const KEEP = 15;
 
-export async function storeArticle(article: Omit<StoredArticle, 'savedAt'>): Promise<string> {
+// Stores run one at a time: two interleaved read-modify-writes of the index
+// would each drop the other's id, leaving its article in storage for good.
+let storing: Promise<unknown> = Promise.resolve();
+
+export function storeArticle(article: Omit<StoredArticle, 'savedAt'>): Promise<string> {
+  const stored = storing.then(() => storeArticleNow(article));
+  storing = stored.catch(() => undefined);
+  return stored;
+}
+
+async function storeArticleNow(article: Omit<StoredArticle, 'savedAt'>): Promise<string> {
   const id = crypto.randomUUID();
   const { [INDEX_KEY]: stored } = await chrome.storage.local.get(INDEX_KEY);
   const ids: string[] = Array.isArray(stored) ? stored : [];
@@ -37,12 +47,16 @@ export async function storeArticle(article: Omit<StoredArticle, 'savedAt'>): Pro
   return id;
 }
 
-/** Falls back to the legacy single key for reader tabs opened by older builds. */
+/**
+ * Falls back to the legacy single key only for reader tabs opened by older
+ * builds, which have no id. An id whose article was evicted gets null, not
+ * whatever article an older build left behind.
+ */
 export async function loadArticle(id: string | null): Promise<StoredArticle | null> {
   if (id) {
     const key = PREFIX + id;
     const { [key]: article } = await chrome.storage.local.get(key);
-    if (article) return article as StoredArticle;
+    return (article as StoredArticle | undefined) ?? null;
   }
   const { currentArticle } = await chrome.storage.local.get('currentArticle');
   return currentArticle ? { ...currentArticle, savedAt: 0 } : null;

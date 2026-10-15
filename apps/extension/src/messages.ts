@@ -94,6 +94,7 @@ export type BackgroundMessage =
   | { type: 'GET_ACCOUNT' }
   | { type: 'SET_LANGUAGE'; language: Language }
   | { type: 'SIGN_OUT' }
+  | { type: 'OPEN_SIGN_IN' }
   // string | number is deliberate: translationPopup.ts forwards a `data-id`
   // attribute while api-service.ts sends a parsed integer, and both reach the
   // same RPC. Narrowing this to `string` would be a lie about the wire format.
@@ -132,13 +133,21 @@ export function askBackground<TResponse>(
   const once = () =>
     new Promise<TResponse | undefined>((resolve) => {
       const timer = setTimeout(() => resolve(undefined), timeoutMs);
-      chrome.runtime.sendMessage(message, (response: TResponse | undefined) => {
+      try {
+        chrome.runtime.sendMessage(message, (response: TResponse | undefined) => {
+          clearTimeout(timer);
+          if (chrome.runtime.lastError) {
+            console.warn(`${message.type}: ${chrome.runtime.lastError.message}`);
+          }
+          resolve(response);
+        });
+      } catch (error) {
+        // Thrown, not reported, once the extension context is gone (e.g.
+        // after an update while this page stayed open).
         clearTimeout(timer);
-        if (chrome.runtime.lastError) {
-          console.warn(`${message.type}: ${chrome.runtime.lastError.message}`);
-        }
-        resolve(response);
-      });
+        console.warn(`${message.type}:`, error);
+        resolve(undefined);
+      }
     });
 
   return (async () => {

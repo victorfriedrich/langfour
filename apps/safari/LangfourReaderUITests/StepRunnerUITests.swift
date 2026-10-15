@@ -16,6 +16,8 @@ import XCTest
 ///   tapcontains:<text>                  tap the first element whose label contains text
 ///   tapif:<label>                       like tap, but skip if absent
 ///   tapxy:<x>,<y>                       tap at normalized coordinates of the front app
+///   rotate:landscape | rotate:portrait  turn the simulated device
+///   taptext:<y1>,<y2>[,<n>]             tap the first (or nth) text of 3+ letters centred between y1 and y2 points
 ///   drag:<x1>,<y1>,<x2>,<y2>            drag between normalized coordinates
 ///   toggle:<label>                      switch on the switch with that label, if off
 ///   type:<text>                         type into the focused element
@@ -84,6 +86,30 @@ final class StepRunnerUITests: XCTestCase {
                 return XCTFail("No element containing \(arg)")
             }
             element.tap()
+        case "taptext":
+            // Captions change every few seconds, so a word can't be named in
+            // advance: tap the first text of 3+ letters whose middle lies
+            // between the two y values (in points).
+            let band = arg.split(separator: ",").compactMap { Double($0) }
+            let texts = front.staticTexts.allElementsBoundByIndex
+            // Stop at the match: reading every element fails when one of
+            // them disappears meanwhile.
+            var skip = band.count > 2 ? Int(band[2]) : 0
+            let match = texts.first(where: {
+                guard $0.label.count >= 3, $0.frame.midY >= band[0], $0.frame.midY <= band[1] else { return false }
+                if skip == 0 { return true }
+                skip -= 1
+                return false
+            })
+            guard let text = match else {
+                save(dump: "failed-step-\(index)")
+                return XCTFail("No text between y \(band[0]) and \(band[1])")
+            }
+            NSLog("TAPTEXT \(text.label)")
+            try text.label.write(to: outDir.appendingPathComponent("taptext-\(index).txt"), atomically: true, encoding: .utf8)
+            text.tap()
+        case "rotate":
+            XCUIDevice.shared.orientation = arg == "landscape" ? .landscapeLeft : .portrait
         case "tapxy":
             let xy = arg.split(separator: ",").compactMap { Double($0) }
             front.coordinate(withNormalizedOffset: CGVector(dx: xy[0], dy: xy[1])).tap()

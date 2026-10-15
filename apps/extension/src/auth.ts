@@ -14,6 +14,8 @@ function isIOS(): boolean {
     || (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1);
 }
 
+const SENT_TO_KEY = 'signInCodeSentTo';
+
 class LoginForm {
   private form: HTMLFormElement;
   private emailInput: HTMLInputElement;
@@ -33,7 +35,7 @@ class LoginForm {
 
     window.addEventListener('message', (event) => {
       if (event.origin === window.location.origin && event.data === 'auth_success') {
-        window.close();
+        closeThisTab();
       }
     });
 
@@ -51,6 +53,15 @@ class LoginForm {
     void chrome.storage.local.get('supabaseSession').then(({ supabaseSession }) => {
       if (supabaseSession?.access_token) this.showSignedIn(supabaseSession.user?.email ?? null);
     });
+
+    // Reading the code means switching to Mail, and iOS may reload this tab
+    // meanwhile. The code is still valid, so keep asking for it.
+    const sentTo = this.recallSentTo();
+    if (sentTo) {
+      this.sentTo = sentTo;
+      this.emailInput.value = sentTo;
+      this.showCodeForm();
+    }
   }
 
   private showTips() {
@@ -62,6 +73,27 @@ class LoginForm {
     tips?.querySelectorAll<HTMLElement>('[data-platform]').forEach((tip) => {
       tip.classList.toggle('hidden', tip.dataset.platform !== platform);
     });
+  }
+
+  private showCodeForm() {
+    document.getElementById('code-form')?.classList.remove('hidden');
+    document.getElementById('code')?.focus();
+  }
+
+  private rememberSentTo(email: string) {
+    try {
+      sessionStorage.setItem(SENT_TO_KEY, email);
+    } catch {
+      // Storage blocked: the code form just won't survive a reload.
+    }
+  }
+
+  private recallSentTo(): string | null {
+    try {
+      return sessionStorage.getItem(SENT_TO_KEY);
+    } catch {
+      return null;
+    }
   }
 
   private showSignedIn(email: string | null) {
@@ -112,8 +144,8 @@ class LoginForm {
       // The code form stays up after the resend timer runs out: the code in
       // the email is still valid until it expires.
       this.sentTo = email;
-      document.getElementById('code-form')?.classList.remove('hidden');
-      document.getElementById('code')?.focus();
+      this.rememberSentTo(email);
+      this.showCodeForm();
     } catch (error) {
       this.showError(getErrorMessage(error, 'Something went wrong. Please try again.'));
       this.setLoading(false);
@@ -135,11 +167,16 @@ class LoginForm {
     button.disabled = true;
     try {
       await signInWithEmailCode(this.sentTo, code);
+      try {
+        sessionStorage.removeItem(SENT_TO_KEY);
+      } catch {
+        // Nothing to clean up.
+      }
       // Safari on iOS may ignore window.close() for a tab the user did not
       // open from script, so leave a finished state behind either way.
       this.stopRetryTimer();
       this.showSignedIn(this.sentTo);
-      window.close();
+      closeThisTab();
     } catch (error) {
       this.showCodeError(getErrorMessage(error, 'That code did not work. Please try again.'));
     } finally {
@@ -229,3 +266,17 @@ export const checkAuthState = async () => {
     // Handle signed-out state
   }
 };
+
+// Safari on iOS ignores window.close() for this tab, so it stayed open and
+// became the page Safari showed next time. An extension page may close its
+// own tab through the tabs API; window.close() covers the popup-window case.
+function closeThisTab() {
+  if (chrome.tabs?.getCurrent) {
+    chrome.tabs.getCurrent((tab) => {
+      if (tab?.id !== undefined) void chrome.tabs.remove(tab.id);
+      else window.close();
+    });
+  } else {
+    window.close();
+  }
+}

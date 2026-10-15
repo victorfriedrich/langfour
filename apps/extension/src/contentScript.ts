@@ -76,6 +76,16 @@ document.addEventListener('view-popup', () => {
 document.addEventListener('session', () => {
   sendToBackground({ type: 'session' });
 });
+// The translation popup's "Sign in" button, shown when there is no session.
+// The host page can dispatch this event too, so at most one tab per few
+// seconds rather than one per event.
+const SIGN_IN_COOLDOWN_MS = 5000;
+let lastSignInOpened = 0;
+document.addEventListener('open-sign-in', () => {
+  if (Date.now() - lastSignInOpened < SIGN_IN_COOLDOWN_MS) return;
+  lastSignInOpened = Date.now();
+  sendToBackground({ type: 'OPEN_SIGN_IN' });
+});
 
 // The paths the MAIN world is allowed to reach: exactly what index.ts and
 // youtubeBookmark.ts call. The expensive endpoints (/parse, /api/translate)

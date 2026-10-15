@@ -1,20 +1,26 @@
-// Builds the Safari (iOS) variant into dist-safari/: the article reader only.
+// Builds the Safari (iOS) variant into dist-safari/: the reader, plus tappable
+// YouTube captions.
 //
-// The Xcode project in apps/safari references dist-safari/ rather than copying
-// it, so rebuilding here and re-running the app in Xcode picks up changes.
+// The Xcode project in apps/safari copies dist-safari/ into the extension on
+// every build ("Copy Web Extension" phase), so rebuilding here and re-running
+// the app in Xcode picks up changes.
 //
 // Parcel's webextension transformer only accepts a file named manifest.json,
 // so instead of a second source manifest this builds the normal one and then
 // trims the *built* manifest, whose paths Parcel has already resolved:
-//   - drops the subtitle content script and its web-accessible files. The
-//     reader injects the content script itself (activeTab + scripting) on
-//     the page the user asks to read, so no site needs it up front, and iOS
-//     does not ask for access to Netflix, YouTube or Prime Video;
+//   - narrows the subtitle content script and its web-accessible files to
+//     YouTube, adding m.youtube.com (what Safari on iPhone loads). Netflix and
+//     Prime Video stay desktop-only. m.youtube.com is added here rather than
+//     in manifest.json because a new host there would make Chrome disable the
+//     extension for existing users until they approve it. The subtitle
+//     script and CSS (src/index.js, src/index.css) are added to that content
+//     script, because Safari's page CSP blocks injecting them as tags;
 //   - renames it "Langfour Reader" and drops host_permissions (see below);
-//   - drops the popup: a tap on Langfour opens the reader directly
-//     (chrome.action.onClicked in backgroundScript.ts);
+//   - drops the web app bridge's localhost match, which is for development
+//     and would hand the account email to any local server on that port;
 //   - drops `key` (Chrome's fixed extension ID; Safari ignores it) and
-//     `commands` (iOS Safari has no keyboard shortcuts);
+//     `commands` (iOS Safari has no keyboard shortcuts; the popup's reader
+//     button replaces it);
 //   - drops the chrome-extension://*/* web_accessible_resources entry, which
 //     only exists so Parcel builds auth.html and reader.html (see
 //     langfive-extension-build-gotchas) and is not a valid Safari match
@@ -26,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const outDir = 'dist-safari';
 const SUBTITLE_HOSTS = ['www.netflix.com', 'www.youtube.com', 'www.primevideo.com'];
+const YOUTUBE_MATCHES = ['https://www.youtube.com/*', 'https://m.youtube.com/*'];
 
 // Parcel never cleans its output directory, so stale pages would survive. Its
 // cache has to go too: with the output deleted but the cache kept, Parcel
@@ -64,11 +71,24 @@ const isSubtitleHost = (pattern) => SUBTITLE_HOSTS.some((host) => pattern.includ
 
 delete manifest.key;
 delete manifest.commands;
-const notSubtitleSite = (entry) => !entry.matches.some(isSubtitleHost);
-manifest.content_scripts = (manifest.content_scripts ?? []).filter(notSubtitleSite);
+const youtubeOnly = (entry) =>
+  entry.matches.some(isSubtitleHost) ? { ...entry, matches: YOUTUBE_MATCHES } : entry;
+// The subtitle script and its CSS run as content scripts here instead of being
+// injected as tags, which YouTube's CSP blocks in Safari (see contentScript.ts).
+const withSubtitleScripts = (entry) =>
+  entry.matches.some(isSubtitleHost)
+    ? { ...youtubeOnly(entry), js: [...entry.js, 'src/index.js'], css: [...(entry.css ?? []), 'src/index.css'] }
+    : entry;
+const withoutLocalhost = (entry) => ({
+  ...entry,
+  matches: entry.matches.filter((pattern) => !pattern.startsWith('http://localhost')),
+});
+manifest.content_scripts = (manifest.content_scripts ?? []).map(withSubtitleScripts).map(withoutLocalhost);
 manifest.web_accessible_resources = (manifest.web_accessible_resources ?? [])
-  .filter(notSubtitleSite)
-  .filter((entry) => !entry.matches.some((pattern) => pattern.startsWith('chrome-extension://')));
+  .filter((entry) => !entry.matches.some((pattern) => pattern.startsWith('chrome-extension://')))
+  .map(youtubeOnly)
+  // The demo image only illustrates the desktop popup.
+  .map((entry) => ({ ...entry, resources: entry.resources.filter((r) => !r.startsWith('images/')) }));
 manifest.name = 'Langfour Reader';
 manifest.short_name = 'Langfour';
 manifest.description =

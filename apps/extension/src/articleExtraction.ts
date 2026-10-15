@@ -78,7 +78,17 @@ function isPageChrome(element: Element): boolean {
 }
 
 function prune(doc: Document): void {
-  doc.querySelectorAll(NON_CONTENT_SELECTOR).forEach((el) => el.remove());
+  // Code first, so the page's text below is the text people read.
+  doc.querySelectorAll('script, style, noscript, template').forEach((el) => el.remove());
+  // Never a container of most of the page: modal libraries set
+  // aria-hidden="true" on the app root while a cookie dialog is open, and
+  // ASP.NET sites wrap the whole body in a <form>.
+  const pageText = (doc.body?.textContent || '').length;
+  doc.querySelectorAll(NON_CONTENT_SELECTOR).forEach((el) => {
+    if ((el.textContent || '').length < pageText / 2) el.remove();
+    // Readability skips aria-hidden nodes itself.
+    else el.removeAttribute('aria-hidden');
+  });
   // Collapsed, not hidden: Readability skips anything with a hidden
   // attribute, which cost mobile Wikipedia every section after the intro.
   doc.querySelectorAll('[hidden="until-found"]').forEach((el) => el.removeAttribute('hidden'));
@@ -270,9 +280,13 @@ function removeMetadataLines(root: ParentNode): void {
   root.querySelectorAll('p, div, span, time').forEach((block) => {
     if (block.querySelector(BLOCKS) || block.closest('li, td, th, figcaption')) return;
     const text = (block.textContent || '').trim();
-    if (text && wordsIn(text) <= MAX_METADATA_WORDS && (CLOCK_TIME.test(text) || NUMERIC_DATE.test(text))) {
-      block.remove();
-    }
+    if (!text || wordsIn(text) > MAX_METADATA_WORDS || !(CLOCK_TIME.test(text) || NUMERIC_DATE.test(text))) return;
+    // A line of its own, not a time inside a sentence ("empieza a las 21:00").
+    const line = block.matches('span, time') ? block.parentElement?.closest(BLOCKS) : null;
+    if (line && (line.textContent || '').trim() !== text) return;
+    // A short sentence that mentions a time is prose: "El tren sale a las 8:15."
+    if (wordsIn(text) >= 4 && /[.!?…]$/.test(text)) return;
+    block.remove();
   });
 }
 
@@ -310,12 +324,15 @@ function isProse(unit: Element, edge: 'start' | 'end'): boolean {
  */
 const PROMOTION_HOSTS = /(^|\.)(facebook|instagram|tiktok|twitter|x|youtube|whatsapp|telegram|t|linkedin|threads|bsky|pinterest|flipboard)\.(com|me|app|org)$|^news\.google\.|^(apps|itunes)\.apple\.com$|^play\.google\.com$|(^|\.)(onelink\.me|app\.link|page\.link|adj\.st)$/i;
 const PROMOTION_PATHS = /newsletter|suscri|subscri|abonn|abbona|abonnier|registr|signup|sign-up|^\/preferences\/source/i;
+/** A single post or video on a social host is a source the article cites, not a "follow us". */
+const POST_PATHS = /\/(status|statuses|watch|shorts|embed|p|reel|reels|video|videos|posts)(\/|$)/i;
 const MAX_PROMOTION_WORDS = 80;
 
 function isPromotionLink(link: Element): boolean {
   try {
     const url = new URL(link.getAttribute('href') || '', 'https://invalid.example/');
-    return PROMOTION_HOSTS.test(url.hostname) || PROMOTION_PATHS.test(url.pathname);
+    if (PROMOTION_HOSTS.test(url.hostname)) return !POST_PATHS.test(url.pathname);
+    return PROMOTION_PATHS.test(url.pathname);
   } catch {
     return false;
   }
@@ -465,8 +482,10 @@ const INGREDIENTS_HEADING: Record<string, string> = {
 /** Adds the declared ingredients after the article's first paragraph, unless most are already in it. */
 function withIngredients(content: string, ingredients: string[], doc: Document): string {
   if (!ingredients.length) return content;
-  const container = doc.createElement('div');
-  container.innerHTML = content;
+  // A template's content is inert: parsing the article does not fetch its images.
+  const template = doc.createElement('template');
+  template.innerHTML = content;
+  const container = template.content;
   const text = (container.textContent || '').toLowerCase();
   const present = ingredients.filter((ingredient) => text.includes(ingredient.toLowerCase())).length;
   if (present >= ingredients.length / 2) return content;
@@ -483,7 +502,7 @@ function withIngredients(content: string, ingredients: string[], doc: Document):
   const lead = container.querySelector('p');
   if (lead) lead.after(heading, list);
   else container.prepend(heading, list);
-  return container.innerHTML;
+  return template.innerHTML;
 }
 
 // ---------------------------------------------------------------------------
@@ -510,9 +529,9 @@ export function extractArticle(doc: Document, options: ExtractOptions): ArticleD
   const siteName = parsed.siteName || null;
   const title = cleanTitle(parsed.title, siteName || hostOf(options.url));
   const content = withIngredients(normalize(parsed.content, title), recipeIngredients(doc), doc);
-  const probe = doc.createElement('div');
+  const probe = doc.createElement('template');
   probe.innerHTML = content;
-  if (wordsIn(probe.textContent || '') < MIN_ARTICLE_WORDS) return null;
+  if (wordsIn(probe.content.textContent || '') < MIN_ARTICLE_WORDS) return null;
 
   return {
     title,

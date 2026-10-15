@@ -214,12 +214,15 @@ async function classifyWords(language: string, tokens: string[]): Promise<Classi
     return { ok: false, error: 'No Supabase session available' };
   }
 
-  const words: ClassifiedWord[] = [];
+  const batches: string[][] = [];
   for (let start = 0; start < tokens.length; start += CLASSIFY_BATCH_SIZE) {
-    const { data, error } = await supabase.rpc('classify_words', {
-      language_filter: language,
-      tokens: tokens.slice(start, start + CLASSIFY_BATCH_SIZE),
-    });
+    batches.push(tokens.slice(start, start + CLASSIFY_BATCH_SIZE));
+  }
+  const results = await Promise.all(
+    batches.map((batch) => supabase.rpc('classify_words', { language_filter: language, tokens: batch })),
+  );
+  const words: ClassifiedWord[] = [];
+  for (const { data, error } of results) {
     if (error) {
       console.error('classify_words failed:', error);
       return { ok: false, error: error.message };
@@ -283,7 +286,9 @@ async function setLanguage(language: Language): Promise<{ ok: boolean; error?: s
  * copy in their own localStorage, which only a page can clear.
  */
 async function signOut(): Promise<{ ok: boolean }> {
-  const { error } = await supabase.auth.signOut();
+  // Local scope: the default ('global') would revoke the user's sessions in
+  // the web app, the Chrome extension and the RemNote plugin too.
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
   if (error) console.error('Error signing out:', error);
   // Even a failed request may have revoked the session server-side.
   await chrome.storage.local.remove('supabaseSession');
@@ -421,6 +426,11 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
       return true; // Keeps the message channel open for async response
     }
 
+    case 'OPEN_SIGN_IN': {
+      void chrome.tabs.create({ url: chrome.runtime.getURL('src/auth.html') });
+      return;
+    }
+
     case 'WORD_PROGRESS': {
       wordProgress(message.wordId)
         .catch((error): WordProgressResponse => ({ ok: false, error: getErrorMessage(error, 'Lookup failed') }))
@@ -483,7 +493,9 @@ async function showReader(article: Omit<StoredArticle, 'savedAt'>, tabId: number
   const url = readerPageUrl(await storeArticle(article));
   readerOpened.get(tabId)?.();
   readerOpened.delete(tabId);
-  if (placement === 'replace') {
+  // Only an article replaces the page; an error page in its place would lose
+  // the page (a playing video, a half-filled form) for nothing.
+  if (placement === 'replace' && !article.error) {
     try {
       await chrome.tabs.update(tabId, { url });
       return;
@@ -580,6 +592,9 @@ chrome.runtime.onInstalled.addListener((details) => {
 // in place, like Safari's own Reader. Account and language live in the
 // reader's settings panel. Chrome keeps its popup, where this never fires.
 chrome.action.onClicked.addListener((tab) => {
+  // Already in the reader (or another extension page), which cannot be
+  // scripted: extracting it would only replace the reader with an error.
+  if (tab.url?.startsWith(chrome.runtime.getURL(''))) return;
   if (tab.id !== undefined) openReaderView(tab.id, 'replace');
 });
 

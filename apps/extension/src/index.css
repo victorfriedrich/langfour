@@ -2,6 +2,9 @@
   position: relative;
   display: inline-block;
   pointer-events: auto;
+  /* iOS only sends taps to elements that look clickable. */
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .sub-tr-word-hidden {
@@ -26,4 +29,67 @@
   filter: none;
   box-shadow: none;
   background-color: transparent;
+}
+/* Touch screens (Safari on iOS): YouTube's mobile caption box has a fixed
+   width and clips overflow, and inline-block words wrap differently from the
+   text it measured, so lines broke early and spilled past their background. */
+@media (hover: none) {
+  .sub-tr-word {
+    display: inline;
+  }
+
+  /* The word whose translation is open. */
+  .sub-tr-word.sub-tr-reveal {
+    background-color: rgba(255, 255, 255, 0.25);
+    border-radius: 3px;
+  }
+}
+
+/* In-page fullscreen on iPhone (src/iosFullscreen.ts). */
+/* Safari only hides its address bar when the page scrolls, so the page keeps
+   a little scroll room under the fixed player (see iosFullscreen.ts). */
+html.lf-fullscreen body {
+  height: calc(100vh + 120px) !important;
+}
+
+html.lf-fullscreen #player-container-id {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  margin: 0 !important;
+  transform: none !important;
+  z-index: 2147483000 !important;
+  background: #000 !important;
+}
+
+html.lf-fullscreen #player-container-id #player,
+html.lf-fullscreen #movie_player,
+html.lf-fullscreen #movie_player .html5-video-container {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0 !important;
+}
+
+html.lf-fullscreen #movie_player video {
+  width: 100% !important;
+  height: 100% !important;
+  left: 0 !important;
+  top: 0 !important;
+  object-fit: contain;
+}
+
+.lf-fullscreen-exit {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  z-index: 2147483001;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font: 24px/36px -apple-system, sans-serif;
+  cursor: pointer;
 }

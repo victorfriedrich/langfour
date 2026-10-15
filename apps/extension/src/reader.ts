@@ -1,6 +1,6 @@
 // reader.ts
 
-import { getPrefs, setPrefs } from './preferencePopup/prefs';
+import { getPrefs, Prefs, setPrefs } from './preferencePopup/prefs';
 import { Language, LANGUAGES, toLanguage } from './languages';
 import { fetchTranslation, translateSection } from './api-service';
 import { sanitizeHTML } from './sanitizeHTML';
@@ -10,16 +10,6 @@ import { loadArticle, StoredArticle } from './readerArticles';
 import { hostOf } from './pageTitle';
 
 type TranslationResult = Awaited<ReturnType<typeof fetchTranslation>>;
-type TranslationHandlers = {
-  selection: (event: MouseEvent) => void;
-  click: (event: MouseEvent) => void;
-};
-
-declare global {
-  interface Window {
-    _translationHandlers?: TranslationHandlers;
-  }
-}
 
 let readerLanguage: Language | null = null;
 let signedIn = false;
@@ -253,7 +243,7 @@ function renderProblem(container: HTMLElement, article: StoredArticle | null): v
   title.textContent = article?.title || 'Nothing to read yet';
   const text = document.createElement('p');
   text.textContent = article?.content
-    || 'Open an article in Safari, then choose Langfour in the page menu and tap “Read this page”.';
+    || 'Open an article in Safari, then choose Langfour in the page menu.';
   box.append(title, text);
   if (article?.url) {
     const back = document.createElement('button');
@@ -296,8 +286,9 @@ function initBackToPage(article: StoredArticle | null): void {
 
 // ====================== Text Processing Functions ======================
 
-const SPECIAL_CHARS =
-  '.,!?¿¡\'"1234567890()«»%: -_[]{}#@$&*+=|\\<>/~`^…;”“';
+// Letters and combining marks make words; everything else (spaces of any
+// kind, line breaks, digits, punctuation, dashes, quotes) separates them.
+const WORD_CHAR = /[\p{L}\p{M}]/u;
 
 type TextGroup = { content: string; isWord: boolean };
 
@@ -310,7 +301,7 @@ function groupText(text: string): TextGroup[] {
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
-    const isSpecial = SPECIAL_CHARS.indexOf(char) >= 0;
+    const isSpecial = !WORD_CHAR.test(char);
     if (currentGroup === '') {
       currentGroup = char;
       currentIsSpecial = isSpecial;
@@ -377,9 +368,16 @@ function handleWordClick(wordElement: HTMLElement): void {
     const popup = createMessagePopup(
       wordElement.textContent || '',
       signedIn
-        ? 'Pick the language you are learning in the Langfour menu first.'
-        : 'Sign in from the Langfour button in Safari’s menu to see translations and save words.',
+        ? 'Pick the language you are learning in the reader’s Aa settings first.'
+        : 'Sign in to see translations and save words.',
     );
+    if (!signedIn) {
+      const signInBtn = document.createElement('button');
+      signInBtn.className = 'flashcard-btn';
+      signInBtn.textContent = 'Sign in';
+      signInBtn.addEventListener('click', openSignIn);
+      popup.appendChild(signInBtn);
+    }
     showPopup(popup, wordElement);
     return;
   }
@@ -411,7 +409,7 @@ function handleWordClick(wordElement: HTMLElement): void {
       return;
     }
 
-    const popup = createWordPopup(wordElement.textContent || '', translation, !isInUserWords(wordElement));
+    const popup = createWordPopup(wordElement.textContent || '', translation, isNewWord(wordElement));
     appendProgress(popup, wordElement);
     showPopup(popup, wordElement);
   });
@@ -484,6 +482,15 @@ function createWordPopup(wordText: string, translation: NonNullable<TranslationR
     popup.appendChild(createFlashcardButton(wordText, translation.id));
   }
   return popup;
+}
+
+/**
+ * Only words classify_words reported as new can be saved. Saving one the user
+ * already has resets it to learning (move_words_to_userwords re-inserts it),
+ * so an unclassified word (check still running, or failed) is not offered.
+ */
+function isNewWord(wordElement: HTMLElement): boolean {
+  return wordElement.dataset.wordStatus === 'new';
 }
 
 /** Words the user is learning or knows are already in their flashcards. */
@@ -821,15 +828,6 @@ function setupSectionTranslation(language: Language): void {
     });
   }
 
-  // Clear any existing handlers if present.
-  if (window._translationHandlers) {
-    document.removeEventListener('mouseup', window._translationHandlers.selection);
-    document.removeEventListener('click', window._translationHandlers.click);
-  }
-  window._translationHandlers = {
-    selection: handleTextSelection,
-    click: handleDocumentClick
-  };
   document.addEventListener('mouseup', handleTextSelection);
   document.addEventListener('click', handleDocumentClick);
   document.addEventListener('selectionchange', handleSelectionChange);
@@ -979,7 +977,10 @@ async function initAccount(): Promise<void> {
   reviewUrl = account.review.url;
 
   const select = document.getElementById('account-languages') as HTMLSelectElement;
-  const current = account.language ?? readerLanguage;
+  // The language the reader actually uses (local prefs), which can differ
+  // from the account's default; readerLanguage may not be set yet.
+  const prefs = await new Promise<Prefs>((resolve) => getPrefs(resolve));
+  const current = toLanguage(prefs.preferredLanguage) ?? account.language;
   if (account.languages.length > 1 && current) {
     for (const code of account.languages) {
       select.add(new Option(LANGUAGES[code].name, code, false, code === current));
@@ -1012,7 +1013,10 @@ async function chooseLanguage(select: HTMLSelectElement, previous: Language): Pr
 }
 
 async function signOut(): Promise<void> {
-  await askBackground({ type: 'SIGN_OUT' });
+  if (!(await askBackground({ type: 'SIGN_OUT' }))) {
+    showToast('Couldn’t sign out. Please try again.');
+    return;
+  }
   // The sign-in page keeps its own copy of the session in this origin's
   // localStorage (supabase-js's default storage); without clearing it, it
   // would greet the user as still signed in.

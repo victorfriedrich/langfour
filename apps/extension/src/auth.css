@@ -227,11 +227,13 @@ button.loading .loading-content {
     .container { margin-top: 0; padding: calc(env(safe-area-inset-top) + 3rem) 1.25rem 3rem; }
     .header h1 { color: #ffffff; }
     .header p { color: rgba(255, 255, 255, 0.85); }
-    /* The content is taller than the blue band on a phone, so the fade
-       starts further down and the tips sit on blue, in white. */
+    /* On a phone the blue fills the whole screen: a fade part-way down
+       left a pale band under the form that read as a rendering fault. */
+    body { background-color: #4f46e5; }
     .background-overlay {
-        mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 55%, rgba(0, 0, 0, 0) 80%);
-        -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 55%, rgba(0, 0, 0, 0) 80%);
+        position: fixed;
+        mask-image: none;
+        -webkit-mask-image: none;
     }
     .welcome-tips, .code-hint, #open-mail { color: rgba(255, 255, 255, 0.92); }
     .welcome-tips a { color: #fff; }

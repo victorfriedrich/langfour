@@ -86,6 +86,41 @@ describe('extractArticle', () => {
     expect(text).not.toMatch(/Síguenos|suscribirte/);
   });
 
+  it('keeps the page when a dialog has aria-hidden the app root', () => {
+    const doc = new DOMParser().parseFromString(
+      `<!doctype html><html lang="es"><head><title>Un plan para las bibliotecas</title></head><body>
+       <div id="root" aria-hidden="true"><main><article>${paragraphs()}</article></main></div>
+       <div role="dialog" aria-modal="true"><p>Aceptamos cookies para ofrecerte publicidad personalizada y medir la audiencia.</p></div></body></html>`,
+      'text/html',
+    );
+    const { text } = extract(doc);
+    expect(text).toContain('bibliotecas de la ciudad');
+    expect(text).not.toContain('cookies');
+  });
+
+  it('keeps a page wrapped in a form', () => {
+    const doc = new DOMParser().parseFromString(
+      `<!doctype html><html lang="es"><head><title>Un plan</title></head><body><form id="aspnetForm"><main><article>${paragraphs()}</article></main></form></body></html>`,
+      'text/html',
+    );
+    expect(extract(doc).text).toContain('bibliotecas de la ciudad');
+  });
+
+  it('keeps times inside sentences and short sentences with a time', () => {
+    const { text } = extract(page(`${paragraphs()}
+      <p>La biblioteca central abrirá <span>a las 21:00 horas</span> el día de la inauguración con un concierto.</p>
+      <p>El autobús sale a las 8:15.</p>
+      <p>El calendario completo se publicará en la web municipal la próxima semana, junto con los presupuestos.</p>`));
+    expect(text).toContain('a las 21:00 horas');
+    expect(text).toContain('El autobús sale a las 8:15.');
+  });
+
+  it('keeps a closing paragraph that cites a single social post', () => {
+    const closing = 'La alcaldesa lo anunció en <a href="https://x.com/alcaldia/status/123">un mensaje</a> publicado esta mañana.';
+    const { text } = extract(page(`${paragraphs()}<p>${closing}</p>`));
+    expect(text).toContain('publicado esta mañana');
+  });
+
   it('removes reference markers and the endnote list they point to', () => {
     const { text, content } = extract(page(`<p>${PROSE[0]}<sup>[1]</sup></p>${paragraphs(PROSE.slice(1))}
       <ol><li>↑ Plan municipal de bibliotecas, 2026.</li><li>↑ Informe de la concejalía.</li><li>↑ Encuesta vecinal.</li></ol>`));
