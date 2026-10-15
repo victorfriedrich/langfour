@@ -10,11 +10,11 @@
     "analize": "parcel build manifest.json --config @parcel/config-webextension --reporter @parcel/reporter-bundle-analyzer --no-scope-hoist",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
+    "test:corpus": "READER_CORPUS=1 vitest run --root ../.. --project extension articleExtraction.corpus",
+    "build:safari": "node scripts/build-safari.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:corpus": "READER_CORPUS=1 vitest run --root ../.. --project extension articleExtraction.corpus",
-    "build:safari": "node scripts/build-safari.mjs",
     "build:store": "node scripts/parcel-with-env.mjs build manifest.json --config @parcel/config-webextension --no-scope-hoist --no-source-maps"
   },
   "keywords": [],
