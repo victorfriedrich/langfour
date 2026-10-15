@@ -13,6 +13,10 @@ docs
 
 # The corpus is fetched at boot by apps/api/corpus_sync.py, not baked in.
 apps/api/data/processed
+# ...except the blacklist, which is code, not corpus: the language tarballs
+# don't carry it, so without this line production served every blacklisted
+# (deleted, private, off-language) video.
+!apps/api/data/processed/blacklist.txt
 apps/api/data/archives
 apps/api/data/downloaded_files
 apps/api/data/youtube_thumbnails
