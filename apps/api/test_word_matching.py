@@ -26,6 +26,8 @@ def test_candidates_share_the_longest_prefix_first_and_ignore_accents(wm):
     assert index.candidates("fóllame") == [1]
     assert index.candidates("bellotitas") == [2]
     assert index.candidates("xyz") == []
+    index.drop({3})
+    assert 3 not in index.candidates("editaron")
 
 
 def answers(probs, real):

@@ -361,6 +361,30 @@ def add_wordform(wordform: str, root_id: int, language: str,
         print(f"Error adding wordform '{wordform}' in language '{language}': {e}")
         raise
 
+def invalid_root_ids(ids: list[int]) -> set[int]:
+    """Of `ids`, the roots an audit marked invalid. The deployed cache function
+    still loads invalid roots (without their forms), so callers check here."""
+    found: set[int] = set()
+    for i in range(0, len(ids), 300):
+        rows = (supabase.table("words").select("id").in_("id", ids[i:i + 300])
+                .eq("status", "invalid").execute().data)
+        found.update(r["id"] for r in rows)
+    return found
+
+
+def existing_wordforms(pairs: list[tuple[int, str]]) -> dict[tuple[int, str], str]:
+    """Status of each (root id, form) row that already exists. The cache leaves
+    out invalid forms, so a token can miss it and still have a row."""
+    if not pairs:
+        return {}
+    rows = (supabase.table("wordforms").select("word_id, form, status")
+            .in_("word_id", sorted({w for w, _ in pairs}))
+            .in_("form", sorted({f for _, f in pairs})).execute().data)
+    wanted = set(pairs)
+    return {(r["word_id"], r["form"]): r["status"] for r in rows
+            if (r["word_id"], r["form"]) in wanted}
+
+
 def record_pending_words(rows: list[dict]) -> None:
     """Keep tokens parse() did not attach for a later pass (sql/pending_words.sql)."""
     if rows:

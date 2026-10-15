@@ -11,11 +11,13 @@ from pydantic import BaseModel
 
 from database import (
     add_wordform,
+    existing_wordforms,
     find_dictionary_root,
     find_root_by_wordform_id,
     get_missing_words_from_db,
     get_or_create_translation,
     identify_word_id,
+    invalid_root_ids,
     record_pending_words,
     save_to_supabase,
 )
@@ -334,6 +336,7 @@ def parse(groups: list[str], source: str, language: str):
     if missing_entries:
         missing_words = list(dict.fromkeys([e[1] for e in missing_entries]))
         index = CandidateIndex(language)
+        index.drop(invalid_root_ids(sorted({i for w in missing_words for i in index.candidates(w)})))
         # Let Jev failures reach the caller so ingestion retries instead of
         # saving a partial transcript as complete.
         with jev_client() as client, ThreadPoolExecutor(JEV_PARALLEL) as pool:
@@ -344,6 +347,10 @@ def parse(groups: list[str], source: str, language: str):
         for idx, lw, _ in missing_entries:
             idxs.setdefault(lw, []).append(idx)
 
+        # A form row can exist although the cache missed it: the cache leaves
+        # out invalid forms. Keep that verdict instead of inserting a duplicate.
+        existing = existing_wordforms([(m.root_id, m.word) for m in matches
+                                       if m.outcome == "attach"])
         pending = []
         for m in matches:
             if m.outcome != "attach":
@@ -351,7 +358,10 @@ def parse(groups: list[str], source: str, language: str):
                                 "outcome": m.outcome, "source": source,
                                 "candidates": m.candidates, "jev": m.answers})
                 continue
-            wid = add_wordform(m.word, m.root_id, language, status="valid")
+            status = existing.get((m.root_id, m.word))
+            if status == "invalid":
+                continue
+            wid = m.root_id if status else add_wordform(m.word, m.root_id, language, status="valid")
             for i in idxs[m.word]:
                 result[i]["id"] = wid
             local_cache[m.word] = wid

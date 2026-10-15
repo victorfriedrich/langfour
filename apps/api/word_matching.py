@@ -74,6 +74,11 @@ class CandidateIndex:
         self.keys = [k for k, _ in pairs]
         self.ids = [i for _, i in pairs]
 
+    def drop(self, root_ids: set[int]) -> None:
+        """Never offer these roots (audited invalid) as candidates."""
+        for wid in root_ids:
+            self.roots.pop(wid, None)
+
     def candidates(self, token: str) -> list[int]:
         """Root ids sharing the longest prefix with `token`, longest first."""
         token = _fold(token)
