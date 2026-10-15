@@ -290,9 +290,13 @@ def add_to_dictionary(word: str, source: str, language: str):
         print(f"Error adding word to dictionary: {e} ")
         return None
 
-def parse(groups: list[str], source: str, language: str):
+def parse(groups: list[str], source: str, language: str, db_fallback: bool = True):
     """
     Process a list of text groups (tokens) and return a list of dictionaries.
+
+    db_fallback=False skips the per-miss Supabase lookup; see identify_word_id.
+    Safe only right after initialize_cache(): add_to_dictionary still checks
+    the database before creating a root, so a miss cannot duplicate one.
     """
     result = []
     local_cache: dict[str, int | None] = {}
@@ -312,7 +316,7 @@ def parse(groups: list[str], source: str, language: str):
             result.append(entry)
         else:
             try:
-                wid = identify_word_id(lw, language)
+                wid = identify_word_id(lw, language, db_fallback=db_fallback)
                 local_cache[lw] = wid
                 result.append({"content": group, "id": wid})
             except ValueError:

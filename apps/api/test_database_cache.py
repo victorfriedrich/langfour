@@ -89,6 +89,19 @@ def test_merged_root_does_not_shadow_the_valid_form_in_paginated_cache(db, monke
     assert db.word_cache['es']['wordforms'] == {'sacaran': 10}
 
 
+def test_a_miss_without_fallback_never_reaches_the_database(db, monkeypatch):
+    """Ingest has just loaded the cache, so a miss is real: no round trip."""
+    monkeypatch.setattr(db, 'word_cache', {'es': {'words': {'sacar': 10}, 'wordforms': {}}})
+
+    def no_query(name):
+        raise AssertionError(f"queried {name}")
+
+    monkeypatch.setattr(db.supabase, 'table', no_query)
+    assert db.identify_word_id('sacar', 'es', db_fallback=False) == 10
+    with pytest.raises(ValueError, match='not found'):
+        db.identify_word_id('sacaran', 'es', db_fallback=False)
+
+
 @pytest.mark.parametrize('status', ['unverified', 'valid', 'flagged', 'invalid'])
 def test_fallback_checks_root_status_before_caching(db, monkeypatch, status):
     monkeypatch.setattr(db, 'word_cache', {'es': {'words': {}, 'wordforms': {}}})

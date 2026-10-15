@@ -234,11 +234,17 @@ def find_dictionary_root(root: str, language: str) -> dict | None:
     return response.data[0] if response.data else None
 
 
-def identify_word_id(word: str, language: str):
+def identify_word_id(word: str, language: str, db_fallback: bool = True):
     """
     Identify the word ID for a given word in a specific language.
     :param word: The word to identify.
     :param language: The language of the word.
+    :param db_fallback: On a cache miss, ask Supabase before giving up.
+        The API needs this: it loads the cache once at boot and runs for days,
+        so roots that ingest adds later are only reachable through the
+        database. A batch job that has just loaded the cache does not -- the
+        miss is real, and the round trip (~0.3 s, one per unknown word) was
+        a fifth of a video's parse time.
     :return: The word ID.
     """
     global word_cache
@@ -260,6 +266,8 @@ def identify_word_id(word: str, language: str):
     
     # If not found in cache, attempt to fetch from the database
     print(f"{word} not found in {language} cache")
+    if not db_fallback:
+        raise ValueError(f"Word '{word}' not found in language '{language}'")
     try:
         root = find_dictionary_root(word_lower, language)
         if root and root['status'] != 'invalid':
