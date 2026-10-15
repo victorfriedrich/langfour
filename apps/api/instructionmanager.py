@@ -5,7 +5,6 @@ import instructions_nonlocalized
 import instructions_spanish
 
 INSTRUCTION_HIGH_LEVEL_TAG = instructions_nonlocalized.INSTRUCTION_HIGH_LEVEL_TAG
-INSTRUCTION_CATEGORIZE    = instructions_nonlocalized.INSTRUCTION_CATEGORIZE
 INSTRUCTION_SUMMARIZE     = instructions_nonlocalized.INSTRUCTION_SUMMARIZE
 INSTRUCTION_TRANSLATE     = instructions_nonlocalized.INSTRUCTION_TRANSLATE
 
