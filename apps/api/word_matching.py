@@ -107,12 +107,20 @@ def questions(language: str, candidates: list[str]) -> dict:
     name = LANGUAGE_NAMES[require_code(language)]
     criteria = {f"r{i}": f"`token` is a form of the headword \"{root}\"."
                 for i, root in enumerate(candidates)}
-    criteria["none"] = "None of the listed headwords is the dictionary form of `token`."
+    criteria["none"] = ("None of the listed headwords is the dictionary form of `token`, "
+                        "including when `token` is a separate word derived from one of them.")
+    # Without the derived-word rule Jev attached 22 of 80 derived words to their
+    # base (espaguetización -> el espagueti, eliminación -> eliminar); with it, 6,
+    # while held-out forms placed correctly rose from 95 to 100 of 120.
     return {
         "root": {
             "type": "choice",
-            "instructions": (f"Which {name} dictionary headword is `token` an inflected form, "
-                             "diminutive or augmentative of?"),
+            "instructions": (f"Which {name} dictionary headword is `token` a form of? A form is "
+                             "the same word inflected (plural, gender, verb conjugation, attached "
+                             "pronouns) or made diminutive or augmentative, with the same meaning. "
+                             "A word derived from a headword with a suffix that changes its meaning "
+                             "or word class (a noun made from a verb or another noun, an adverb "
+                             "from an adjective) has its own headword."),
             "criteria": criteria,
         },
         "real": {
