@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from itertools import groupby
 from typing import Literal, get_args
 
@@ -15,6 +16,7 @@ from database import (
     get_missing_words_from_db,
     get_or_create_translation,
     identify_word_id,
+    record_pending_words,
     save_to_supabase,
 )
 from instructionmanager import (
@@ -33,6 +35,7 @@ from languages import require_code
 from llm_client import client, parse_structured
 from models import MODEL_FAST, MODEL_SMART
 from utils import SPECIAL_CHARACTERS, is_special_character, parse_chatgpt_output
+from word_matching import CandidateIndex, jev_client, match
 
 # A Literal rather than a plain list so the same definition can be both the
 # validation rule and the JSON-schema enum sent to the model -- previously the
@@ -49,6 +52,8 @@ VALID_CATEGORIES: list[str] = list(get_args(Category))
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+JEV_PARALLEL = 16   # requests in flight per transcript; ~0.3 s each
 
 
 # TODO: Make this more efficient
@@ -309,6 +314,9 @@ def parse(groups: list[str], source: str, language: str):
             entry = {"content": group}
             if local_cache[lw] is not None:
                 entry["id"] = local_cache[lw]
+            else:
+                # A repeat of an unknown token gets the id step 2 finds too.
+                missing_entries.append((len(result), lw, group))
             result.append(entry)
         else:
             try:
@@ -320,27 +328,36 @@ def parse(groups: list[str], source: str, language: str):
                 missing_entries.append((len(result), lw, group))
                 result.append({"content": group})
 
-    # 2) If any missing, batch-verify them in one LLM call:
+    # 2) Attach each unknown token to an existing root with one Jev request
+    # (word_matching.py). New roots are no longer created here: tokens Jev
+    # can't place wait in pending_words for a separate pass.
     if missing_entries:
         missing_words = list(dict.fromkeys([e[1] for e in missing_entries]))
-        # Let verification failures reach the caller so ingestion retries
-        # instead of saving a partial transcript as complete.
-        bad = {w.lower() for w in verify_language(missing_words, language)}
+        index = CandidateIndex(language)
+        # Let Jev failures reach the caller so ingestion retries instead of
+        # saving a partial transcript as complete.
+        with jev_client() as client, ThreadPoolExecutor(JEV_PARALLEL) as pool:
+            matches = list(pool.map(lambda w: match(client, index, w, language), missing_words))
 
         # map word → all result-indices
         idxs: dict[str, list[int]] = {}
         for idx, lw, _ in missing_entries:
             idxs.setdefault(lw, []).append(idx)
 
-        for lw in missing_words:
-            if lw in bad:
-                # leave as content only
+        pending = []
+        for m in matches:
+            if m.outcome != "attach":
+                pending.append({"language": require_code(language), "word": m.word,
+                                "outcome": m.outcome, "source": source,
+                                "candidates": m.candidates, "jev": m.answers})
                 continue
-            # otherwise add it permanently
-            wid = add_to_dictionary(lw, source, language)
-            for i in idxs[lw]:
+            wid = add_wordform(m.word, m.root_id, language, status="valid")
+            for i in idxs[m.word]:
                 result[i]["id"] = wid
-            local_cache[lw] = wid
+            local_cache[m.word] = wid
+        record_pending_words(pending)
+        print(f"{len(missing_words)} unknown words: {len(missing_words) - len(pending)} attached, "
+              f"{len(pending)} pending")
 
     return result
 

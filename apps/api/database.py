@@ -361,6 +361,12 @@ def add_wordform(wordform: str, root_id: int, language: str,
         print(f"Error adding wordform '{wordform}' in language '{language}': {e}")
         raise
 
+def record_pending_words(rows: list[dict]) -> None:
+    """Keep tokens parse() did not attach for a later pass (sql/pending_words.sql)."""
+    if rows:
+        supabase.rpc("record_pending_words", {"rows": rows}).execute()
+
+
 def get_or_create_translation(word_id: int, language: str) -> str:
     """
     Get the translation of a word. If it doesn't exist, create it using OpenAI.

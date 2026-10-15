@@ -18,16 +18,41 @@ def nlp(monkeypatch):
     return nlp_processing
 
 
-def test_parse_propagates_verification_failure_without_adding_words(nlp, monkeypatch):
+def test_parse_propagates_jev_failure_without_adding_words(nlp, monkeypatch):
     monkeypatch.setattr(nlp, "identify_word_id", Mock(side_effect=ValueError("unknown")))
-    monkeypatch.setattr(nlp, "verify_language", Mock(side_effect=TimeoutError("unavailable")))
-    add_word = Mock()
-    monkeypatch.setattr(nlp, "add_to_dictionary", add_word)
+    monkeypatch.setattr(nlp, "CandidateIndex", Mock())
+    monkeypatch.setattr(nlp, "match", Mock(side_effect=TimeoutError("unavailable")))
+    add_form = Mock()
+    monkeypatch.setattr(nlp, "add_wordform", add_form)
 
     with pytest.raises(TimeoutError, match="unavailable"):
         nlp.parse(["hola"], "video", "es")
 
-    add_word.assert_not_called()
+    add_form.assert_not_called()
+
+
+def test_parse_attaches_confident_matches_and_records_the_rest(nlp, monkeypatch):
+    from word_matching import Match
+    monkeypatch.setattr(nlp, "identify_word_id", Mock(side_effect=ValueError("unknown")))
+    monkeypatch.setattr(nlp, "CandidateIndex", Mock())
+    outcomes = {
+        "editaron": Match("editaron", ["editar"], 7, "attach", 0.9, 0.9, {}),
+        "smosh": Match("smosh", ["smash"], None, "not_a_word", 0.2, 0.05, {}),
+        "teletrabajo": Match("teletrabajo", ["teletrabajar"], None, "pending", 0.5, 0.9, {}),
+    }
+    monkeypatch.setattr(nlp, "match", lambda client, index, word, language: outcomes[word])
+    add_form = Mock(return_value=7)
+    monkeypatch.setattr(nlp, "add_wordform", add_form)
+    record = Mock()
+    monkeypatch.setattr(nlp, "record_pending_words", record)
+
+    result = nlp.parse(["editaron", " ", "smosh", " ", "teletrabajo", " ", "editaron"], "vid", "es")
+
+    add_form.assert_called_once_with("editaron", 7, "es", status="valid")
+    assert [r.get("id") for r in result] == [7, None, None, None, None, None, 7]
+    rows = record.call_args.args[0]
+    assert {(r["word"], r["outcome"]) for r in rows} == {("smosh", "not_a_word"),
+                                                         ("teletrabajo", "pending")}
 
 
 def test_high_level_tag_json_fallback_includes_category_contract(nlp, monkeypatch):
