@@ -11,15 +11,85 @@
 -- rules as classify_words.
 --
 -- HOW THIS GETS APPLIED: through the Supabase connector, like the other
--- files here. Idempotent.
+-- files here. Idempotent. Then fill the pages once per language:
+--   select public.rebuild_lexicon_pages('es');
 
--- One page of a language's valid words, by word id, as text: one line per
--- word, "id<TAB>root<TAB>form<TAB>form...", forms being the valid word
--- forms other than the root (audit status, like classify_words). Text,
--- not rows, because PostgREST caps a response at 1000 rows and 300k rows
--- of JSON would be three times the size. Pass the returned last_word_id
--- as after_word_id for the next page; a null last_word_id means there are
--- no more.
+-- The dictionary pages, built ahead of time. Building a page reads 10k
+-- words and their forms from pages spread over words and wordforms; on a
+-- database that has been idle, that took longer than the authenticated
+-- role's 8 s statement timeout, so the extension's first download failed.
+-- A stored page is one row of text, which reads quickly even cold.
+--
+-- entries: one line per word, "id<TAB>root<TAB>form<TAB>form...", forms
+-- being the valid word forms other than the root (audit status, like
+-- classify_words). Text, not rows, because PostgREST caps a response at
+-- 1000 rows and 300k rows of JSON would be three times the size.
+create table if not exists public.lexicon_pages (
+    language     text        not null,
+    last_word_id integer     not null,
+    entries      text        not null,
+    built_at     timestamptz not null default now(),
+    primary key (language, last_word_id)
+);
+
+alter table public.lexicon_pages enable row level security;
+drop policy if exists lexicon_pages_select_authenticated on public.lexicon_pages;
+create policy lexicon_pages_select_authenticated on public.lexicon_pages
+    for select to authenticated using (true);
+
+-- Rebuilds a language's pages from words and wordforms, in one
+-- transaction, so readers see the old pages or the new ones. Run after
+-- the dictionary changes (audits, merges); takes a few seconds.
+create or replace function public.rebuild_lexicon_pages(language_filter text, page_words integer default 10000)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+    after_id integer := 0;
+    built integer := 0;
+    page_last integer;
+    page_entries text;
+begin
+    delete from public.lexicon_pages where language = language_filter;
+    loop
+        with page as (
+            select w.id, w.root
+            from public.words w
+            where w.language = language_filter
+              and w.status = 'valid'
+              and w.id > after_id
+            order by w.id
+            limit page_words
+        )
+        select max(p.id),
+               string_agg(p.id || E'\t' || p.root || coalesce(E'\t' || f.forms, ''), E'\n' order by p.id)
+        into page_last, page_entries
+        from page p
+        left join lateral (
+            select string_agg(wf.form, E'\t') as forms
+            from public.wordforms wf
+            where wf.word_id = p.id
+              and wf.status = 'valid'
+              and wf.form <> p.root
+        ) f on true;
+        exit when page_last is null;
+        insert into public.lexicon_pages (language, last_word_id, entries)
+        values (language_filter, page_last, page_entries);
+        after_id := page_last;
+        built := built + 1;
+    end loop;
+    return built;
+end;
+$$;
+
+revoke execute on function public.rebuild_lexicon_pages(text, integer) from public, anon, authenticated;
+
+-- The stored page after after_word_id (start with 0): pass the returned
+-- last_word_id as after_word_id for the next page; no row means there are
+-- no more. page_words is kept for older clients and ignored: pages are
+-- the size they were built with.
 create or replace function public.lexicon_page(language_filter text, after_word_id integer, page_words integer)
 returns table (last_word_id integer, entries text)
 language sql
@@ -27,25 +97,12 @@ stable
 security invoker
 set search_path = ''
 as $$
-    with page as (
-        select w.id, w.root
-        from public.words w
-        where w.language = language_filter
-          and w.status = 'valid'
-          and w.id > after_word_id
-        order by w.id
-        limit least(page_words, 20000)
-    )
-    select max(p.id),
-           string_agg(p.id || E'\t' || p.root || coalesce(E'\t' || f.forms, ''), E'\n' order by p.id)
-    from page p
-    left join lateral (
-        select string_agg(wf.form, E'\t') as forms
-        from public.wordforms wf
-        where wf.word_id = p.id
-          and wf.status = 'valid'
-          and wf.form <> p.root
-    ) f on true;
+    select lp.last_word_id, lp.entries
+    from public.lexicon_pages lp
+    where lp.language = language_filter
+      and lp.last_word_id > after_word_id
+    order by lp.last_word_id
+    limit 1;
 $$;
 
 grant execute on function public.lexicon_page(text, integer, integer) to authenticated;
