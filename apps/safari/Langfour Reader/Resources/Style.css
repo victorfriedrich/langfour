@@ -1,0 +1,91 @@
+* {
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+    -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
+}
+
+:root {
+    color-scheme: light dark;
+    --bg: #f5f3ff;
+    --card: #ffffff;
+    --text: #111827;
+    --muted: #4b5563;
+    --accent: #4f46e5;
+    --accent-pressed: #4338ca;
+    --line: #e5e7eb;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #0f0f17;
+        --card: #1c1c26;
+        --text: #f3f4f6;
+        --muted: #a1a1aa;
+        --accent: #818cf8;
+        --accent-pressed: #6366f1;
+        --line: #2e2e3a;
+    }
+}
+
+html { background: var(--bg); }
+
+body {
+    margin: 0;
+    padding: calc(env(safe-area-inset-top) + 28px) 20px calc(env(safe-area-inset-bottom) + 28px);
+    font: -apple-system-body;
+    color: var(--text);
+    background: var(--bg);
+}
+
+main { max-width: 520px; margin: 0 auto; }
+
+header { text-align: center; margin-bottom: 24px; }
+.icon { border-radius: 20px; box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25); }
+h1 { margin: 16px 0 6px; font: -apple-system-title1; font-weight: 700; }
+.lede { margin: 0; color: var(--muted); line-height: 1.45; }
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 18px 18px 14px;
+    margin-bottom: 14px;
+}
+h2 { margin: 0 0 12px; font: -apple-system-headline; }
+
+.steps { list-style: none; margin: 0; padding: 0; }
+.steps li { display: flex; gap: 12px; align-items: flex-start; line-height: 1.4; margin-bottom: 12px; }
+.num {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+}
+.glyph {
+    display: inline-block;
+    padding: 0 5px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    font-size: 0.85em;
+}
+.alt { margin: 4px 0 0; font: -apple-system-footnote; color: var(--muted); }
+
+.actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+button {
+    font: -apple-system-headline;
+    border: none;
+    border-radius: 14px;
+    padding: 15px;
+    cursor: pointer;
+}
+.primary { background: var(--accent); color: #fff; }
+.primary:active { background: var(--accent-pressed); }
+.secondary { background: transparent; color: var(--accent); }
+.glyph-svg { vertical-align: -3px; }

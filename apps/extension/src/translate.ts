@@ -18,14 +18,20 @@ export interface Translation {
   values?: string[];
 }
 
+// Returned instead of a translation when there is no session: the API only
+// translates for signed-in users, and the popup should say so.
+export const SIGNED_OUT = 'signed-out';
+
 export async function translate(
   word: string,
   language: Language
-): Promise<Translation | null> {
+): Promise<Translation | typeof SIGNED_OUT | null> {
   try {
     const response = await requestBackend('/api/translate-word', { word, language });
 
     debugLog('Translation response status:', response.status);
+
+    if (response.status === 401) return SIGNED_OUT;
 
     if (!response.ok) {
       throw new Error(`Error: ${response.statusText}`);

@@ -1,0 +1,727 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		D76CB10730759560004A9E86 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76CB10630759560004A9E86 /* AppDelegate.swift */; };
+		D76CB10B30759560004A9E86 /* Main.html in Resources */ = {isa = PBXBuildFile; fileRef = D76CB10930759560004A9E86 /* Main.html */; };
+		D76CB10D30759560004A9E86 /* Icon.png in Resources */ = {isa = PBXBuildFile; fileRef = D76CB10C30759560004A9E86 /* Icon.png */; };
+		D76CB10F30759560004A9E86 /* Style.css in Resources */ = {isa = PBXBuildFile; fileRef = D76CB10E30759560004A9E86 /* Style.css */; };
+		D76CB11130759560004A9E86 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76CB11030759560004A9E86 /* SceneDelegate.swift */; };
+		D76CB11330759560004A9E86 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76CB11230759560004A9E86 /* ViewController.swift */; };
+		D76CB11630759560004A9E86 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = D76CB11430759560004A9E86 /* LaunchScreen.storyboard */; };
+		D76CB11930759560004A9E86 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = D76CB11730759560004A9E86 /* Main.storyboard */; };
+		D76CB12130759561004A9E86 /* Langfour Reader Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D76CB12030759561004A9E86 /* Langfour Reader Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D76CB12630759561004A9E86 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76CB12530759561004A9E86 /* SafariWebExtensionHandler.swift */; };
+		D76CB12830759561004A9E86 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D76CB11A30759561004A9E86 /* Assets.xcassets */; };
+		AA51C0DE0000000000000021 /* Script.js in Resources */ = {isa = PBXBuildFile; fileRef = AA51C0DE0000000000000020 /* Script.js */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D76CB12230759561004A9E86 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D76CB0FB30759560004A9E86 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D76CB11F30759561004A9E86;
+			remoteInfo = "Langfour Reader Extension";
+		};
+		AA51C0DE000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D76CB0FB30759560004A9E86 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D76CB10230759560004A9E86;
+			remoteInfo = "Langfour Reader";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D76CB12E30759561004A9E86 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				D76CB12130759561004A9E86 /* Langfour Reader Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		D76CB10330759560004A9E86 /* Langfour Reader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Langfour Reader.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D76CB10630759560004A9E86 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		D76CB10A30759560004A9E86 /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = Base; path = Base.lproj/Main.html; sourceTree = "<group>"; };
+		D76CB10C30759560004A9E86 /* Icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Icon.png; sourceTree = "<group>"; };
+		D76CB10E30759560004A9E86 /* Style.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = Style.css; sourceTree = "<group>"; };
+		D76CB11030759560004A9E86 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		D76CB11230759560004A9E86 /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
+		D76CB11530759560004A9E86 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		D76CB11830759560004A9E86 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		D76CB11A30759561004A9E86 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D76CB11B30759561004A9E86 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		D76CB12030759561004A9E86 /* Langfour Reader Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Langfour Reader Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D76CB12530759561004A9E86 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		D76CB12730759561004A9E86 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA51C0DE0000000000000002 /* LangfourReaderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LangfourReaderUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA51C0DE0000000000000020 /* Script.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Script.js; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA51C0DE0000000000000001 /* LangfourReaderUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = LangfourReaderUITests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D76CB10030759560004A9E86 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D76CB11D30759561004A9E86 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA51C0DE0000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D76CB0FA30759560004A9E86 = {
+			isa = PBXGroup;
+			children = (
+				D76CB10530759560004A9E86 /* Langfour Reader */,
+				D76CB12430759561004A9E86 /* Langfour Reader Extension */,
+				AA51C0DE0000000000000001 /* LangfourReaderUITests */,
+				D76CB10430759560004A9E86 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D76CB10430759560004A9E86 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D76CB10330759560004A9E86 /* Langfour Reader.app */,
+				D76CB12030759561004A9E86 /* Langfour Reader Extension.appex */,
+				AA51C0DE0000000000000002 /* LangfourReaderUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D76CB10530759560004A9E86 /* Langfour Reader */ = {
+			isa = PBXGroup;
+			children = (
+				D76CB10630759560004A9E86 /* AppDelegate.swift */,
+				D76CB11030759560004A9E86 /* SceneDelegate.swift */,
+				D76CB11230759560004A9E86 /* ViewController.swift */,
+				D76CB11430759560004A9E86 /* LaunchScreen.storyboard */,
+				D76CB11730759560004A9E86 /* Main.storyboard */,
+				D76CB11A30759561004A9E86 /* Assets.xcassets */,
+				D76CB11B30759561004A9E86 /* Info.plist */,
+				D76CB10830759560004A9E86 /* Resources */,
+			);
+			path = "Langfour Reader";
+			sourceTree = "<group>";
+		};
+		D76CB10830759560004A9E86 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				D76CB10930759560004A9E86 /* Main.html */,
+				D76CB10C30759560004A9E86 /* Icon.png */,
+				D76CB10E30759560004A9E86 /* Style.css */,
+				AA51C0DE0000000000000020 /* Script.js */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		D76CB12430759561004A9E86 /* Langfour Reader Extension */ = {
+			isa = PBXGroup;
+			children = (
+				D76CB12530759561004A9E86 /* SafariWebExtensionHandler.swift */,
+				D76CB12730759561004A9E86 /* Info.plist */,
+			);
+			path = "Langfour Reader Extension";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D76CB10230759560004A9E86 /* Langfour Reader */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D76CB12F30759561004A9E86 /* Build configuration list for PBXNativeTarget "Langfour Reader" */;
+			buildPhases = (
+				D76CB0FF30759560004A9E86 /* Sources */,
+				D76CB10030759560004A9E86 /* Frameworks */,
+				D76CB10130759560004A9E86 /* Resources */,
+				D76CB12E30759561004A9E86 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D76CB12330759561004A9E86 /* PBXTargetDependency */,
+			);
+			name = "Langfour Reader";
+			packageProductDependencies = (
+			);
+			productName = "Langfour Reader";
+			productReference = D76CB10330759560004A9E86 /* Langfour Reader.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D76CB11F30759561004A9E86 /* Langfour Reader Extension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D76CB12B30759561004A9E86 /* Build configuration list for PBXNativeTarget "Langfour Reader Extension" */;
+			buildPhases = (
+				D76CB11C30759561004A9E86 /* Sources */,
+				D76CB11D30759561004A9E86 /* Frameworks */,
+				D76CB11E30759561004A9E86 /* Resources */,
+				D76CB1F030759561004A9E86 /* Copy Web Extension */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Langfour Reader Extension";
+			packageProductDependencies = (
+			);
+			productName = "Langfour Reader Extension";
+			productReference = D76CB12030759561004A9E86 /* Langfour Reader Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		AA51C0DE0000000000000003 /* LangfourReaderUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA51C0DE0000000000000007 /* Build configuration list for PBXNativeTarget "LangfourReaderUITests" */;
+			buildPhases = (
+				AA51C0DE0000000000000004 /* Sources */,
+				AA51C0DE0000000000000005 /* Frameworks */,
+				AA51C0DE0000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA51C0DE000000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA51C0DE0000000000000001 /* LangfourReaderUITests */,
+			);
+			name = LangfourReaderUITests;
+			packageProductDependencies = (
+			);
+			productName = LangfourReaderUITests;
+			productReference = AA51C0DE0000000000000002 /* LangfourReaderUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D76CB0FB30759560004A9E86 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					D76CB10230759560004A9E86 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					D76CB11F30759561004A9E86 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					AA51C0DE0000000000000003 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = D76CB10230759560004A9E86;
+					};
+				};
+			};
+			buildConfigurationList = D76CB0FE30759560004A9E86 /* Build configuration list for PBXProject "Langfour Reader" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D76CB0FA30759560004A9E86;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D76CB10430759560004A9E86 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D76CB10230759560004A9E86 /* Langfour Reader */,
+				D76CB11F30759561004A9E86 /* Langfour Reader Extension */,
+				AA51C0DE0000000000000003 /* LangfourReaderUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D76CB10130759560004A9E86 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D76CB10D30759560004A9E86 /* Icon.png in Resources */,
+				D76CB11930759560004A9E86 /* Main.storyboard in Resources */,
+				D76CB11630759560004A9E86 /* LaunchScreen.storyboard in Resources */,
+				D76CB10B30759560004A9E86 /* Main.html in Resources */,
+				D76CB12830759561004A9E86 /* Assets.xcassets in Resources */,
+				D76CB10F30759560004A9E86 /* Style.css in Resources */,
+				AA51C0DE0000000000000021 /* Script.js in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D76CB11E30759561004A9E86 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA51C0DE0000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D76CB1F030759561004A9E86 /* Copy Web Extension */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Web Extension";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# The web extension is built by `npm run build:safari` in apps/extension.\n# Parcel puts content hashes in its file names, so the files are copied in\n# here instead of being listed in the project one by one.\nset -euo pipefail\nSRC=\"${PROJECT_DIR}/../extension/dist-safari\"\nif [ ! -f \"${SRC}/manifest.json\" ]; then\n  echo \"error: ${SRC}/manifest.json not found. Run 'npm run build:safari' in apps/extension first.\"\n  exit 1\nfi\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nLIST=\"${DERIVED_FILE_DIR}/web-extension-files.txt\"\nmkdir -p \"${DEST}\" \"${DERIVED_FILE_DIR}\"\n# The appex root also holds the binary and Info.plist, so remove only what\n# the previous build copied rather than syncing with --delete.\nif [ -f \"${LIST}\" ]; then\n  while IFS= read -r f; do rm -rf \"${DEST:?}/${f}\"; done < \"${LIST}\"\nfi\n(cd \"${SRC}\" && find . -mindepth 1 -maxdepth 1 ! -name '*.map' -exec basename {} \\;) > \"${LIST}\"\nwhile IFS= read -r f; do cp -R \"${SRC}/${f}\" \"${DEST}/\"; done < \"${LIST}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D76CB0FF30759560004A9E86 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D76CB11330759560004A9E86 /* ViewController.swift in Sources */,
+				D76CB10730759560004A9E86 /* AppDelegate.swift in Sources */,
+				D76CB11130759560004A9E86 /* SceneDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D76CB11C30759561004A9E86 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D76CB12630759561004A9E86 /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA51C0DE0000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D76CB12330759561004A9E86 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D76CB11F30759561004A9E86 /* Langfour Reader Extension */;
+			targetProxy = D76CB12230759561004A9E86 /* PBXContainerItemProxy */;
+		};
+		AA51C0DE000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D76CB10230759560004A9E86 /* Langfour Reader */;
+			targetProxy = AA51C0DE000000000000000A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		D76CB10930759560004A9E86 /* Main.html */ = {
+			isa = PBXVariantGroup;
+			children = (
+				D76CB10A30759560004A9E86 /* Base */,
+			);
+			name = Main.html;
+			sourceTree = "<group>";
+		};
+		D76CB11430759560004A9E86 /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				D76CB11530759560004A9E86 /* Base */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		D76CB11730759560004A9E86 /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				D76CB11830759560004A9E86 /* Base */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		D76CB12930759561004A9E86 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		D76CB12A30759561004A9E86 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		D76CB12C30759561004A9E86 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Langfour Reader Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Langfour Reader Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.langfour.reader.Extension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D76CB12D30759561004A9E86 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Langfour Reader Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Langfour Reader Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.langfour.reader.Extension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D76CB13030759561004A9E86 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Langfour Reader/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Langfour Reader";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.langfour.reader;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D76CB13130759561004A9E86 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Langfour Reader/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Langfour Reader";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.langfour.reader;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		AA51C0DE0000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.langfour.reader.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Langfour Reader";
+			};
+			name = Debug;
+		};
+		AA51C0DE0000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.langfour.reader.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Langfour Reader";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		D76CB0FE30759560004A9E86 /* Build configuration list for PBXProject "Langfour Reader" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D76CB12930759561004A9E86 /* Debug */,
+				D76CB12A30759561004A9E86 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D76CB12B30759561004A9E86 /* Build configuration list for PBXNativeTarget "Langfour Reader Extension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D76CB12C30759561004A9E86 /* Debug */,
+				D76CB12D30759561004A9E86 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D76CB12F30759561004A9E86 /* Build configuration list for PBXNativeTarget "Langfour Reader" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D76CB13030759561004A9E86 /* Debug */,
+				D76CB13130759561004A9E86 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA51C0DE0000000000000007 /* Build configuration list for PBXNativeTarget "LangfourReaderUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA51C0DE0000000000000008 /* Debug */,
+				AA51C0DE0000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D76CB0FB30759560004A9E86 /* Project object */;
+}
