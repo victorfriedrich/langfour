@@ -385,7 +385,11 @@ def get_or_create_translation(word_id: int, language: str) -> str:
         prompt = (
             f"Translate the following {display_name(language)} word to English. "
             "Provide 1-3 comma separated words for the translation. "
-            "Don't include the article in the translation for nouns: "
+            "Don't include the article in the translation for nouns. "
+            # Nouns are stored with their article (el amanecer), so a bare
+            # infinitive is the verb and must not get the noun's meaning.
+            "Nouns are written with their article; a word without one is not a noun, "
+            "so translate it in its own word class (a verb gets the verb's meanings, without 'to'): "
             f"{word_data['root']}"
         )
 
