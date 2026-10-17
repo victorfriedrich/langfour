@@ -6,6 +6,9 @@ suite. The rule under test is pure enough that the real library objects are
 used directly -- no network, and no mock of the thing being verified.
 """
 
+import itertools
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("youtube_transcript_api")
@@ -145,3 +148,52 @@ def test_a_piece_far_below_speaking_rate_is_split_and_retried(tmp_path):
 
     text = vp.transcribe_in_pieces(str(audio), "es", transcribe=fake_whisper)
     assert len(text.split()) == 30 + 30 + 50
+
+
+# ═════════════════════════════════════ captions first, throttled, Whisper as backup ══
+
+def test_caption_requests_are_spaced_and_time_out(monkeypatch):
+    sent = []
+    monkeypatch.setattr(vp.requests.Session, "request",
+                        lambda self, *a, **k: sent.append((vp.time.monotonic(), k["timeout"])))
+    monkeypatch.setattr(vp, "CAPTION_MIN_INTERVAL_S", 0.2)
+    monkeypatch.setattr(vp._ThrottledSession, "_next_at", 0.0)
+    session = vp._ThrottledSession()
+    for _ in range(3):
+        session.request("GET", "https://www.youtube.com/")
+    gaps = [b[0] - a[0] for a, b in itertools.pairwise(sent)]
+    assert all(g >= 0.19 for g in gaps)
+    assert {t for _, t in sent} == {vp.CAPTION_TIMEOUT_S}
+
+
+def test_a_block_pauses_captions_instead_of_retrying(monkeypatch):
+    calls = []
+
+    def blocked(video_id, language):
+        calls.append(video_id)
+        raise vp.RequestBlocked(video_id)
+
+    monkeypatch.setattr(vp, "fetch_transcript", blocked)
+    monkeypatch.setattr(vp, "_captions_blocked_until", 0.0)
+    assert vp.caption_text("v1", "es") is None
+    assert vp.caption_text("v2", "es") is None
+    assert calls == ["v1"]            # v2 never asked YouTube
+
+
+def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(vp.pytube, "YouTube", lambda url, client: type("YT", (), {
+        "title": "t", "author": "a", "keywords": [], "views": 1, "length": 60})())
+    processed = []
+    monkeypatch.setattr(vp, "process_transcription",
+                        lambda f, vid, *a: processed.append(Path(f).read_text()))
+    download = []
+    monkeypatch.setattr(vp, "download_video", lambda url: download.append(url))
+
+    monkeypatch.setattr(vp, "caption_text", lambda vid, lang: "hola mundo")
+    vp.main("https://www.youtube.com/watch?v=abc", "es")
+    assert processed == ["hola mundo"] and download == []
+
+    monkeypatch.setattr(vp, "caption_text", lambda vid, lang: None)
+    vp.main("https://www.youtube.com/watch?v=def", "es")
+    assert download == ["https://www.youtube.com/watch?v=def"]

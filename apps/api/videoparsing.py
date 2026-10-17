@@ -1,13 +1,20 @@
 import json
 import os
+import threading
 import time
 import traceback
 from datetime import datetime
 
 import pytubefix as pytube
+import requests
 from dotenv import load_dotenv
 from moviepy.editor import VideoFileClip
-from youtube_transcript_api import NoTranscriptFound, YouTubeTranscriptApi
+from youtube_transcript_api import (
+    NoTranscriptFound,
+    RequestBlocked,
+    YouTubeRequestFailed,
+    YouTubeTranscriptApi,
+)
 
 from languages import require_code
 from llm_client import transcription_client
@@ -214,6 +221,76 @@ def transcript_language_matches(text: str, language: str) -> bool:
 _DETECTOR = None
 
 
+# YouTube blocks an IP's caption requests after a burst: on 2026-10-17 about 40
+# requests in three minutes got this machine IpBlocked, and the block covered
+# yt-dlp's subtitle downloads too (HTTP 429). Every caption request therefore
+# goes through one session that spaces requests CAPTION_MIN_INTERVAL_S apart
+# (a video takes two: the track list and the track), with a timeout, since the
+# library sets none and one stalled request hung a run for ten minutes. Once
+# blocked, captions are skipped for CAPTION_COOLDOWN_S and videos go straight
+# to Whisper, rather than extending the block by retrying.
+CAPTION_MIN_INTERVAL_S = float(os.getenv("CAPTION_MIN_INTERVAL_S", "10"))
+CAPTION_COOLDOWN_S = float(os.getenv("CAPTION_COOLDOWN_S", "3600"))
+CAPTION_TIMEOUT_S = 15
+
+
+class _ThrottledSession(requests.Session):
+    _lock = threading.Lock()
+    _next_at = 0.0
+
+    def request(self, *args, **kwargs):
+        with self._lock:
+            wait = _ThrottledSession._next_at - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            _ThrottledSession._next_at = time.monotonic() + CAPTION_MIN_INTERVAL_S
+        kwargs.setdefault("timeout", CAPTION_TIMEOUT_S)
+        return super().request(*args, **kwargs)
+
+
+_caption_session = _ThrottledSession()
+_captions_blocked_until = 0.0
+
+
+def _is_block(exc: Exception) -> bool:
+    return isinstance(exc, RequestBlocked) or (
+        isinstance(exc, YouTubeRequestFailed) and "429" in str(exc))
+
+
+def caption_text(video_id: str, language: str) -> str | None:
+    """The video's caption text, or None when there is no usable track, the
+    track reads as another language, or YouTube is blocking caption requests."""
+    global _captions_blocked_until
+    if time.monotonic() < _captions_blocked_until:
+        return None
+    try:
+        start_time = time.time()
+        transcript = fetch_transcript(video_id, language)
+        print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
+    except Exception as e:
+        if _is_block(e):
+            _captions_blocked_until = time.monotonic() + CAPTION_COOLDOWN_S
+            print(f"YouTube is blocking caption requests ({type(e).__name__}); "
+                  f"using Whisper only for the next {CAPTION_COOLDOWN_S / 60:.0f} min")
+            return None
+        # Deliberately any failure, not just the library's typed ones:
+        # youtube_transcript_api is a scraper, and a scraper's failure mode is
+        # not always a tidy exception (0.6.2 died in xml.etree with ParseError).
+        print(f"No usable '{language}' captions for {video_id} "
+              f"({type(e).__name__}: {(str(e).splitlines() or [''])[0][:120]})")
+        return None
+
+    # TODO: Localize based on language
+    # Música
+    # 1.x yields FetchedTranscriptSnippet objects, not dicts.
+    text = ' '.join(snippet.text for snippet in transcript if snippet.text != '[Musik]')
+    if not transcript_language_matches(text, language):
+        print(f"Caption track for {video_id} is labelled '{language}' but reads as "
+              f"another language; not using it")
+        return None
+    return text
+
+
 def fetch_transcript(video_id: str, language: str):
     """Caption cues for `language`, matched on the primary subtag.
 
@@ -234,7 +311,7 @@ def fetch_transcript(video_id: str, language: str):
     # against current YouTube, so every fetch died in xml.etree with ParseError.
     # Measured on real videos: 0/7 fetched on 0.6.2, 4/7 on 1.2.4 -- the other
     # three being genuine TranscriptsDisabled, which Whisper now picks up.
-    available = YouTubeTranscriptApi().list(video_id)
+    available = YouTubeTranscriptApi(http_client=_caption_session).list(video_id)
     codes = [t.language_code for t in available]
     target = language.lower()
     matching = [c for c in codes if c.split('-')[0].lower() == target]
@@ -285,49 +362,29 @@ def main(url, language: str, use_transcript_api=True):
         process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
         return
 
-    # Whisper first, captions only when the audio path fails. On test videos
-    # Whisper in pieces got fewer words wrong than YouTube's automatic track
-    # and is punctuated; captions are free but unpunctuated, and YouTube
-    # rate-limits caption requests under heavy use.
-    audio_file = download_video(url)
-    if audio_file:
-        transcription_file = transcribe_audio(audio_file, video_id, language)
-        cleanup_files(audio_file)
-        if transcription_file:
-            print(f"Transcription saved as: {transcription_file}")
-            process_transcription(transcription_file, video_id, title, creator, tags, views, length, date_added, language)
+    # Captions first, Whisper when there are none. Captions take ~2 s and cost
+    # nothing; Whisper needs the audio download plus 15-60 s of DeepInfra per
+    # video. Manual tracks are punctuated, ASR tracks mostly are not, which
+    # parse() doesn't need.
+    if use_transcript_api:
+        text = caption_text(video_id, language)
+        if text:
+            with open(txt_filename, "w", encoding='utf-8') as txt_file:
+                txt_file.write(text)
+            process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
             return
-        print(f"Audio transcription failed for {video_id}; trying captions")
+
+    audio_file = download_video(url)
+    if not audio_file:
+        print(f"Audio download failed for {video_id}")
+        return
+    transcription_file = transcribe_audio(audio_file, video_id, language)
+    cleanup_files(audio_file)
+    if transcription_file:
+        print(f"Transcription saved as: {transcription_file}")
+        process_transcription(transcription_file, video_id, title, creator, tags, views, length, date_added, language)
     else:
-        print(f"Audio download failed for {video_id}; trying captions")
-
-    if not use_transcript_api:
-        return
-    try:
-        start_time = time.time()
-        transcript = fetch_transcript(video_id, language)
-        print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
-    except Exception as e:
-        # Deliberately any failure, not just the library's two typed ones:
-        # youtube_transcript_api is a scraper, and a scraper's failure mode is
-        # not always a tidy exception (0.6.2 died in xml.etree with ParseError).
-        print(f"No usable '{language}' captions for {video_id} "
-              f"({type(e).__name__}: {(str(e).splitlines() or [''])[0][:120]})")
-        return
-
-    # TODO: Localize based on language
-    # Música
-    # 1.x yields FetchedTranscriptSnippet objects, not dicts.
-    merged_text = ' '.join(
-        snippet.text for snippet in transcript if snippet.text != '[Musik]'
-    )
-    if not transcript_language_matches(merged_text, language):
-        print(f"Caption track for {video_id} is labelled '{language}' but reads as "
-              f"another language; not using it")
-        return
-    with open(txt_filename, "w", encoding='utf-8') as txt_file:
-        txt_file.write(merged_text)
-    process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
+        print(f"Audio transcription failed for {video_id}")
 
 def process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language):
     try:
