@@ -3,6 +3,7 @@ import os
 import threading
 import time
 import traceback
+import uuid
 from datetime import datetime
 
 import pytubefix as pytube
@@ -223,18 +224,32 @@ _DETECTOR = None
 
 # YouTube blocks an IP's caption requests after a burst: on 2026-10-17 about 40
 # requests in three minutes got this machine IpBlocked, and the block covered
-# yt-dlp's subtitle downloads too (HTTP 429). Every caption request therefore
-# goes through one session that spaces requests CAPTION_MIN_INTERVAL_S apart
-# (a video takes two: the track list and the track), with a timeout, since the
-# library sets none and one stalled request hung a run for ten minutes. Once
-# blocked, captions are skipped for CAPTION_COOLDOWN_S and videos go straight
-# to Whisper, rather than extending the block by retrying.
-CAPTION_MIN_INTERVAL_S = float(os.getenv("CAPTION_MIN_INTERVAL_S", "10"))
+# yt-dlp's subtitle downloads too (HTTP 429) and still held a day later. So:
+#
+# - CAPTION_PROXY_URL (optional) sends caption requests through a rotating
+#   residential proxy. A "{session}" in it is replaced per video, which for
+#   Decodo-style usernames (user-NAME-session-{session}-sessionduration-1)
+#   keeps one video's three requests (watch page, player, track) on one IP and
+#   moves the next video to another. Each video also gets a fresh Session, so
+#   no cookie or visitor id links the IPs together.
+# - Requests are spaced CAPTION_MIN_INTERVAL_S apart: 10 s on our own IP, 0.5 s
+#   (a second or two per video) when the proxy spreads them over many IPs.
+#   They also time out: the library sets no timeout, and one stalled request
+#   hung a run for ten minutes.
+# - A blocked video is retried once on a new proxy session. Without a proxy, or
+#   after CAPTION_PROXY_STRIKES blocked videos in a row, or when the proxy
+#   itself refuses (out of traffic: 407), captions pause for CAPTION_COOLDOWN_S
+#   and videos go straight to Whisper instead of extending the block.
+CAPTION_PROXY_URL = os.getenv("CAPTION_PROXY_URL") or None
+CAPTION_MIN_INTERVAL_S = float(os.getenv("CAPTION_MIN_INTERVAL_S",
+                                         "0.5" if CAPTION_PROXY_URL else "10"))
 CAPTION_COOLDOWN_S = float(os.getenv("CAPTION_COOLDOWN_S", "3600"))
+CAPTION_PROXY_STRIKES = 3
 CAPTION_TIMEOUT_S = 15
 
 
 class _ThrottledSession(requests.Session):
+    """Spaces every caption request, across all sessions, CAPTION_MIN_INTERVAL_S apart."""
     _lock = threading.Lock()
     _next_at = 0.0
 
@@ -248,8 +263,17 @@ class _ThrottledSession(requests.Session):
         return super().request(*args, **kwargs)
 
 
-_caption_session = _ThrottledSession()
+def caption_session() -> requests.Session:
+    """A fresh session (no cookies) for one video, on its own proxy session."""
+    session = _ThrottledSession()
+    if CAPTION_PROXY_URL:
+        url = CAPTION_PROXY_URL.replace("{session}", uuid.uuid4().hex[:12])
+        session.proxies = {"http": url, "https": url}
+    return session
+
+
 _captions_blocked_until = 0.0
+_proxy_strikes = 0
 
 
 def _is_block(exc: Exception) -> bool:
@@ -257,28 +281,45 @@ def _is_block(exc: Exception) -> bool:
         isinstance(exc, YouTubeRequestFailed) and "429" in str(exc))
 
 
+def _pause_captions(reason: str) -> None:
+    global _captions_blocked_until
+    _captions_blocked_until = time.monotonic() + CAPTION_COOLDOWN_S
+    print(f"{reason}; using Whisper only for the next {CAPTION_COOLDOWN_S / 60:.0f} min")
+
+
 def caption_text(video_id: str, language: str) -> str | None:
     """The video's caption text, or None when there is no usable track, the
     track reads as another language, or YouTube is blocking caption requests."""
-    global _captions_blocked_until
+    global _proxy_strikes
     if time.monotonic() < _captions_blocked_until:
         return None
-    try:
-        start_time = time.time()
-        transcript = fetch_transcript(video_id, language)
-        print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
-    except Exception as e:
-        if _is_block(e):
-            _captions_blocked_until = time.monotonic() + CAPTION_COOLDOWN_S
-            print(f"YouTube is blocking caption requests ({type(e).__name__}); "
-                  f"using Whisper only for the next {CAPTION_COOLDOWN_S / 60:.0f} min")
+    attempts = 2 if CAPTION_PROXY_URL else 1
+    for attempt in range(attempts):
+        try:
+            start_time = time.time()
+            transcript = fetch_transcript(video_id, language, caption_session())
+            print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
+            _proxy_strikes = 0
+            break
+        except requests.exceptions.ProxyError as e:
+            reason = str(e).rsplit("failed: ", 1)[-1].split("'")[0][:80]
+            _pause_captions(f"The caption proxy refused the request ({reason})")
             return None
-        # Deliberately any failure, not just the library's typed ones:
-        # youtube_transcript_api is a scraper, and a scraper's failure mode is
-        # not always a tidy exception (0.6.2 died in xml.etree with ParseError).
-        print(f"No usable '{language}' captions for {video_id} "
-              f"({type(e).__name__}: {(str(e).splitlines() or [''])[0][:120]})")
-        return None
+        except Exception as e:
+            if _is_block(e) and attempt + 1 < attempts:
+                print(f"Caption request for {video_id} blocked; retrying on a new IP")
+                continue
+            if _is_block(e):
+                _proxy_strikes += 1
+                if not CAPTION_PROXY_URL or _proxy_strikes >= CAPTION_PROXY_STRIKES:
+                    _pause_captions(f"YouTube is blocking caption requests ({type(e).__name__})")
+                return None
+            # Deliberately any failure, not just the library's typed ones:
+            # youtube_transcript_api is a scraper, and a scraper's failure mode is
+            # not always a tidy exception (0.6.2 died in xml.etree with ParseError).
+            print(f"No usable '{language}' captions for {video_id} "
+                  f"({type(e).__name__}: {(str(e).splitlines() or [''])[0][:120]})")
+            return None
 
     # TODO: Localize based on language
     # Música
@@ -291,7 +332,7 @@ def caption_text(video_id: str, language: str) -> str | None:
     return text
 
 
-def fetch_transcript(video_id: str, language: str):
+def fetch_transcript(video_id: str, language: str, session: requests.Session | None = None):
     """Caption cues for `language`, matched on the primary subtag.
 
     YouTube's track codes are inconsistent -- bare 'es' on one video, 'pt-BR',
@@ -311,7 +352,7 @@ def fetch_transcript(video_id: str, language: str):
     # against current YouTube, so every fetch died in xml.etree with ParseError.
     # Measured on real videos: 0/7 fetched on 0.6.2, 4/7 on 1.2.4 -- the other
     # three being genuine TranscriptsDisabled, which Whisper now picks up.
-    available = YouTubeTranscriptApi(http_client=_caption_session).list(video_id)
+    available = YouTubeTranscriptApi(http_client=session or caption_session()).list(video_id)
     codes = [t.language_code for t in available]
     target = language.lower()
     matching = [c for c in codes if c.split('-')[0].lower() == target]

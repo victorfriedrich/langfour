@@ -166,18 +166,69 @@ def test_caption_requests_are_spaced_and_time_out(monkeypatch):
     assert {t for _, t in sent} == {vp.CAPTION_TIMEOUT_S}
 
 
-def test_a_block_pauses_captions_instead_of_retrying(monkeypatch):
-    calls = []
+def blocking(calls, failures=99):
+    def fetch(video_id, language, session):
+        calls.append((video_id, session.proxies.get("https")))
+        if len(calls) <= failures:
+            raise vp.RequestBlocked(video_id)
+        return [type("S", (), {"text": SPANISH})()]
+    return fetch
 
-    def blocked(video_id, language):
-        calls.append(video_id)
-        raise vp.RequestBlocked(video_id)
 
-    monkeypatch.setattr(vp, "fetch_transcript", blocked)
+@pytest.fixture
+def captions(monkeypatch):
     monkeypatch.setattr(vp, "_captions_blocked_until", 0.0)
+    monkeypatch.setattr(vp, "_proxy_strikes", 0)
+    monkeypatch.setattr(vp, "CAPTION_MIN_INTERVAL_S", 0)
+    return monkeypatch
+
+
+def test_without_a_proxy_a_block_pauses_captions_instead_of_retrying(captions):
+    calls = []
+    captions.setattr(vp, "CAPTION_PROXY_URL", None)
+    captions.setattr(vp, "fetch_transcript", blocking(calls))
     assert vp.caption_text("v1", "es") is None
     assert vp.caption_text("v2", "es") is None
-    assert calls == ["v1"]            # v2 never asked YouTube
+    assert [v for v, _ in calls] == ["v1"]          # v2 never asked YouTube
+
+
+def test_each_video_gets_its_own_proxy_session_and_cookies(captions):
+    captions.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+    a, b = vp.caption_session(), vp.caption_session()
+    assert a is not b and a.cookies is not b.cookies
+    assert a.proxies["https"] != b.proxies["https"]
+    assert "{session}" not in a.proxies["https"] and a.proxies["https"] == a.proxies["http"]
+
+
+def test_with_a_proxy_a_blocked_video_is_retried_once_on_a_new_ip(captions):
+    calls = []
+    captions.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+    captions.setattr(vp, "fetch_transcript", blocking(calls, failures=1))
+    assert vp.caption_text("v1", "es") == SPANISH
+    assert len(calls) == 2 and calls[0][1] != calls[1][1]
+
+
+def test_with_a_proxy_captions_pause_after_repeated_blocked_videos(captions):
+    calls = []
+    captions.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+    captions.setattr(vp, "fetch_transcript", blocking(calls))
+    for vid in ("v1", "v2", "v3", "v4"):
+        assert vp.caption_text(vid, "es") is None
+    assert [v for v, _ in calls] == ["v1", "v1", "v2", "v2", "v3", "v3"]   # v4 skipped
+
+
+def test_a_proxy_that_refuses_pauses_captions(captions):
+    calls = []
+    captions.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+
+    def refused(video_id, language, session):
+        calls.append(video_id)
+        raise vp.requests.exceptions.ProxyError("Tunnel connection failed: 407")
+
+    captions.setattr(vp, "fetch_transcript", refused)
+    assert vp.caption_text("v1", "es") is None
+    assert vp.caption_text("v2", "es") is None
+    assert calls == ["v1"]
 
 
 def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp_path):
