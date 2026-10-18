@@ -147,11 +147,13 @@ class VideoRequest(BaseModel):
 class TranscriptChunk(BaseModel):
     # Absent for articles and lyrics, which are passages rather than cues.
     timestamp: list[float] | None = Field(None, min_length=2, max_length=2)
-    text: str = Field(..., min_length=1)
+    text: str = Field(..., min_length=1, max_length=5_000)
 
 class MediaImportRequest(BaseModel):
     language: str = Field(..., description="Language name or ISO code")
-    chunks: list[TranscriptChunk] = Field(..., min_length=1)
+    # Every import runs parse(), which asks the LLM about unknown words, and
+    # anyone signed in can send one. A feature film is ~2,000 subtitle cues.
+    chunks: list[TranscriptChunk] = Field(..., min_length=1, max_length=5_000)
     media_type: Literal["series", "movie", "article", "song", "text"] = "series"
     series: str | None = None
     title: str | None = None

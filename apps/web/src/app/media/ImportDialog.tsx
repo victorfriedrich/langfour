@@ -83,9 +83,11 @@ export default function ImportDialog({ language, existing, onClose, onImported }
     }
   };
 
-  // Picking a series you've imported before continues where it left off.
+  // Picking a series you've imported before continues where it left off,
+  // unless the file already says which episode it is.
   const chooseSeries = (value: string) => {
     setSeries(value);
+    if (transcript?.details?.episode != null) return;
     const previous = episodes
       .filter((item) => item.series.toLowerCase() === value.trim().toLowerCase() && item.season !== null && item.episode !== null)
       .sort((a, b) => (a.season! - b.season!) || (a.episode! - b.episode!));

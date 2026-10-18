@@ -2,6 +2,7 @@ import pytest
 
 from media_import import (
     MediaExistsError,
+    MediaStore,
     get_media,
     get_media_words,
     import_media,
@@ -70,7 +71,55 @@ def test_import_saves_the_episode_for_its_user():
     assert catalog[0]["series"] == "La Casa Azul"
     assert "chunks" not in catalog[0]
     assert get_media(store, ALICE, result["id"], "spanish")["chunks"][1]["text"] == "Hasta luego."
-    assert get_media_words(store, ALICE, result["id"], "es") == [{"content": "hola", "id": 42}]
+    assert get_media_words(store, ALICE, result["id"], "es") == [{"id": 42}]
+
+
+def test_only_distinct_word_ids_are_kept():
+    store = FakeStore()
+    parsed = [{"content": "hola", "id": 42}, {"content": " "}, {"content": "Hola", "id": 42}, {"content": "mundo", "id": 7}]
+    result, _ = run(store, episode(), words=parsed)
+    assert get_media_words(store, ALICE, result["id"], "es") == [{"id": 42}, {"id": 7}]
+
+
+def test_an_untitled_episode_without_a_number_gets_a_readable_title():
+    result, _ = run(FakeStore(), episode(title=None, episode=None))
+    assert result["title"] == "La Casa Azul - Episode ?"
+
+
+class RecordingClient:
+    """Records the filters MediaStore puts on each query."""
+
+    def __init__(self):
+        self.filters = []
+
+    def table(self, name):
+        return self
+
+    def select(self, *args):
+        return self
+
+    def eq(self, column, value):
+        self.filters.append((column, value))
+        return self
+
+    def order(self, *args, **kwargs):
+        return self
+
+    def limit(self, *args):
+        return self
+
+    def execute(self):
+        return type("Res", (), {"data": []})()
+
+
+def test_media_store_filters_every_read_on_the_user():
+    # The service-role client bypasses RLS, so these filters are what keep
+    # one user's Library from another's.
+    for read in (lambda st: st.exists(ALICE, "es", "x"), lambda st: st.list(ALICE, "es"),
+                 lambda st: st.get(ALICE, "es", "x")):
+        client = RecordingClient()
+        read(MediaStore(client))
+        assert ("user_id", ALICE) in client.filters
 
 
 def test_items_are_only_visible_to_their_owner():

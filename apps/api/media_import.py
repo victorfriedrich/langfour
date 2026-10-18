@@ -30,6 +30,7 @@ SUMMARY_COLUMNS = (
     "id,kind,series,title,season,episode,artist,site,source_url,language,"
     "duration,word_count,transcription_model,timebase,imported_at"
 )
+DETAIL_COLUMNS = SUMMARY_COLUMNS + ",chunks"
 
 
 class MediaExistsError(Exception):
@@ -113,7 +114,8 @@ def prepare_media_row(payload: dict) -> dict:
     if kind == "series":
         if not series:
             raise ValueError("An episode needs its series name")
-        title = title or f"{series} - Episode {payload.get('episode', '?')}"
+        episode = payload.get("episode")
+        title = title or f"{series} - Episode {episode if episode is not None else '?'}"
         default_id = make_media_id(series, payload.get("season"), payload.get("episode"))
     else:
         if not title:
@@ -196,7 +198,7 @@ class MediaStore:
                .order("imported_at", desc=True).execute())
         return res.data or []
 
-    def get(self, user_id: str, language: str, media_id: str, columns: str = "*") -> dict | None:
+    def get(self, user_id: str, language: str, media_id: str, columns: str = DETAIL_COLUMNS) -> dict | None:
         res = (self.client.table("user_media").select(columns)
                .eq("user_id", user_id).eq("language", language).eq("id", media_id)
                .limit(1).execute())
@@ -216,7 +218,10 @@ def import_media(
     if store.exists(user_id, row["language"], row["id"]):
         raise MediaExistsError(row["id"])
     transcript = "\n".join(chunk["text"] for chunk in row["chunks"])
-    row["words"] = parse_content(group_text(transcript), row["id"], row["language"])
+    parsed = parse_content(group_text(transcript), row["id"], row["language"])
+    # parse() returns every token, space and punctuation mark; the missing-words
+    # list only needs each word's id once.
+    row["words"] = [{"id": i} for i in dict.fromkeys(w["id"] for w in parsed if w.get("id") is not None)]
     store.insert(user_id, row)
     return to_api(row)
 
