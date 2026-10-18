@@ -17,6 +17,7 @@ with the `service_role` key, i.e. only by the API.
 |---|---|---|
 | `words` | `id`, `root`, `language`, `translation`, `source`, `flagged`, `cognate` | PK `id`; unique `(root, language)`; `language` in `es, de, it, fr`; index on `root` |
 | `wordforms` | `id`, `word_id`, `form`, `flagged` | PK `id`; FK `word_id → words`; unique `(word_id, form)`; index on `form` |
+| `lexicon_pages` | `language`, `last_word_id`, `entries`, `built_at` | PK `(language, last_word_id)`; the valid dictionary as text pages, built by `rebuild_lexicon_pages` (lexicon.sql); authenticated read |
 | `languagelevels` | `id`, `word_id`, `language`, `language_level` | PK `id`; FK `word_id → words`; unique `(word_id, language_level, language)`; level in `A1..C1` |
 
 Policies on all three: `*_select_authenticated`, `*_insert_admin`,
@@ -68,10 +69,12 @@ Vocabulary page; see the functions `known_words_summary` and
 | Table | Columns | Keys and constraints |
 |---|---|---|
 | `video_queue` | `video_id`, `lang`, `channel_id`, `title`, `duration_s`, `views`, `score`, `source`, `priority`, `status`, `attempts`, `error`, `submitted_by`, `created_at`, `claimed_at`, `done_at` | PK `video_id`; FK `submitted_by → auth.users`; `source` in `discovery, user, manual, legacy`; `status` in `pending, processing, done, failed, skipped`; partial index `(lang, priority desc, score desc) where status = 'pending'`, which is exactly `ingest.py`'s claim query; index on `channel_id` |
+| `pending_words` | `language`, `word`, `outcome`, `source`, `candidates text[]`, `jev jsonb`, `seen`, `created_at`, `resolved_at` | PK `(language, word)`; `outcome` in `pending, not_a_word`. Unknown tokens `parse()` did not attach to a root; written through `record_pending_words(rows jsonb)` (service role only) |
 
 Policies: `users queue own videos [insert]`, `users read own submissions
 [select]`. Workers claim and update rows with `service_role`. Definition in
-`video_queue.sql`.
+`video_queue.sql`. `pending_words` (`pending_words.sql`, applied 2026-10-15) has RLS on
+and no policies: only `service_role` reads or writes it.
 
 ## Functions
 
@@ -119,9 +122,12 @@ name in each app; `none` means nothing in the repo calls it today.
 | `is_admin()` | boolean | RLS policies. `SECURITY DEFINER`, reads `user_roles` |
 | `load_unseen_words()` | table(word_id, root, translation) | web |
 | `known_words_summary(language_filter)` | table(declared, from_reviews) | web. Reads `user_known_words` |
+| `lexicon_page(language_filter, after_word_id, page_words)` | table(last_word_id, entries text) | extension. Reads `lexicon_pages` (lexicon.sql) |
 | `mark_video_as_seen(input_video_id)` | void | web |
 | `move_words_to_userwords(_word_ids int[])` | void | extension |
 | `move_words_to_userwords(_word_ids int[], _status, _source)` | void | none |
+| `my_word_statuses()` | jsonb [[word_id, status]] | extension. Reads `userwords`, `user_known_words` (lexicon.sql) |
+| `rebuild_lexicon_pages(language_filter, page_words)` | integer | run by hand after dictionary changes; not granted to clients (lexicon.sql) |
 | `recall_efficiency_last_7_days()` | numeric | web |
 | `set_user_default_language(_language)` | void | web, extension |
 | `srs_acquire_sync_lease(p_user_id uuid, p_holder text, p_seconds int)` | boolean | api. Execute granted to `service_role` only; takes a user id for that reason |

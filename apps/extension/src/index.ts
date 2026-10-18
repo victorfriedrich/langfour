@@ -4,10 +4,11 @@ import {
   maskTextWords,
   WordMask,
 } from './textProcessing/wrapNodeWords';
-import { translate } from './translate';
+import { translate, SIGNED_OUT } from './translate';
 import {
   insertTranslationPopup,
   insertTranslationResult,
+  insertSignInPrompt,
   hideTranslationPopup,
 } from './translationPopup';
 import { defaultPrefs, Prefs } from './preferencePopup/prefs';
@@ -22,9 +23,11 @@ import {
   subWordMaskClassName,
   getWordWrapperHTML,
   subWordHiddenClassName,
+  subWordMaskHiddenClassName,
 } from './markup';
 import startTextMutationObserver from './startTextMutationObserver';
 import { getSiteSpecificApi } from './siteApi';
+import { replaceNativeFullscreen } from './iosFullscreen';
 import addMouseEnterLeaveEventListeners, {
   createElementFromHTML,
   logPrefix,
@@ -134,22 +137,34 @@ function playVideo() {
   }, 300);
 }
 
+/**
+ * Words outside the user's words carry the "new" mark. The known-words list
+ * holds every saved word and its forms, learning ones included, and saving
+ * one of those again would reset it to learning, so only new words get "+".
+ */
+function isNewWord(el: HTMLElement): boolean {
+  return el.classList.contains(subWordHiddenClassName) || el.classList.contains(subWordMaskHiddenClassName);
+}
+
 function translateWord(el: HTMLElement, popupEl: HTMLElement) {
   const word = el.dataset['word'] ?? el.innerText;
   const language = preferredLanguage; // Assuming sourceLang is already defined
 
   translate(word, language)
     .then((translation) => {
-      if (translation) {
-        insertTranslationResult(popupEl, translation, hideTranslationPopup);
+      if (translation === SIGNED_OUT) {
+        insertSignInPrompt(popupEl, word, () => onWordLeaveHandler(el));
+      } else if (translation) {
+        // Saving closes the popup the same way tapping away does, which
+        // also resumes the video.
+        insertTranslationResult(popupEl, translation, word, isNewWord(el), () => onWordLeaveHandler(el));
       } else {
-        // Handle translation failure
         insertTranslationResult(popupEl, {
           id: 0,
-          root: 'unknown',
+          root: word,
           translation: 'Translation not available.',
         },
-          hideTranslationPopup);
+          word, false, hideTranslationPopup);
       }
     })
     .catch((error) => {
@@ -281,3 +296,9 @@ setInterval(() => {
 debugLog(logPrefix, 'initialized');
 
 document.dispatchEvent(new CustomEvent<undefined>('session'));
+
+// On iPhone, YouTube's fullscreen is iOS's own player, which shows no page
+// captions. Keep the video in the page instead (Safari build only).
+if (process.env.EXTENSION_TARGET === 'safari' && location.host === 'm.youtube.com') {
+  replaceNativeFullscreen();
+}

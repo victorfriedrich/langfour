@@ -7,11 +7,21 @@ import {
   BackendRequest,
   BackendResponse,
   BackgroundMessage,
+  ClassifiedWord,
+  ClassifyWordsResponse,
+  Account,
+  AccountResponse,
+  WordProgress,
+  WordProgressResponse,
   sendToTab,
 } from './messages';
 import { getErrorMessage } from './errors';
 import { BACKEND_URL, debugLog } from './config';
-import { toLanguage } from './languages';
+import { Language, toLanguage } from './languages';
+import { reviewLink } from './reviewLink';
+import { readerPageUrl, storeArticle, StoredArticle } from './readerArticles';
+import { classifyTokens } from './lexicon';
+import { clearStatuses, getLexicon, getStatuses, markLearning } from './lexiconCache';
 
 let sessionId: string | undefined;
 
@@ -180,6 +190,8 @@ async function addWordToUserwords(wordId: string | number): Promise<{ success: b
       return { success: false, error: error.message };
     }
 
+    // The next article marks it as learning without waiting for a refresh.
+    await markLearning(Number(wordId)).catch((err: unknown) => console.warn('Could not update word statuses:', err));
     return { success: true };
   } catch (err: unknown) {
     console.error('Error adding words to userwords:', err);
@@ -190,7 +202,158 @@ async function addWordToUserwords(wordId: string | number): Promise<{ success: b
   }
 }
 
-chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendResponse) => {
+// Tokens per classify_words call; an article has a few hundred to a few
+// thousand distinct ones.
+const CLASSIFY_BATCH_SIZE = 1000;
+
+/**
+ * Which tokens of a text are vocabulary, and the user's status for each.
+ * The dictionary decides what counts as a word (names and acronyms are
+ * marked invalid there), and user_known_words decides what "known" means,
+ * so the reader no longer guesses either from spelling. Answered from the
+ * background's copies of both (lexiconCache.ts), with classify_words'
+ * rules (lexicon.ts).
+ */
+async function classifyWords(language: string, tokens: string[]): Promise<ClassifyWordsResponse> {
+  // The user id comes from the stored session rather than the client, which
+  // on a cold worker would first have to restore it over the network.
+  const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+  const userId: unknown = supabaseSession?.user?.id;
+  if (typeof userId !== 'string') return { ok: false, error: 'No Supabase session available' };
+  try {
+    const [lexicon, statuses] = await Promise.all([getLexicon(language), getStatuses(userId)]);
+    return { ok: true, words: classifyTokens(tokens, lexicon, statuses) };
+  } catch (error: unknown) {
+    // No dictionary yet and it could not be downloaded: ask the database
+    // about this text alone, as before.
+    console.warn('Classifying locally failed, asking classify_words:', error);
+    return classifyWordsRemotely(language, tokens);
+  }
+}
+
+/** classify_words over the text's tokens, in batches. */
+async function classifyWordsRemotely(language: string, tokens: string[]): Promise<ClassifyWordsResponse> {
+  const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+  if (!(await ensureSupabaseSession(supabaseSession))) {
+    return { ok: false, error: 'No Supabase session available' };
+  }
+
+  const batches: string[][] = [];
+  for (let start = 0; start < tokens.length; start += CLASSIFY_BATCH_SIZE) {
+    batches.push(tokens.slice(start, start + CLASSIFY_BATCH_SIZE));
+  }
+  const results = await Promise.all(
+    batches.map((batch) => supabase.rpc('classify_words', { language_filter: language, tokens: batch })),
+  );
+  const words: ClassifiedWord[] = [];
+  for (const { data, error } of results) {
+    if (error) {
+      console.error('classify_words failed:', error);
+      return { ok: false, error: error.message };
+    }
+    words.push(...((data ?? []) as ClassifiedWord[]));
+  }
+  return { ok: true, words };
+}
+
+/** The user's history with one word, for the reader's word sheet. */
+async function wordProgress(wordId: number): Promise<WordProgressResponse> {
+  const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+  if (!(await ensureSupabaseSession(supabaseSession))) {
+    return { ok: false, error: 'No Supabase session available' };
+  }
+  const { data, error } = await supabase.rpc('word_progress', { word_id_param: wordId });
+  if (error) {
+    console.error('word_progress failed:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, progress: ((data ?? []) as WordProgress[])[0] ?? null };
+}
+
+/** Who is signed in, for the reader's settings panel. null when nobody is. */
+async function getAccount(): Promise<AccountResponse> {
+  const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+  if (!(await ensureSupabaseSession(supabaseSession))) return { account: null };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { account: null };
+
+  const [languages, language, userdata] = await Promise.all([
+    supabase.rpc('get_available_languages'),
+    supabase.rpc('get_user_default_language'),
+    supabase.from('userdata').select('review_provider, remnote_root_rem_id').eq('user_id', session.user.id).maybeSingle(),
+  ]);
+  for (const { error } of [languages, language, userdata]) {
+    if (error) console.error('Could not load account details:', error);
+  }
+  const available = Array.isArray(languages.data)
+    ? [...new Set(languages.data.map((lang: string) => toLanguage(lang)).filter((lang): lang is Language => lang !== null))]
+    : [];
+  const account: Account = {
+    email: session.user.email ?? '',
+    languages: available,
+    language: toLanguage(typeof language.data === 'string' ? language.data : null),
+    review: reviewLink(userdata.data),
+  };
+  return { account };
+}
+
+async function setLanguage(language: Language): Promise<{ ok: boolean; error?: string }> {
+  const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+  if (!(await ensureSupabaseSession(supabaseSession))) return { ok: false, error: 'Not signed in' };
+  const { error } = await supabase.rpc('set_user_default_language', { _language: language });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/**
+ * Signs out this worker's client and drops the stored session it would
+ * otherwise rehydrate from on its next wake-up. Extension pages also keep a
+ * copy in their own localStorage, which only a page can clear.
+ */
+async function signOut(): Promise<{ ok: boolean }> {
+  // Local scope: the default ('global') would revoke the user's sessions in
+  // the web app, the Chrome extension and the RemNote plugin too.
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
+  if (error) console.error('Error signing out:', error);
+  // Even a failed request may have revoked the session server-side.
+  await chrome.storage.local.remove('supabaseSession');
+  return { ok: true };
+}
+
+/**
+ * Downloads what classifying an article needs before the first article
+ * asks: the dictionary takes ~10 s from a cold database, once per language.
+ */
+async function prepareReader(language?: string): Promise<void> {
+  const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+  const userId: unknown = supabaseSession?.user?.id;
+  if (typeof userId !== 'string') return;
+  const { preferredLanguage } = await chrome.storage.sync.get('preferredLanguage');
+  const target = toLanguage(language ?? preferredLanguage);
+  if (!target) return;
+  await Promise.all([getLexicon(target), getStatuses(userId)]);
+}
+
+const prepareInBackground = (language?: string) => {
+  prepareReader(language).catch((error: unknown) => console.warn('Could not prepare the reader:', error));
+};
+
+// Whoever signs out (popup, reader, the web app's logout via the content
+// script), the cached word statuses belong to that user and go with them.
+// Signing in or switching language prepares the reader for the next article.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.supabaseSession) {
+    if (!changes.supabaseSession.newValue) {
+      clearStatuses().catch((error: unknown) => console.warn('Could not clear word statuses:', error));
+    } else if (!changes.supabaseSession.oldValue) {
+      prepareInBackground();
+    }
+  }
+  if (area === 'sync' && changes.preferredLanguage?.newValue) {
+    prepareInBackground(changes.preferredLanguage.newValue);
+  }
+});
+
+chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendResponse) => {
   debugLog('Background script received message:', message.type);
 
   switch (message.type) {
@@ -295,10 +458,59 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
       return true; // Keeps the message channel open for async response
     }
 
+    case 'CLASSIFY_WORDS': {
+      classifyWords(message.language, message.tokens)
+        .catch((error): ClassifyWordsResponse => ({ ok: false, error: getErrorMessage(error, 'Lookup failed') }))
+        .then(sendResponse);
+      return true; // Keeps the message channel open for async response
+    }
+
+    case 'GET_ACCOUNT': {
+      getAccount()
+        .catch((error): AccountResponse => ({ account: null, error: getErrorMessage(error, 'Could not load the account') }))
+        .then(sendResponse);
+      return true; // Keeps the message channel open for async response
+    }
+
+    case 'SET_LANGUAGE': {
+      setLanguage(message.language)
+        .catch((error) => ({ ok: false, error: getErrorMessage(error, 'Could not change the language') }))
+        .then(sendResponse);
+      return true; // Keeps the message channel open for async response
+    }
+
+    case 'SIGN_OUT': {
+      signOut().then(sendResponse);
+      return true; // Keeps the message channel open for async response
+    }
+
+    case 'OPEN_SIGN_IN': {
+      void chrome.tabs.create({ url: chrome.runtime.getURL('src/auth.html') });
+      return;
+    }
+
+    case 'WORD_PROGRESS': {
+      wordProgress(message.wordId)
+        .catch((error): WordProgressResponse => ({ ok: false, error: getErrorMessage(error, 'Lookup failed') }))
+        .then(sendResponse);
+      return true; // Keeps the message channel open for async response
+    }
+
     case 'ADD_WORD_TO_USERWORDS': {
       const { wordId } = message;
       addWordToUserwords(wordId).then(sendResponse);
       return true; // Keeps the message channel open for async response
+    }
+
+    case 'OPEN_READER': {
+      // Only the popup asks for this. A content script has no business
+      // pointing the reader (and its script injection) at another tab.
+      if (sender.tab) return;
+      // Answer once the reader is on its way, so the popup can show progress
+      // until then instead of closing on a tab that seems to do nothing.
+      readerOpened.set(message.tabId, () => sendResponse({ opened: true }));
+      openReaderView(message.tabId, 'replace');
+      return true;
     }
 
     case 'BACKEND_FETCH': {
@@ -313,36 +525,62 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
   }
 });
 
-function openReaderView(tabId: number): void {
+// Where the reader opens. The popup replaces the page it was opened on, like
+// Safari's own Reader: Back returns to the article, which on iOS is the only
+// natural way out. The keyboard command keeps opening a new tab.
+type ReaderPlacement = 'replace' | 'new-tab';
+
+function openReaderView(tabId: number, placement: ReaderPlacement): void {
   debugLog('Opening reader view for tab:', tabId);
 
-  // First check if the tab exists
-  chrome.tabs.get(tabId, () => {
-    if (chrome.runtime.lastError) {
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError || !tab) {
       console.error('Tab does not exist:', chrome.runtime.lastError);
-      openReaderWithError('Tab does not exist');
+      void showReader({ title: 'Could not open the reader', content: 'The page was closed before it could be read.', error: true }, tabId, 'new-tab');
       return;
     }
 
-    requestArticleExtraction(tabId);
+    requestArticleExtraction(tab, placement);
   });
 }
 
-function openReaderWithArticle(article: ArticleData): void {
-  chrome.storage.local.set({ currentArticle: article }, () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('src/reader.html') });
-  });
+// Popup callbacks waiting for "the reader is opening", keyed by tab.
+const readerOpened = new Map<number, () => void>();
+
+async function showReader(article: Omit<StoredArticle, 'savedAt'>, tabId: number, placement: ReaderPlacement): Promise<void> {
+  const url = readerPageUrl(await storeArticle(article));
+  readerOpened.get(tabId)?.();
+  readerOpened.delete(tabId);
+  // Only an article replaces the page; an error page in its place would lose
+  // the page (a playing video, a half-filled form) for nothing.
+  if (placement === 'replace' && !article.error) {
+    try {
+      await chrome.tabs.update(tabId, { url });
+      return;
+    } catch (error) {
+      console.warn('Could not open the reader in place, using a new tab:', error);
+    }
+  }
+  await chrome.tabs.create({ url });
+}
+
+function withSource(article: ArticleData, tab: chrome.tabs.Tab): Omit<StoredArticle, 'savedAt'> {
+  return { ...article, url: article.url ?? tab.url ?? null };
 }
 
 // Supported subtitle sites load the content script declaratively. Reader mode
-// also works on an arbitrary page the user explicitly invokes via the
-// keyboard command; activeTab grants temporary access to inject it there.
-// Try messaging first so supported sites are not injected twice -- content
-// scripts share one JS realm per frame, and duplicate injection redeclares
-// their top-level bindings.
-function requestArticleExtraction(tabId: number): void {
+// also works on an arbitrary page the user explicitly invokes via the popup
+// or the keyboard command; activeTab grants temporary access to inject it
+// there. Try messaging first so supported sites are not injected twice --
+// content scripts share one JS realm per frame, and duplicate injection
+// redeclares their top-level bindings.
+function requestArticleExtraction(tab: chrome.tabs.Tab, placement: ReaderPlacement): void {
+  const tabId = tab.id!;
   sendToTab<ArticleExtractionResponse>(tabId, { type: 'EXTRACT_ARTICLE' }, (response) => {
-    if (chrome.runtime.lastError) {
+    // Chrome reports a tab without our content script through lastError;
+    // Safari just answers undefined. A loaded script always answers with an
+    // object, even when Readability finds nothing.
+    if (chrome.runtime.lastError || response === undefined) {
       console.warn('Content script not responding, injecting and retrying:', chrome.runtime.lastError);
       chrome.scripting.executeScript({
         target: { tabId: tabId },
@@ -350,118 +588,85 @@ function requestArticleExtraction(tabId: number): void {
       }, () => {
         if (chrome.runtime.lastError) {
           console.error('Could not inject content script:', chrome.runtime.lastError);
-          extractArticleAsFallback(tabId);
+          void showReader({
+            title: 'Langfour cannot read this page',
+            content: 'The browser does not let extensions read this page. Pages like the start page, settings and other extensions are off limits.',
+            url: tab.url ?? null,
+            error: true,
+          }, tabId, placement);
           return;
         }
 
         // Give the freshly-injected content script a moment to initialize.
         setTimeout(() => {
           sendToTab<ArticleExtractionResponse>(tabId, { type: 'EXTRACT_ARTICLE' }, (retryResponse) => {
-            if (chrome.runtime.lastError || !retryResponse?.article) {
+            if (chrome.runtime.lastError || retryResponse === undefined) {
               console.error('Could not communicate with content script after injection:', chrome.runtime.lastError);
-              extractArticleAsFallback(tabId);
+              void showReader({
+          title: 'Langfour cannot read this page',
+          content: 'The browser does not let extensions read this page. Pages like the start page, settings and other extensions are off limits.',
+          url: tab.url ?? null,
+          error: true,
+        }, tabId, placement);
               return;
             }
-            openReaderWithArticle(retryResponse.article);
+            showExtracted(retryResponse, tab, placement);
           });
         }, 200);
       });
       return;
     }
 
-    if (response && response.article) {
-      openReaderWithArticle(response.article);
-    } else {
-      console.error('No article data received');
-      openReaderWithError('Could not extract article content');
-    }
+    showExtracted(response, tab, placement);
   });
 }
 
-// Fallback extraction method using chrome.scripting
-function extractArticleAsFallback(tabId: number): void {
-  debugLog('Using fallback extraction method for tab:', tabId);
-
-  // Execute script in the page to get the HTML content
-  chrome.scripting.executeScript({
-    target: { tabId: tabId },
-    func: () => {
-      // Simple extraction of page content
-      const title = document.title;
-      const content = document.body.innerText;
-      return { title, content };
-    }
-  }, (results) => {
-    if (chrome.runtime.lastError || !results || !results[0]) {
-      console.error('Failed to extract using fallback:', chrome.runtime.lastError);
-      openReaderWithError('Could not access page content');
-      return;
-    }
-
-    const result = results[0].result as { title: string; content: string };
-    debugLog('Extracted content using fallback:', result.title);
-
-    // Send the raw content to the server for parsing
-    backendFetch({
-      path: '/parse',
-      method: 'POST',
-      body: {
-        text: result.content,
-        language: 'es' // Default language
-      },
-    })
-    .then(response => {
-      if (!response.ok) {
-        throw new Error(`Error: ${response.statusText}`);
-      }
-      return JSON.parse(response.body);
-    })
-    .then(parsedArticle => {
-      chrome.storage.local.set({ currentArticle: parsedArticle }, () => {
-        chrome.tabs.create({ url: chrome.runtime.getURL('src/reader.html') });
-      });
-    })
-    .catch(error => {
-      console.error('Error parsing with backend:', error);
-      // Still open reader, but with raw content
-      chrome.storage.local.set({
-        currentArticle: {
-          title: result.title,
-          content: result.content
-        }
-      }, () => {
-        chrome.tabs.create({ url: chrome.runtime.getURL('src/reader.html') });
-      });
-    });
-  });
-}
-
-// Helper to open reader with an error message
-function openReaderWithError(errorMessage: string): void {
-  chrome.storage.local.set({ 
-    currentArticle: { 
-      title: 'Error Extracting Content', 
-      content: `Sorry, we couldn't extract the article content: ${errorMessage}.` 
-    }
-  }, () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('src/reader.html') });
-  });
+function showExtracted(response: ArticleExtractionResponse, tab: chrome.tabs.Tab, placement: ReaderPlacement): void {
+  if (response.article) {
+    void showReader(withSource(response.article, tab), tab.id!, placement);
+    return;
+  }
+  if (response.error) console.error('Article extraction failed:', response.error);
+  void showReader({
+    title: 'This page has no article to read',
+    content: 'Langfour could not find a main text on this page. Try it on a news article or blog post.',
+    url: tab.url ?? null,
+    error: true,
+  }, tab.id!, placement);
 }
 
 // First run: send new users to the sign-in page with a short how-to.
+// The Safari build skips this: there the popup is the whole sign-in flow
+// (email, then the code), and a tab opening on its own after install was
+// one screen too many.
 chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === 'install') {
+  // Users already signed in when this version arrives have no dictionary yet.
+  if (details.reason === 'update') prepareInBackground();
+  if (details.reason === 'install' && process.env.EXTENSION_TARGET !== 'safari') {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/auth.html?welcome=1') });
   }
 });
 
-// Update your command listener to use this function
-chrome.commands.onCommand.addListener((command) => {
+// The Safari build has no popup (scripts/build-safari.mjs), so tapping
+// Langfour in Safari's menu lands here and opens the reader straight away,
+// in place, like Safari's own Reader. Account and language live in the
+// reader's settings panel. Chrome keeps its popup, where this never fires.
+chrome.action.onClicked.addListener((tab) => {
+  // Already in the reader (or another extension page), which cannot be
+  // scripted: extracting it would only replace the reader with an error.
+  if (tab.url?.startsWith(chrome.runtime.getURL(''))) return;
+  if (tab.id !== undefined) openReaderView(tab.id, 'replace');
+});
+
+// Safari on iOS has no commands API, and a top-level throw here would stop
+// the whole service worker from registering. The popup's reader button is
+// the entry point there.
+chrome.commands?.onCommand.addListener((command) => {
   if (command === 'toggle-reader') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const activeTab = tabs[0];
       if (activeTab && activeTab.id) {
-        openReaderView(activeTab.id);
+        openReaderView(activeTab.id, 'new-tab');
       }
     });
   }

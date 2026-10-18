@@ -93,30 +93,13 @@ def test_merged_root_does_not_shadow_the_valid_form_in_paginated_cache(db, monke
 def test_fallback_checks_root_status_before_caching(db, monkeypatch, status):
     monkeypatch.setattr(db, 'word_cache', {'es': {'words': {}, 'wordforms': {}}})
 
-    class Query:
-        def select(self, columns):
-            assert columns == 'id, status'
-            return self
+    def rpc(name, params):
+        assert name == 'find_roots'
+        assert params == {'language_param': 'es', 'roots': ['sacaran']}
+        return SimpleNamespace(execute=lambda: SimpleNamespace(
+            data=[{'id': 20, 'root': 'Sacaran', 'status': status}]))
 
-        def eq(self, column, value):
-            assert (column, value) == ('language', 'es')
-            return self
-
-        def ilike(self, column, value):
-            assert (column, value) == ('root', 'sacaran')
-            return self
-
-        def order(self, column):
-            assert column == 'id'
-            return self
-
-        def limit(self, count):
-            return self
-
-        def execute(self):
-            return SimpleNamespace(data=[{'id': 20, 'status': status}])
-
-    monkeypatch.setattr(db.supabase, 'table', lambda name: Query())
+    monkeypatch.setattr(db.supabase, 'rpc', rpc)
     if status == 'invalid':
         with pytest.raises(ValueError, match='not found'):
             db.identify_word_id('sacaran', 'es')

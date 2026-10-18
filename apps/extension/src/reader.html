@@ -2,119 +2,101 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
   <title>Langfour Reader</title>
   <link rel="stylesheet" href="reader.css" />
 </head>
 <body>
-  <!-- Reading progress indicator -->
   <div id="scroll-progress-bar"></div>
-  
-  <div id="app-container">
-    <!-- Sidebar -->
-    <div id="sidebar">
-      <div class="sidebar-header">
-        <button class="sidebar-toggle" id="sidebar-toggle" title="Expand sidebar" aria-label="Expand or collapse sidebar">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-            <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
-          </svg>
-        </button>
-        <span class="sidebar-title">Reader Tools</span>
-      </div>
-      <div class="sidebar-content">
-        <div class="sidebar-section">
-          <button class="sidebar-btn" id="toggle-highlight" title="Toggle highlighting" aria-label="Toggle highlighting of unknown words">
-            <div class="icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path d="M3.55 19.09l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8zM11 23h2v-2.95h-2V23zM4 11c0 4.42 3.58 8 8 8s8-3.58 8-8c0-1.95-.7-3.73-1.86-5.13L16.8 7.21C17.57 8.28 18 9.58 18 11c0 3.31-2.69 6-6 6s-6-2.69-6-6c0-1.42.5-2.73 1.32-3.77L5.99 5.86C4.83 7.27 4 9.05 4 11zm19-3h-3v-2h-2v2h-3v2h3v2h2v-2h3v-2zM15 2h-2v3h2V2zm-6.46 4.01L7.13 4.59 5.64 6.09l1.41 1.41 1.49-1.49z"/>
-              </svg>
-            </div>
-            <span class="label">Toggle Highlighting</span>
-          </button>
-          
-          <button class="sidebar-btn" id="access-flashcards" title="Open your flashcards" aria-label="Open your flashcards">
-            <div class="icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM10 9h8v2h-8zm0 3h4v2h-4zm0-6h8v2h-8z"/>
-              </svg>
-            </div>
-            <span class="label">Flashcards</span>
-          </button>
-          
-          <button class="sidebar-btn" id="reader-settings" title="Reader settings" aria-label="Reader settings">
-            <div class="icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-              </svg>
-            </div>
-            <span class="label">Reader Settings</span>
-          </button>
-        </div>
+
+  <!-- Top bar: Safari owns the bottom of the screen on iPhone. Hides while
+       reading down, comes back on scrolling up. -->
+  <header id="topbar" class="topbar">
+    <button type="button" class="topbar-back" id="back-to-page" aria-label="Back to the original page">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15.5 4.5 8 12l7.5 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span id="back-label">Original</span>
+    </button>
+    <div class="topbar-actions">
+      <button type="button" class="icon-btn" id="toggle-highlight" title="Highlight new words" aria-label="Highlight new words" aria-pressed="true">
+        <span class="hl-sample" aria-hidden="true">abc</span>
+      </button>
+      <button type="button" class="icon-btn aa-btn" id="reader-settings" title="Display settings" aria-label="Display settings" aria-expanded="false">
+        <span class="aa" aria-hidden="true"><span class="aa-small">A</span><span class="aa-large">A</span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Display settings: a popover under the Aa button, a bottom sheet on phones. -->
+  <div class="settings-panel" id="settings-panel" role="dialog" aria-label="Display settings">
+    <div class="sheet-handle" aria-hidden="true"></div>
+
+    <div class="settings-group size-control" role="group" aria-label="Text size">
+      <button type="button" class="size-btn" id="decrease-font" aria-label="Smaller text">A</button>
+      <span class="size-value" id="font-size-value" aria-live="polite">18px</span>
+      <button type="button" class="size-btn size-btn-large" id="increase-font" aria-label="Larger text">A</button>
+    </div>
+
+    <div class="settings-group theme-options" role="radiogroup" aria-label="Theme">
+      <button type="button" class="theme-option theme-light" id="theme-light" role="radio" aria-label="Light">Aa</button>
+      <button type="button" class="theme-option theme-sepia" id="theme-sepia" role="radio" aria-label="Sepia">Aa</button>
+      <button type="button" class="theme-option theme-dark" id="theme-dark" role="radio" aria-label="Dark">Aa</button>
+    </div>
+
+    <div class="settings-group segmented" role="radiogroup" aria-label="Font">
+      <button type="button" class="font-option font-serif" id="font-serif" role="radio">New York</button>
+      <button type="button" class="font-option font-sans" id="font-sans" role="radio">San Francisco</button>
+    </div>
+
+    <div class="settings-group stepper-row">
+      <span class="settings-label">Line spacing</span>
+      <div class="stepper">
+        <button type="button" class="control-btn" id="decrease-line-height" aria-label="Less line spacing">−</button>
+        <span class="control-value" id="line-height-value">1.7</span>
+        <button type="button" class="control-btn" id="increase-line-height" aria-label="More line spacing">+</button>
       </div>
     </div>
-    
-    <!-- Reader Settings Panel -->
-    <div class="reader-settings-panel" id="settings-panel">
-      <div class="settings-header">
-        <div class="settings-title">Reader Settings</div>
-        <button class="close-settings" id="close-settings" aria-label="Close settings">×</button>
-      </div>
-      <div class="settings-content">
-        <div class="settings-section">
-          <div class="settings-section-title">Text</div>
-          <div class="settings-row">
-            <div class="settings-label">Font Size</div>
-            <div class="settings-controls">
-              <button class="control-btn" id="decrease-font">−</button>
-              <span class="control-value" id="font-size-value">18px</span>
-              <button class="control-btn" id="increase-font">+</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">Line Spacing</div>
-            <div class="settings-controls">
-              <button class="control-btn" id="decrease-line-height">−</button>
-              <span class="control-value" id="line-height-value">1.7</span>
-              <button class="control-btn" id="increase-line-height">+</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">Text Width</div>
-            <div class="settings-controls">
-              <button class="control-btn" id="decrease-width">−</button>
-              <span class="control-value" id="width-value">700px</span>
-              <button class="control-btn" id="increase-width">+</button>
-            </div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Appearance</div>
-          <div class="settings-row">
-            <div class="settings-label">Theme</div>
-            <div class="theme-options">
-              <div class="theme-option theme-light active" id="theme-light" title="Light"></div>
-              <div class="theme-option theme-sepia" id="theme-sepia" title="Sepia"></div>
-              <div class="theme-option theme-dark" id="theme-dark" title="Dark"></div>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">Font Family</div>
-            <div class="font-options">
-              <div class="font-option font-serif active" id="font-serif">Serif</div>
-              <div class="font-option font-sans" id="font-sans">Sans</div>
-            </div>
-          </div>
-        </div>
+
+    <div class="settings-group stepper-row width-row">
+      <span class="settings-label">Text width</span>
+      <div class="stepper">
+        <button type="button" class="control-btn" id="decrease-width" aria-label="Narrower text">−</button>
+        <span class="control-value" id="width-value">700px</span>
+        <button type="button" class="control-btn" id="increase-width" aria-label="Wider text">+</button>
       </div>
     </div>
-    
-    <!-- Main Reader Content -->
-    <div id="reader-container">
-      <!-- The article content will be injected here via reader.js -->
+
+    <!-- Filled by reader.ts. The Safari build has no popup, so the account
+         and the language being learned are managed here. -->
+    <div class="settings-account" id="settings-account" hidden>
+      <label class="account-language" id="account-language">
+        <span class="settings-label">Learning</span>
+        <span class="account-language-value">
+          <span id="account-language-name"></span>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <!-- Transparent over the row: a tap opens the system picker. -->
+        <select id="account-languages" aria-label="Language you are learning"></select>
+      </label>
+      <button type="button" class="settings-link" id="access-flashcards">
+        <span id="review-label">Review flashcards</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <p class="account-row">
+        <span class="account-email" id="account-email"></span>
+        <button type="button" class="account-signout" id="sign-out">Log out</button>
+      </p>
     </div>
+    <button type="button" class="settings-link" id="sign-in" hidden>
+      Sign in
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
   </div>
 
-  <!-- Load supporting scripts -->
+  <main id="reader-container">
+    <!-- The article is rendered here by reader.ts -->
+  </main>
+
   <script type="module" src="reader.ts"></script>
 </body>
 </html>

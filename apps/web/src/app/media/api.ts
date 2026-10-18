@@ -1,17 +1,24 @@
 export interface TranscriptChunk {
-  timestamp: [number, number];
+  // null for articles and lyrics, which are passages rather than timed cues.
+  timestamp: [number, number] | null;
   text: string;
 }
 
+export type MediaKind = 'series' | 'movie' | 'article' | 'song' | 'text';
+
 export interface ImportedMediaSummary {
   id: string;
-  type: string;
-  series: string;
+  type: MediaKind;
+  series: string | null;
   title: string;
   season: number | null;
   episode: number | null;
+  artist?: string | null;
+  site?: string | null;
+  sourceUrl?: string | null;
+  wordCount?: number;
   language: string;
-  duration: number;
+  duration: number | null;
   transcriptionModel: string | null;
   timebase: string | null;
   importedAt: string;
@@ -22,13 +29,13 @@ export interface ImportedMedia extends ImportedMediaSummary {
 }
 
 export interface MediaImportRequest {
-  series: string;
   language: string;
   chunks: TranscriptChunk[];
+  media_type?: MediaKind;
+  series?: string | null;
   title?: string | null;
   season?: number | null;
   episode?: number | null;
-  media_type?: string;
   model?: string | null;
   timebase?: string | null;
   audio_seconds?: number | null;

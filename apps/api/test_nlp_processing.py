@@ -18,16 +18,78 @@ def nlp(monkeypatch):
     return nlp_processing
 
 
-def test_parse_propagates_verification_failure_without_adding_words(nlp, monkeypatch):
-    monkeypatch.setattr(nlp, "identify_word_id", Mock(side_effect=ValueError("unknown")))
-    monkeypatch.setattr(nlp, "verify_language", Mock(side_effect=TimeoutError("unavailable")))
-    add_word = Mock()
-    monkeypatch.setattr(nlp, "add_to_dictionary", add_word)
+def test_parse_propagates_jev_failure_without_adding_words(nlp, monkeypatch):
+    monkeypatch.setattr(nlp, "cached_word_id", Mock(return_value=None))
+    monkeypatch.setattr(nlp, "resolve_uncached", Mock(return_value={}))
+    monkeypatch.setattr(nlp, "CandidateIndex", Mock(return_value=Mock(candidates=Mock(return_value=[]))))
+    monkeypatch.setattr(nlp, "match", Mock(side_effect=TimeoutError("unavailable")))
+    add_form = Mock()
+    monkeypatch.setattr(nlp, "add_wordform", add_form)
 
     with pytest.raises(TimeoutError, match="unavailable"):
         nlp.parse(["hola"], "video", "es")
 
-    add_word.assert_not_called()
+    add_form.assert_not_called()
+
+
+def test_parse_attaches_confident_matches_and_records_the_rest(nlp, monkeypatch):
+    from word_matching import Match
+    monkeypatch.setattr(nlp, "cached_word_id", Mock(return_value=None))
+    monkeypatch.setattr(nlp, "resolve_uncached", Mock(return_value={}))
+    monkeypatch.setattr(nlp, "CandidateIndex", Mock(return_value=Mock(candidates=Mock(return_value=[]))))
+    outcomes = {
+        "editaron": Match("editaron", ["editar"], 7, "attach", 0.9, 0.9, {}),
+        "smosh": Match("smosh", ["smash"], None, "not_a_word", 0.2, 0.05, {}),
+        "teletrabajo": Match("teletrabajo", ["teletrabajar"], None, "pending", 0.5, 0.9, {}),
+    }
+    monkeypatch.setattr(nlp, "match", lambda client, index, word, language: outcomes[word])
+    monkeypatch.setattr(nlp, "invalid_root_ids", Mock(return_value=set()))
+    monkeypatch.setattr(nlp, "existing_wordforms", Mock(return_value={}))
+    add_form = Mock(return_value=7)
+    monkeypatch.setattr(nlp, "add_wordform", add_form)
+    record = Mock()
+    monkeypatch.setattr(nlp, "record_pending_words", record)
+
+    result = nlp.parse(["editaron", " ", "smosh", " ", "teletrabajo", " ", "editaron"], "vid", "es")
+
+    add_form.assert_called_once_with("editaron", 7, "es", status="valid")
+    assert [r.get("id") for r in result] == [7, None, None, None, None, None, 7]
+    rows = record.call_args.args[0]
+    assert {(r["word"], r["outcome"]) for r in rows} == {("smosh", "not_a_word"),
+                                                         ("teletrabajo", "pending")}
+
+
+@pytest.mark.parametrize("existing, expected_id", [("valid", 7), ("invalid", None)])
+def test_parse_keeps_the_verdict_of_a_form_row_the_cache_left_out(nlp, monkeypatch,
+                                                                  existing, expected_id):
+    from word_matching import Match
+    monkeypatch.setattr(nlp, "cached_word_id", Mock(return_value=None))
+    monkeypatch.setattr(nlp, "resolve_uncached", Mock(return_value={}))
+    monkeypatch.setattr(nlp, "CandidateIndex", Mock(return_value=Mock(candidates=Mock(return_value=[]))))
+    monkeypatch.setattr(nlp, "invalid_root_ids", Mock(return_value=set()))
+    monkeypatch.setattr(nlp, "match", Mock(return_value=Match("goliat", ["el goliat"], 7,
+                                                              "attach", 0.9, 0.9, {})))
+    monkeypatch.setattr(nlp, "existing_wordforms", Mock(return_value={(7, "goliat"): existing}))
+    add_form = Mock()
+    monkeypatch.setattr(nlp, "add_wordform", add_form)
+    monkeypatch.setattr(nlp, "record_pending_words", Mock())
+
+    assert nlp.parse(["goliat"], "vid", "es")[0].get("id") == expected_id
+    add_form.assert_not_called()
+
+
+def test_parse_looks_up_all_cache_misses_in_one_request(nlp, monkeypatch):
+    monkeypatch.setattr(nlp, "cached_word_id", Mock(return_value=None))
+    resolve = Mock(return_value={"recién": 5})
+    monkeypatch.setattr(nlp, "resolve_uncached", resolve)
+    jev = Mock()
+    monkeypatch.setattr(nlp, "match", jev)
+
+    result = nlp.parse(["recién", " ", "recién"], "vid", "es")
+
+    resolve.assert_called_once_with(["recién"], "es")
+    assert [r.get("id") for r in result] == [5, None, 5]
+    jev.assert_not_called()
 
 
 def test_high_level_tag_json_fallback_includes_category_contract(nlp, monkeypatch):
