@@ -1,0 +1,114 @@
+name: iOS TestFlight
+
+# Builds apps/safari (the Langfour Reader app and its Safari extension) from
+# the chosen branch, signs it with Xcode's cloud signing and uploads it to
+# TestFlight. Manual only: Actions → iOS TestFlight → Run workflow.
+#
+# Needs these repository secrets:
+#   APPLE_TEAM_ID         10-character team ID (developer.apple.com → Membership)
+#   ASC_KEY_ID            App Store Connect API key ID
+#   ASC_ISSUER_ID         its issuer ID
+#   ASC_KEY_P8            the contents of AuthKey_<id>.p8. The key must have
+#                         the Admin role: cloud signing for App Store export
+#                         fails with "Cloud signing permission error" otherwise
+#   SUPABASE_ANON_KEY     same value as REACT_APP_SUPABASE_ANON_KEY in
+#                         apps/extension/.env
+# and an App Store Connect app record for com.langfour.reader.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      KEY_PATH: ${{ github.workspace }}/../AuthKey.p8
+      # Unique and increasing across runs; the app and the extension get the
+      # same value, which App Store Connect requires.
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - name: Check secrets
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          missing=""
+          for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 SUPABASE_ANON_KEY; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Build the web extension
+        run: npm --prefix apps/extension run build:safari
+        env:
+          REACT_APP_SUPABASE_URL: https://xpovcmbrttmkhnrfspvo.supabase.co
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Write the API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          printf '%s\n' "$ASC_KEY_P8" > "$KEY_PATH"
+          grep -q 'BEGIN PRIVATE KEY' "$KEY_PATH" || { echo "::error::ASC_KEY_P8 is not a .p8 private key"; exit 1; }
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          xcodebuild -version
+
+      - name: Archive
+        working-directory: apps/safari
+        run: |
+          xcodebuild archive \
+            -project "Langfour Reader.xcodeproj" \
+            -scheme "Langfour Reader" \
+            -configuration Release \
+            -destination generic/platform=iOS \
+            -archivePath "$RUNNER_TEMP/LangfourReader.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+
+      - name: Export and upload to TestFlight
+        working-directory: apps/safari
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/LangfourReader.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}"
+          echo "Uploaded build $BUILD_NUMBER. It appears in TestFlight once App Store Connect has processed it."
+
+      - name: Remove the API key
+        if: always()
+        run: rm -f "$KEY_PATH"

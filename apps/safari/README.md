@@ -93,6 +93,23 @@ the page menu.
 The bundle identifiers are `com.langfour.reader` and
 `com.langfour.reader.Extension`; change them if that ID is taken when you sign.
 
+### TestFlight from GitHub Actions
+
+`.github/workflows/ios-testflight.yml` builds, signs and uploads to TestFlight
+without a Mac: Actions → iOS TestFlight → Run workflow, on any branch. Its
+header lists the repository secrets it needs. Two things that are easy to get
+wrong:
+
+- The App Store Connect API key must have the **Admin** role. With App Manager
+  or Developer, export fails with "Cloud signing permission error".
+- The App Store Connect app record for `com.langfour.reader` has to exist
+  before the first upload; the workflow cannot create it.
+
+Each run signs on a fresh runner, so Xcode may leave an Apple Development
+certificate behind per run. If a run fails with "maximum number of
+certificates", revoke the ones created by the API key in Certificates,
+Identifiers & Profiles; leave the one your Mac uses.
+
 ## Signing in
 
 Safari on iOS cannot follow the magic link back into the extension, so the
