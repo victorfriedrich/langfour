@@ -5,8 +5,10 @@ import ExtensionDemo, { type DemoMode } from './ExtensionDemo';
 import { UserContext } from '@/context/UserContext';
 import { useExtensionStatus } from '../hooks/useExtensionStatus';
 
+// Public `releases` bucket; publish a new build with `npm run release` in
+// apps/extension. The path stays the same across versions.
 const DOWNLOAD_URL =
-    'https://xpovcmbrttmkhnrfspvo.supabase.co/storage/v1/object/sign/downloads/dist.zip?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80YzMyYTJlNC1lNDA4LTRjMTYtYTMyNC0yM2RlYTM5NzcyOGMiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb3dubG9hZHMvZGlzdC56aXAiLCJpYXQiOjE3NjAzNzIzMTEsImV4cCI6MTc5MTkwODMxMX0.MqkevU8BErkG1-vSuW4NFGapROTBommmY16C9FeHyrU';
+    'https://xpovcmbrttmkhnrfspvo.supabase.co/storage/v1/object/public/releases/chrome/langfour-extension.zip';
 
 const DEMOS: Record<DemoMode, { label: string; caption: string }> = {
     video: {
@@ -45,7 +47,7 @@ export default function ExtensionGuide() {
         installed && ext.signedIn && !!ext.email && !!user?.email && ext.email.toLowerCase() !== user.email.toLowerCase();
 
     const steps = [
-        <>Unzip the downloaded <code className="rounded bg-gray-100 px-1 font-mono text-xs">dist.zip</code></>,
+        <>Unzip the downloaded <code className="rounded bg-gray-100 px-1 font-mono text-xs">langfour-extension.zip</code></>,
         <>Open <CopyExtensionsUrl /> in Chrome</>,
         <>Turn on <span className="font-medium text-gray-900">Developer mode</span> (top right)</>,
         <>Click <span className="font-medium text-gray-900">Load unpacked</span> and pick the folder, then sign in from the extension icon</>,
@@ -114,7 +116,7 @@ export default function ExtensionGuide() {
                             >
                                 I&apos;ve installed it, reload
                             </button>
-                            <a href={DOWNLOAD_URL} download="lang-extension.zip" className="text-gray-500 hover:text-gray-800">
+                            <a href={DOWNLOAD_URL} download="langfour-extension.zip" className="text-gray-500 hover:text-gray-800">
                                 Download again
                             </a>
                         </div>
@@ -123,7 +125,7 @@ export default function ExtensionGuide() {
                     <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
                         <a
                             href={DOWNLOAD_URL}
-                            download="lang-extension.zip"
+                            download="langfour-extension.zip"
                             onClick={() => setDownloaded(true)}
                             className="hidden md:inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700"
                         >
