@@ -2,7 +2,8 @@
 
 import { getPrefs, Prefs, setPrefs } from './preferencePopup/prefs';
 import { Language, LANGUAGES, toLanguage } from './languages';
-import { fetchTranslation, translateSection } from './api-service';
+import { fetchTranslation, requestBackend, translateSection } from './api-service';
+import { buildLibraryImport, existingIdFrom } from './libraryImport';
 import { sanitizeHTML } from './sanitizeHTML';
 import { WEB_URL } from './config';
 import { AccountResponse, askBackground, ClassifyWordsResponse, sendToBackground, WordProgressResponse, WordStatus } from './messages';
@@ -185,6 +186,7 @@ function renderArticle(container: HTMLElement, article: StoredArticle): void {
       return;
     }
     setupSectionTranslation(readerLanguage);
+    header.appendChild(createLibraryButton(article, contentDiv, readerLanguage));
 
     // The text shows right away; marks follow once the dictionary has said
     // which tokens are words and where the user stands with them.
@@ -197,6 +199,54 @@ function renderArticle(container: HTMLElement, article: StoredArticle): void {
       }
     });
   });
+}
+
+const BLOCKS = 'p, li, h2, h3, h4, h5, blockquote, pre, figcaption';
+
+/** The reader's text, one passage per paragraph, list item or stanza. */
+function passagesOf(root: HTMLElement): string[] {
+  const blocks = Array.from(root.querySelectorAll<HTMLElement>(BLOCKS)).filter((el) => !el.querySelector(BLOCKS));
+  // innerText keeps the <br>s between lyric lines, which textContent drops.
+  return blocks.length ? blocks.map((el) => el.innerText) : [root.innerText];
+}
+
+/**
+ * "Add to Library": sends the page to the web app's Library, where its words
+ * can be learned as a list before (or instead of) reading it here.
+ */
+function createLibraryButton(article: StoredArticle, contentDiv: HTMLElement, language: Language): HTMLElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'library-btn';
+  const idle = () => { button.disabled = false; button.textContent = 'Add to Library'; };
+  const done = (id: string, label: string) => {
+    const link = document.createElement('a');
+    link.className = 'library-btn library-done';
+    link.href = `${WEB_URL}/media/${encodeURIComponent(id)}`;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = label;
+    button.replaceWith(link);
+  };
+  idle();
+  button.addEventListener('click', async () => {
+    const payload = buildLibraryImport(article, passagesOf(contentDiv), language);
+    if (!payload) return showToast('There is no text to add.');
+    button.disabled = true;
+    button.textContent = 'Adding…';
+    const response = await requestBackend('/api/media/import', payload);
+    if (response.ok) {
+      try {
+        return done(JSON.parse(response.body).id, 'Open in Library');
+      } catch { /* fall through to the error */ }
+    }
+    const existing = response.status === 409 ? existingIdFrom(response.body) : null;
+    if (existing) return done(existing, 'Already in Library');
+    console.error('Add to Library failed:', response.status, response.statusText, response.body);
+    showToast(response.status === 401 ? 'Sign in again to add this.' : 'Could not add this to your Library.');
+    idle();
+  });
+  return button;
 }
 
 const WORD_STATUS_CLASS: Partial<Record<WordStatus, string>> = {
