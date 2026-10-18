@@ -1076,7 +1076,7 @@ class RefreshingYouTube:
 def test_overdue_counts_a_missing_timestamp_as_past_the_ceiling(db):
     """The 239,704 rows written before fetched_at existed carry NULL. They
     cannot be shown to be inside the window, so they are treated as outside it."""
-    add_channel(db, "UC1", enriched_at="2026-09-05 00:00:00")
+    add_channel(db, "UC1", enriched_at=yp.now_utc())
     add_videos(db, "UC1", 2, fetched_at=None)
     assert yp.overdue(db, 30) == (0, 2)
 
