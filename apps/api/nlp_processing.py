@@ -19,7 +19,6 @@ from database import (
 )
 from instructionmanager import (
     INSTRUCTION_ADJECTIVE,
-    INSTRUCTION_CATEGORIZE,
     INSTRUCTION_FILTER_LANGUAGE,
     INSTRUCTION_NOUNS,
     INSTRUCTION_ROOT_FORM,
@@ -80,26 +79,6 @@ def filter_entities(text: str, language: str) -> str:
     except Exception as e:
         raise Exception(f"Error filtering non-Spanish words: {e}") from e
     
-def get_tags(title: str, text: str):
-    text = text[:2000] + "..."
-    prompt = INSTRUCTION_CATEGORIZE.format(title=title, text=text)
-
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_FAST,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=300,
-            temperature=0.4,
-        )
-        raw_output = response.choices[0].message.content
-        json_output = parse_chatgpt_output(raw_output, '[', ']')
-        
-        return json.loads(json_output)
-
-    except Exception:
-        logger.exception("Error generating tags for %r", title)
-        return ["Failed"]
-
 class HighLevelTag(BaseModel):
     category: Category
 

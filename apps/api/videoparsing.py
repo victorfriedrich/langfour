@@ -12,7 +12,7 @@ from youtube_transcript_api import NoTranscriptFound, YouTubeTranscriptApi
 from languages import require_code
 from llm_client import transcription_client
 from models import MODEL_TRANSCRIBE
-from nlp_processing import get_tags, group_text, parse
+from nlp_processing import group_text, parse
 from paths import processed_file
 
 load_dotenv()
@@ -338,8 +338,6 @@ def process_transcription(txt_filename, video_id, title, creator, tags, views, l
         # This takes too long
         filtered_text = transcription_text
         # filtered_text = filter_entities(transcription_text, language)
-        alternative_tags = get_tags(title, transcription_text)
-        print(f"Keywords: {alternative_tags}")
         
         groups = group_text(filtered_text)
         content = parse(groups, video_id, language)
@@ -349,7 +347,7 @@ def process_transcription(txt_filename, video_id, title, creator, tags, views, l
         result = {
             "title": title,
             "id": video_id,
-            "tags": list(set(tags + alternative_tags)),
+            "tags": list(set(tags)),
             "creator": creator,
             "views": views,
             "length": length,
