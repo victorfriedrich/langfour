@@ -3,7 +3,7 @@ import json
 import pytest
 
 from media_import import get_media, import_media, list_media, make_media_id
-from paths import processed_file
+from paths import PROCESSED_DIR, processed_file
 
 
 def test_import_media_writes_catalog_and_recommender_file(tmp_path):
@@ -30,7 +30,8 @@ def test_import_media_writes_catalog_and_recommender_file(tmp_path):
     assert catalog[0]["series"] == "La Casa Azul"
     assert "chunks" not in catalog[0]
     assert get_media(result["id"], "spanish", tmp_path / "media")["chunks"][1]["text"] == "Hasta luego."
-    processed = json.loads((tmp_path / str(processed_file("es","la-casa-azul-s01-e02"))).read_text())
+    processed_path = tmp_path / "processed" / processed_file("es", "la-casa-azul-s01-e02").relative_to(PROCESSED_DIR)
+    processed = json.loads(processed_path.read_text())
     assert processed["content"] == [{"content": "hola", "id": 42}]
     assert processed["category"] == "Imported media"
 
