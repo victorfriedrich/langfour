@@ -251,13 +251,15 @@ async def get_word_recommendations(
     if (not language.isalnum()) or len(language) > 2:
         return
         
-    # Get user's known words
+    # These are words to add, so leave out the user's saved words as well as
+    # the known ones; otherwise words still being learned top the list.
     known_words = await recommender.get_known_words(current_user.id)
+    saved_words = await recommender.get_saved_words(current_user.id)
         
     # Get word recommendations
     recommendations = recommender.recommend_words_to_learn(
         language=language,
-        known_word_ids=known_words,
+        known_word_ids=list(set(known_words) | set(saved_words)),
         filter_category=category if category else None,
         n_words=n_words
     )

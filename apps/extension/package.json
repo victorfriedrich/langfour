@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:store": "node scripts/parcel-with-env.mjs build manifest.json --config @parcel/config-webextension --no-scope-hoist --no-source-maps"
+    "build:store": "node scripts/parcel-with-env.mjs build manifest.json --config @parcel/config-webextension --no-scope-hoist --no-source-maps",
+    "release": "node scripts/release.mjs"
   },
   "keywords": [],
   "author": "",

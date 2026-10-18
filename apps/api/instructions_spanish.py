@@ -100,7 +100,7 @@ Return a JSON object:
 }}
 
 "reason": if definitely_not_valid is true, say specifically what's wrong; otherwise a brief confirmation.
-"translation": a 1-3 word English translation of "root", without a leading article for nouns. Empty string if definitely_not_valid is true.
+"translation": 1-3 short English senses of "root" in its word class ({type}), separated by ", ", most common first; no leading article for nouns and no "to" for verbs. A root that is spelled like a word of another class keeps the meaning of its own class: amanecer (verb) -> "dawn, wake up", not "sunrise" (that is the noun el amanecer). Empty string if definitely_not_valid is true.
 
 Return ONLY the JSON object.
 """

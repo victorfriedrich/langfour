@@ -77,16 +77,23 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
     };
   }, []);
 
-  if (isLoading) {
-    return <div className={`flex items-center justify-center ${fullPage ? 'min-h-[70vh]' : 'h-40'}`}><Loader2 className="h-7 w-7 animate-spin text-indigo-500" /></div>;
-  }
+  const shell = fullPage ? 'min-h-full w-full bg-slate-50' : 'fixed right-0 top-11 z-50 flex h-[calc(100dvh-48px)] w-full flex-col bg-white shadow-lg md:top-0 md:h-full md:w-1/3';
 
-  if (error) {
-    return <div className="mx-auto mt-8 max-w-xl rounded-xl border border-red-200 bg-red-50 p-5 text-center text-red-700">{error}</div>;
+  // Loading and errors render inside the panel, so it slides in once instead of
+  // a bare spinner appearing over the dimmed page first.
+  if (isLoading || error) {
+    return (
+      <div className={shell} onClick={(event) => event.stopPropagation()}>
+        {!fullPage && <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={0} fullPage={false} onClose={onClose} />}
+        {isLoading
+          ? <div className={`flex flex-1 items-center justify-center ${fullPage ? 'min-h-[70vh]' : ''}`}><Loader2 className="h-7 w-7 animate-spin text-indigo-500" /></div>
+          : <div className="mx-auto mt-8 max-w-xl rounded-xl border border-red-200 bg-red-50 p-5 text-center text-red-700">{error}</div>}
+      </div>
+    );
   }
 
   return (
-    <div className={`${fullPage ? 'min-h-full w-full bg-slate-50' : 'fixed right-0 top-11 z-50 flex h-[calc(100dvh-48px)] w-full flex-col bg-white shadow-lg md:top-0 md:h-full md:w-1/3'} ${isShiftPressed ? 'select-none' : ''}`} onClick={(event) => event.stopPropagation()}>
+    <div className={`${shell} ${isShiftPressed ? 'select-none' : ''}`} onClick={(event) => event.stopPropagation()}>
       <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={allWords.length} fullPage={fullPage} onClose={onClose} />
       <div className={fullPage ? 'mx-auto w-full max-w-6xl flex-1 space-y-8 px-5 py-8 pb-32' : 'flex-1 space-y-4 overflow-y-auto'}>
         <WordGroup label="Recommended" words={recommendedWords} startIndex={0} selectedWords={selectedWords} fullPage={fullPage} transcript={transcript} toggleGroup={() => toggleWordGroup(recommendedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />
@@ -118,7 +125,7 @@ function findSentences(transcript: TranscriptChunk[], word: string): string[] {
 }
 
 function ActionBar({ isVideoSeen, selectedWordsCount, fullPage, toggleVideoSeen, addToLearningSet }: { isVideoSeen: boolean; selectedWordsCount: number; fullPage: boolean; toggleVideoSeen: () => void; addToLearningSet: () => void }) {
-  return <div className={fullPage ? 'sticky bottom-0 border-t border-slate-200 bg-white/95 px-5 py-4 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur' : 'flex items-center space-x-2 border-t p-4'}><div className={fullPage ? 'mx-auto flex max-w-6xl items-center justify-end gap-3' : 'contents'}>{!fullPage && <button onClick={toggleVideoSeen} className={`flex items-center justify-center rounded-lg px-4 py-2.5 font-semibold transition ${isVideoSeen ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}><Eye size={19} className="mr-2"/>Seen</button>}<button onClick={addToLearningSet} disabled={selectedWordsCount === 0} className={`${fullPage ? 'min-w-64' : 'flex-grow'} rounded-lg px-5 py-2.5 font-semibold transition ${selectedWordsCount > 0 ? 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700' : 'cursor-not-allowed bg-slate-200 text-slate-400'}`}>Add {selectedWordsCount} {selectedWordsCount === 1 ? 'word' : 'words'} to learning set</button></div></div>;
+  return <div className={fullPage ? 'sticky bottom-0 border-t border-slate-200 bg-white/95 px-5 py-4 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur' : 'flex items-center gap-2 border-t p-4'}><div className={fullPage ? 'mx-auto flex max-w-6xl items-center justify-end gap-3' : 'contents'}>{!fullPage && <button onClick={toggleVideoSeen} className={`flex items-center justify-center rounded-lg px-4 py-2.5 font-semibold transition ${isVideoSeen ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}><Eye size={19} className="mr-2"/>Seen</button>}<button onClick={addToLearningSet} disabled={selectedWordsCount === 0} className={`${fullPage ? 'min-w-64' : 'flex-grow'} rounded-lg px-5 py-2.5 font-semibold transition ${selectedWordsCount > 0 ? 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700' : 'cursor-not-allowed bg-slate-200 text-slate-400'}`}>Add {selectedWordsCount} {selectedWordsCount === 1 ? 'word' : 'words'} to learning set</button></div></div>;
 }
 
 export default Wordpanel;
