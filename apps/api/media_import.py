@@ -13,7 +13,7 @@ import hashlib
 import re
 import unicodedata
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from languages import require_code
 
@@ -24,6 +24,13 @@ MEDIA_KINDS = ("series", "movie", "article", "song", "text")
 OVERLAP_TOLERANCE = 1.0
 
 _ID = re.compile(r"[a-zA-Z0-9_-]+")
+
+# Every import runs parse(), which sends each unknown word to a model, and
+# anyone signed in can send one. A 2.5-hour film transcribed by Whisper is
+# ~150,000 characters, so this allows any real item and stops a pasted book.
+MAX_IMPORT_CHARS = 300_000
+# Imports per user in any 24 hours. Deleting an item frees its slot.
+DAILY_IMPORTS = 20
 
 # Columns returned by the list endpoint: everything but the text and words.
 SUMMARY_COLUMNS = (
@@ -37,6 +44,11 @@ class MediaExistsError(Exception):
     def __init__(self, media_id: str):
         super().__init__(f"Media already exists: {media_id}")
         self.media_id = media_id
+
+
+class ImportLimitError(Exception):
+    def __init__(self):
+        super().__init__(f"You can add {DAILY_IMPORTS} items a day. Try again tomorrow.")
 
 
 def _slug(value: str) -> str:
@@ -108,6 +120,8 @@ def prepare_media_row(payload: dict) -> dict:
     if kind not in MEDIA_KINDS:
         raise ValueError(f"Unknown media type: {kind}")
     chunks, timed = _normalize_chunks(payload["chunks"])
+    if sum(len(chunk["text"]) for chunk in chunks) > MAX_IMPORT_CHARS:
+        raise ValueError(f"This is too long to import: the limit is {MAX_IMPORT_CHARS:,} characters")
 
     series = (payload.get("series") or "").strip() or None
     title = (payload.get("title") or "").strip() or None
@@ -192,6 +206,12 @@ class MediaStore:
                .limit(1).execute())
         return bool(res.data)
 
+    def count_since(self, user_id: str, since: datetime) -> int:
+        res = (self.client.table("user_media").select("id", count="exact")
+               .eq("user_id", user_id).gte("imported_at", since.isoformat())
+               .limit(1).execute())
+        return res.count or 0
+
     def list(self, user_id: str, language: str) -> list[dict]:
         res = (self.client.table("user_media").select(SUMMARY_COLUMNS)
                .eq("user_id", user_id).eq("language", language)
@@ -217,6 +237,8 @@ def import_media(
     # Parsing an episode takes minutes, so refuse a duplicate before doing it.
     if store.exists(user_id, row["language"], row["id"]):
         raise MediaExistsError(row["id"])
+    if store.count_since(user_id, datetime.now(UTC) - timedelta(days=1)) >= DAILY_IMPORTS:
+        raise ImportLimitError()
     transcript = "\n".join(chunk["text"] for chunk in row["chunks"])
     parsed = parse_content(group_text(transcript), row["id"], row["language"])
     # parse() returns every token, space and punctuation mark; the missing-words

@@ -1,6 +1,10 @@
+from datetime import UTC, datetime
+
 import pytest
 
+import media_import
 from media_import import (
+    ImportLimitError,
     MediaExistsError,
     MediaStore,
     get_media,
@@ -25,6 +29,9 @@ class FakeStore:
 
     def exists(self, user_id, language, media_id):
         return (user_id, language, media_id) in self.rows
+
+    def count_since(self, user_id, since):
+        return sum(1 for (u, _, _), r in self.rows.items() if u == user_id and r["imported_at"] >= since.isoformat())
 
     def list(self, user_id, language):
         rows = [r for (u, lang, _), r in self.rows.items() if u == user_id and lang == language]
@@ -95,11 +102,14 @@ class RecordingClient:
     def table(self, name):
         return self
 
-    def select(self, *args):
+    def select(self, *args, **kwargs):
         return self
 
     def eq(self, column, value):
         self.filters.append((column, value))
+        return self
+
+    def gte(self, *args):
         return self
 
     def order(self, *args, **kwargs):
@@ -109,14 +119,15 @@ class RecordingClient:
         return self
 
     def execute(self):
-        return type("Res", (), {"data": []})()
+        return type("Res", (), {"data": [], "count": 0})()
 
 
 def test_media_store_filters_every_read_on_the_user():
     # The service-role client bypasses RLS, so these filters are what keep
     # one user's Library from another's.
     for read in (lambda st: st.exists(ALICE, "es", "x"), lambda st: st.list(ALICE, "es"),
-                 lambda st: st.get(ALICE, "es", "x")):
+                 lambda st: st.get(ALICE, "es", "x"),
+                 lambda st: st.count_since(ALICE, datetime.now(UTC))):
         client = RecordingClient()
         read(MediaStore(client))
         assert ("user_id", ALICE) in client.filters
@@ -143,6 +154,32 @@ def test_a_duplicate_is_refused_before_parsing():
     with pytest.raises(MediaExistsError, match="already exists: la-casa-azul-s01-e02"):
         import_media(store, ALICE, episode(), lambda *args: calls.append(args) or [], lambda text: [text])
     assert calls == []
+
+
+def test_an_import_over_the_length_cap_is_refused_before_parsing(monkeypatch):
+    monkeypatch.setattr(media_import, "MAX_IMPORT_CHARS", 10)
+    store = FakeStore()
+    with pytest.raises(ValueError, match="too long"):
+        import_media(store, ALICE, episode(), lambda *args: pytest.fail("parsed"), lambda text: [text])
+    assert store.rows == {}
+
+
+def test_the_daily_import_limit_is_per_user(monkeypatch):
+    monkeypatch.setattr(media_import, "DAILY_IMPORTS", 2)
+    store = FakeStore()
+    run(store, episode(episode=1))
+    run(store, episode(episode=2))
+    with pytest.raises(ImportLimitError):
+        import_media(store, ALICE, episode(episode=3), lambda *args: pytest.fail("parsed"), lambda text: [text])
+    run(store, episode(episode=3), user=BOB)
+
+
+def test_imports_older_than_a_day_do_not_count(monkeypatch):
+    monkeypatch.setattr(media_import, "DAILY_IMPORTS", 1)
+    store = FakeStore()
+    run(store, episode(episode=1))
+    next(iter(store.rows.values()))["imported_at"] = "2020-01-01T00:00:00+00:00"
+    run(store, episode(episode=2))
 
 
 def test_import_rejects_out_of_order_chunks():

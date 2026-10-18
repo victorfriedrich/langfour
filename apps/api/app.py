@@ -13,6 +13,7 @@ from database import initialize_cache
 from flashcards import router as flashcards_router
 from languages import require_code
 from media_import import (
+    ImportLimitError,
     MediaExistsError,
     MediaStore,
     get_media,
@@ -151,8 +152,8 @@ class TranscriptChunk(BaseModel):
 
 class MediaImportRequest(BaseModel):
     language: str = Field(..., description="Language name or ISO code")
-    # Every import runs parse(), which asks the LLM about unknown words, and
-    # anyone signed in can send one. A feature film is ~2,000 subtitle cues.
+    # A feature film is ~2,000 subtitle cues. The total length and the number
+    # of imports a day are capped in media_import.py.
     chunks: list[TranscriptChunk] = Field(..., min_length=1, max_length=5_000)
     media_type: Literal["series", "movie", "article", "song", "text"] = "series"
     series: str | None = None
@@ -513,6 +514,8 @@ async def import_media_endpoint(
         return await asyncio.to_thread(import_media, store, str(current_user.id), payload, parse, group_text)
     except MediaExistsError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except ImportLimitError as error:
+        raise HTTPException(status_code=429, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
