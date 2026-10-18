@@ -27,6 +27,9 @@ create table if not exists public.pending_words (
 );
 
 alter table public.pending_words enable row level security;
+-- RLS without policies already keeps anon and authenticated out; drop their
+-- default grants too, so turning RLS off would not expose the table.
+revoke all on public.pending_words from anon, authenticated;
 
 create or replace function public.record_pending_words(rows jsonb)
 returns void
