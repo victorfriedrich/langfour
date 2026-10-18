@@ -9,6 +9,8 @@ import ConfirmationPopup from '../../components/ConfirmationPopup';
 import { UserContext } from '@/context/UserContext';
 import { getImportedMedia, ImportedMedia } from '../api';
 
+const EYEBROW: Record<string, string> = { series: 'Episode vocabulary', movie: 'Movie vocabulary', article: 'Article vocabulary', song: 'Song vocabulary' };
+
 function MediaVocabularyContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -30,10 +32,10 @@ function MediaVocabularyContent() {
     else router.push('/media');
   }, [router]);
 
-  if (error) return <div className="min-h-full bg-slate-50 px-5 py-16"><div className="mx-auto max-w-xl rounded-2xl border border-red-200 bg-white p-8 text-center text-red-700"><p>{error}</p><button onClick={() => router.push('/media')} className="mt-5 font-semibold text-indigo-700">Back to media</button></div></div>;
+  if (error) return <div className="min-h-full bg-slate-50 px-5 py-16"><div className="mx-auto max-w-xl rounded-2xl border border-red-200 bg-white p-8 text-center text-red-700"><p>{error}</p><button onClick={() => router.push('/media')} className="mt-5 font-semibold text-indigo-700">Back to library</button></div></div>;
   if (!media) return <div className="flex min-h-full items-center justify-center bg-slate-50"><Loader2 className="h-7 w-7 animate-spin text-indigo-600"/></div>;
 
-  return <><Wordpanel videoId={media.id} videoTitle={media.title} transcript={media.chunks} variant="page" onClose={close}/>{confirmationCount > 0 && <ConfirmationPopup count={confirmationCount} onClose={() => router.push('/media')}/>}</>;
+  return <><Wordpanel videoId={media.id} videoTitle={media.title} transcript={media.chunks} variant="page" source="media" eyebrow={EYEBROW[media.type] ?? 'Vocabulary'} onClose={close}/>{confirmationCount > 0 && <ConfirmationPopup count={confirmationCount} onClose={() => router.push('/media')}/>}</>;
 }
 
 export default function MediaVocabularyPage() {

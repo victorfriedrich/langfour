@@ -248,6 +248,36 @@ button { font: inherit; color: inherit; }
 .signin-cta:active { opacity: 0.8; }
 .signin-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 body.theme-dark .signin-cta { color: #1c1c1e; }
+/* Add to Library: quieter than the sign-in button, it is an extra. */
+.library-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0.9em 0 0;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.library-btn::before { content: '+'; font-size: 16px; line-height: 1; }
+.library-btn:disabled { opacity: 0.6; cursor: default; }
+.library-btn:active { opacity: 0.8; }
+.library-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.library-done::before { content: none; }
+.library-done::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
+}
 
 .article-content { line-height: var(--reader-line-height); overflow-wrap: break-word; }
 .article-content p { margin: 0 0 1.1em; }

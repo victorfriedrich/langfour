@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
@@ -11,7 +12,15 @@ from auth import AuthMiddleware, get_current_user
 from database import initialize_cache
 from flashcards import router as flashcards_router
 from languages import require_code
-from media_import import get_media, import_media, list_media
+from media_import import (
+    ImportLimitError,
+    MediaExistsError,
+    MediaStore,
+    get_media,
+    get_media_words,
+    import_media,
+    list_media,
+)
 from nlp_processing import (
     generate_word_examples,
     get_missing_words,
@@ -137,18 +146,24 @@ class VideoRequest(BaseModel):
     language: str
 
 class TranscriptChunk(BaseModel):
-    timestamp: list[float] = Field(..., min_length=2, max_length=2)
-    text: str = Field(..., min_length=1)
+    # Absent for articles and lyrics, which are passages rather than cues.
+    timestamp: list[float] | None = Field(None, min_length=2, max_length=2)
+    text: str = Field(..., min_length=1, max_length=5_000)
 
 class MediaImportRequest(BaseModel):
-    series: str = Field(..., min_length=1)
     language: str = Field(..., description="Language name or ISO code")
-    chunks: list[TranscriptChunk] = Field(..., min_length=1)
+    # A feature film is ~2,000 subtitle cues. The total length and the number
+    # of imports a day are capped in media_import.py.
+    chunks: list[TranscriptChunk] = Field(..., min_length=1, max_length=5_000)
+    media_type: Literal["series", "movie", "article", "song", "text"] = "series"
+    series: str | None = None
     title: str | None = None
     season: conint(ge=0) | None = None
     episode: conint(ge=0) | None = None
+    artist: str | None = None
+    site: str | None = None
+    source_url: str | None = Field(None, max_length=2048)
     media_id: str | None = None
-    media_type: str = "series"
     model: str | None = None
     timebase: str | None = None
     audio_seconds: confloat(gt=0) | None = None
@@ -484,14 +499,23 @@ async def process_video_endpoint(request: VideoRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing video: {e!s}") from e
 
+def get_media_store() -> MediaStore:
+    return MediaStore(supabase)
+
 @app.post("/api/media/import", status_code=201)
-async def import_media_endpoint(request: MediaImportRequest):
-    """Import a timestamped transcript as an episode or other media item."""
+async def import_media_endpoint(
+    request: MediaImportRequest,
+    current_user: dict = Depends(get_current_user),
+    store: MediaStore = Depends(get_media_store),
+):
+    """Add a transcript, article or song to the signed-in user's Library."""
     try:
         payload = request.model_dump()
-        return await asyncio.to_thread(import_media, payload, parse, group_text)
-    except FileExistsError as error:
+        return await asyncio.to_thread(import_media, store, str(current_user.id), payload, parse, group_text)
+    except MediaExistsError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except ImportLimitError as error:
+        raise HTTPException(status_code=429, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -501,10 +525,12 @@ async def import_media_endpoint(request: MediaImportRequest):
 @app.get("/api/media")
 async def get_imported_media(
     language: str = Query("es", description="Language name or ISO code"),
+    current_user: dict = Depends(get_current_user),
+    store: MediaStore = Depends(get_media_store),
 ):
-    """Return lightweight metadata for the frontend's imported-media tab."""
+    """The signed-in user's Library in one language, newest first, without the text."""
     try:
-        return {"media": list_media(language)}
+        return {"media": list_media(store, str(current_user.id), language)}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -512,10 +538,30 @@ async def get_imported_media(
 async def get_imported_media_item(
     media_id: str,
     language: str = Query("es", description="Language name or ISO code"),
+    current_user: dict = Depends(get_current_user),
+    store: MediaStore = Depends(get_media_store),
 ):
-    """Return metadata and timestamped chunks for one imported item."""
+    """One of the signed-in user's Library items, with its text."""
     try:
-        return {"media": get_media(media_id, language)}
+        return {"media": get_media(store, str(current_user.id), media_id, language)}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Media not found: {media_id}") from exc
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+@app.post("/api/media/{media_id}/missing-words")
+async def get_imported_media_missing_words(
+    media_id: str,
+    request: MissingWordsRequest,
+    current_user: dict = Depends(get_current_user),
+    store: MediaStore = Depends(get_media_store),
+):
+    """The words of a Library item the user doesn't know yet. Videos keep
+    their own endpoint, which reads the shared corpus on disk."""
+    try:
+        language_code = require_code(request.language_code)
+        words = get_media_words(store, str(current_user.id), media_id, language_code)
+        return {"missing_words": await get_missing_words(current_user.id, words, language_code)}
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Media not found: {media_id}") from exc
     except ValueError as error:

@@ -10,6 +10,10 @@ interface WordpanelProps {
   videoTitle: string;
   onClose: (addedWordsCount: number) => void;
   variant?: 'panel' | 'page';
+  /** The small label above the title on the full page, e.g. "Article vocabulary". */
+  eyebrow?: string;
+  /** Where the words come from: the shared video corpus, or the user's Library. */
+  source?: 'videos' | 'media';
   transcript?: TranscriptChunk[];
 }
 
@@ -19,10 +23,10 @@ interface MissingWord {
   translation: string;
 }
 
-const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, variant = 'panel', transcript = [] }) => {
+const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, variant = 'panel', transcript = [], eyebrow = 'Episode vocabulary', source = 'videos' }) => {
   const [selectedWords, setSelectedWords] = useState<number[]>([]);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
-  const { recommendedWords, flaggedWords, isLoading, error } = useMissingWords(videoId);
+  const { recommendedWords, flaggedWords, isLoading, error } = useMissingWords(videoId, source);
   const allWords = useMemo(() => [...recommendedWords, ...flaggedWords], [recommendedWords, flaggedWords]);
   const { addWordsToUserwords } = useUpdateUserwords();
   const { seenVideos, markVideoAsSeen } = useSeenVideos(0);
@@ -83,7 +87,7 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
 
   return (
     <div className={`${fullPage ? 'min-h-full w-full bg-slate-50' : 'fixed right-0 top-11 z-50 flex h-[calc(100dvh-48px)] w-full flex-col bg-white shadow-lg md:top-0 md:h-full md:w-1/3'} ${isShiftPressed ? 'select-none' : ''}`} onClick={(event) => event.stopPropagation()}>
-      <Header videoTitle={videoTitle} wordCount={allWords.length} fullPage={fullPage} onClose={onClose} />
+      <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={allWords.length} fullPage={fullPage} onClose={onClose} />
       <div className={fullPage ? 'mx-auto w-full max-w-6xl flex-1 space-y-8 px-5 py-8 pb-32' : 'flex-1 space-y-4 overflow-y-auto'}>
         <WordGroup label="Recommended" words={recommendedWords} startIndex={0} selectedWords={selectedWords} fullPage={fullPage} transcript={transcript} toggleGroup={() => toggleWordGroup(recommendedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />
         {flaggedWords.length > 0 && <WordGroup label="Flagged" words={flaggedWords} startIndex={recommendedWords.length} selectedWords={selectedWords} fullPage={fullPage} transcript={transcript} collapsible toggleGroup={() => toggleWordGroup(flaggedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
@@ -93,8 +97,8 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   );
 };
 
-function Header({ videoTitle, wordCount, fullPage, onClose }: { videoTitle: string; wordCount: number; fullPage: boolean; onClose: (count: number) => void }) {
-  return <header className={fullPage ? 'border-b border-slate-200 bg-white' : 'border-b p-4'}><div className={fullPage ? 'mx-auto max-w-6xl px-5 py-8' : 'flex items-center justify-between'}><button onClick={() => onClose(0)} aria-label={fullPage ? 'Back to media' : 'Close'} className={fullPage ? 'mb-5 inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-slate-600 transition hover:text-indigo-700' : 'order-2 text-gray-500 hover:text-gray-700'}>{fullPage ? <><ArrowLeft size={18}/><span>Back to media</span></> : <X size={24}/>}</button><div className="min-w-0 flex-1">{fullPage && <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">Episode vocabulary</p>}<h1 className={fullPage ? 'truncate text-3xl font-bold tracking-tight text-slate-950' : 'text-lg font-semibold'}>{videoTitle}</h1>{fullPage && <p className="mt-2 text-sm text-slate-500">Choose the words you want to learn. {wordCount} new {wordCount === 1 ? 'word' : 'words'} found.</p>}</div></div></header>;
+function Header({ videoTitle, eyebrow, wordCount, fullPage, onClose }: { videoTitle: string; eyebrow: string; wordCount: number; fullPage: boolean; onClose: (count: number) => void }) {
+  return <header className={fullPage ? 'border-b border-slate-200 bg-white' : 'border-b p-4'}><div className={fullPage ? 'mx-auto max-w-6xl px-5 py-8' : 'flex items-center justify-between'}><button onClick={() => onClose(0)} aria-label={fullPage ? 'Back to library' : 'Close'} className={fullPage ? 'mb-5 inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-slate-600 transition hover:text-indigo-700' : 'order-2 text-gray-500 hover:text-gray-700'}>{fullPage ? <><ArrowLeft size={18}/><span>Back to library</span></> : <X size={24}/>}</button><div className="min-w-0 flex-1">{fullPage && <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">{eyebrow}</p>}<h1 className={fullPage ? 'truncate text-3xl font-bold tracking-tight text-slate-950' : 'text-lg font-semibold'}>{videoTitle}</h1>{fullPage && <p className="mt-2 text-sm text-slate-500">Choose the words you want to learn. {wordCount} new {wordCount === 1 ? 'word' : 'words'} found.</p>}</div></div></header>;
 }
 
 function WordGroup({ label, words, startIndex, selectedWords, fullPage, transcript, collapsible = false, toggleGroup, handleWordClick, toggleWordSelection }: { label: string; words: MissingWord[]; startIndex: number; selectedWords: number[]; fullPage: boolean; transcript: TranscriptChunk[]; collapsible?: boolean; toggleGroup: () => void; handleWordClick: (event: React.MouseEvent, word: MissingWord, index: number) => void; toggleWordSelection: (id: number) => void }) {
