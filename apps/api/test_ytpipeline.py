@@ -250,7 +250,7 @@ def test_lock_refuses_a_second_run(tmp_path):
     store = tmp_path / "t.sqlite"
     yp.lock(store)
     probe = subprocess.run([sys.executable, "-c", textwrap.dedent(f"""
-        import sys, pathlib; sys.path.insert(0, {str(Path.cwd())!r})
+        import sys, pathlib; sys.path.insert(0, {str(Path(__file__).parent)!r})
         import ytpipeline as yp
         yp.lock(pathlib.Path({str(store)!r}))
     """)], capture_output=True, text=True)
