@@ -18,7 +18,9 @@ interface MissingWordsRequest {
   language_code: string;
 }
 
-export const useMissingWords = (videoId: string) => {
+// Videos come from the shared corpus; Library items are per user and have
+// their own route.
+export const useMissingWords = (videoId: string, source: 'videos' | 'media' = 'videos') => {
   const [recommendedWords, setRecommendedWords] = useState<MissingWord[]>([]);
   const [flaggedWords, setFlaggedWords] = useState<MissingWord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,7 +36,7 @@ export const useMissingWords = (videoId: string) => {
           language_code: language?.code || 'es' // Default to 'en' if language code is not available
         };
 
-        const response = await fetchWithAuth(`${API_URL}/api/videos/${videoId}/missing-words`, {
+        const response = await fetchWithAuth(`${API_URL}/api/${source}/${encodeURIComponent(videoId)}/missing-words`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -86,7 +88,7 @@ export const useMissingWords = (videoId: string) => {
     };
 
     fetchMissingWords();
-  }, [videoId, fetchWithAuth, language]);
+  }, [videoId, source, fetchWithAuth, language]);
 
   return { recommendedWords, flaggedWords, isLoading, error };
 };

@@ -2,7 +2,7 @@ import { debugLog } from './config';
 import { getPrefs } from './preferencePopup/prefs';
 import { injectCss, injectJs, logPrefix } from './utils';
 import { Language, toLanguage } from './languages';
-import { Readability } from '@mozilla/readability';
+import { extractArticle, layoutJudge } from './articleExtraction';
 import { getStoredWords } from './wordstorage';
 import { BackendRequest, BackendResponse, ContentScriptMessage, sendToBackground } from './messages';
 import { BackendRequestEvent, BackendResponseEvent, KnownWordsEvent } from './types';
@@ -76,6 +76,16 @@ document.addEventListener('view-popup', () => {
 document.addEventListener('session', () => {
   sendToBackground({ type: 'session' });
 });
+// The translation popup's "Sign in" button, shown when there is no session.
+// The host page can dispatch this event too, so at most one tab per few
+// seconds rather than one per event.
+const SIGN_IN_COOLDOWN_MS = 5000;
+let lastSignInOpened = 0;
+document.addEventListener('open-sign-in', () => {
+  if (Date.now() - lastSignInOpened < SIGN_IN_COOLDOWN_MS) return;
+  lastSignInOpened = Date.now();
+  sendToBackground({ type: 'OPEN_SIGN_IN' });
+});
 
 // The paths the MAIN world is allowed to reach: exactly what index.ts and
 // youtubeBookmark.ts call. The expensive endpoints (/parse, /api/translate)
@@ -132,10 +142,19 @@ document.addEventListener('backend-request', ((event: CustomEvent<BackendRequest
 // active tab. Only install the subtitle UI on the sites it actually supports;
 // unsupported pages need the EXTRACT_ARTICLE listener below and nothing else.
 if (isAllowedHost(location.host)) {
-  injectCss('src/index.css');
-  injectJs('src/index.js').then(sendCurrentPrefsToInjectedScripts);
-  if (location.host === 'www.youtube.com') {
-    injectJs('src/youtubeBookmark.js');
+  if (process.env.EXTENSION_TARGET === 'safari') {
+    // Safari applies the page's CSP to <script>/<link> tags pointing at the
+    // extension, and YouTube's script-src blocks them. So the Safari manifest
+    // loads index.js and index.css as content scripts right after this one
+    // (scripts/build-safari.mjs), in this isolated world. The bookmark button
+    // stays desktop-only.
+    sendCurrentPrefsToInjectedScripts();
+  } else {
+    injectCss('src/index.css');
+    injectJs('src/index.js').then(sendCurrentPrefsToInjectedScripts);
+    if (location.host === 'www.youtube.com') {
+      injectJs('src/youtubeBookmark.js');
+    }
   }
 }
 
@@ -174,34 +193,6 @@ function checkCacheAndRefreshWords(): void {
   );
 }
 
-function combinedCleanDocument(doc: Document): Document {
-  // Step 1: Remove elements with a fixed set of unwanted selectors.
-  const unwantedSelectors: string[] = [
-    'nav', 'aside', 'footer', 'header', 'form', 'iframe', 'script', 'style', 'noscript',
-    '.advertisement', '.ad', '.sidebar', '.related', '.popup'
-  ];
-  unwantedSelectors.forEach((selector: string) => {
-    doc.querySelectorAll(selector).forEach((el: Element) => el.remove());
-  });
-
-  // Step 2: Remove elements that likely belong to footer, privacy, or sitemap sections.
-  const additionalSelectors: string[] = [
-    '[class*="footer"]',
-    '[id*="footer"]',
-    '[class*="privacy"]',
-    '[id*="privacy"]',
-    '[class*="sitemap"]',
-    '[id*="sitemap"]',
-    '[id*="onetrust-consent-sdk"]',
-    '[data-e2e*="recommendations-heading"]',
-    '[class*="bbc-by8ykd"]'
-  ];
-  additionalSelectors.forEach((selector: string) => {
-    doc.querySelectorAll(selector).forEach((el: Element) => el.remove());
-  });
-
-  return doc;
-}
 
 /**
  * Single router for messages this content script owns: article extraction
@@ -214,10 +205,9 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
   switch (message.type) {
     case 'EXTRACT_ARTICLE': {
       try {
-        const docClone = document.cloneNode(true) as Document;
-        const cleanedDoc = combinedCleanDocument(docClone);
-        const reader = new Readability(cleanedDoc);
-        const article = reader.parse();
+        // The live page, so the pipeline can use layout (overlays,
+        // screen-reader-only text); it works on its own copy.
+        const article = extractArticle(document, { url: location.href, layout: layoutJudge });
         sendResponse({ article });
       } catch (error: unknown) {
         console.error('Error extracting article:', error);

@@ -16,6 +16,8 @@
       background-color: white;
       color: #333;
       width: 380px;
+      /* Safari on iOS shows the popup as a sheet narrower than 380px. */
+      max-width: 100vw;
     }
     
     .container {
@@ -133,6 +135,44 @@
     .sent-title { margin-top: 10px; font-size: 16px; font-weight: 600; }
     .sent-text { margin-top: 6px; font-size: 13px; line-height: 1.5; color: #555; overflow-wrap: anywhere; }
     .sent-actions { margin-top: 14px; display: flex; justify-content: center; gap: 8px; font-size: 13px; color: #aaa; }
+    .code-form { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+    #codeInput {
+      width: 140px; height: 42px; padding: 0 12px;
+      border: 1px solid #ddd; border-radius: 4px;
+      font-size: 18px; letter-spacing: 0.15em; text-align: center; color: #333;
+    }
+    #codeInput:focus { outline: none; border-color: #4f46e5; }
+    #codeBtn {
+      height: 42px; padding: 0 16px; border: none; border-radius: 4px;
+      background-color: #4f46e5; color: #fff; font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    #codeBtn:hover:not(:disabled) { background-color: #4338ca; }
+    #codeBtn:disabled { background-color: #a5b4fc; cursor: progress; }
+    #topSection { padding-bottom: 0; }
+    #topSection .header { margin-bottom: 12px; }
+    #loggedOutPane, #loggedInPane { padding-top: 16px; }
+    /* Same family as the popup's other primary buttons (Log in, Review
+       flashcards): flat indigo, 4px corners, one label. The page it opens
+       is a quiet line underneath. */
+    .reader-btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; height: 46px; padding: 0 16px;
+      border: none; border-radius: 4px;
+      background-color: #4f46e5; color: #fff;
+      font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .reader-btn:hover:not(:disabled) { background-color: #4338ca; }
+    .reader-btn:disabled { cursor: progress; }
+    .reader-btn .spinner { display: none; }
+    .reader-btn.loading .spinner { display: block; }
+    .reader-btn.loading .reader-icon { display: none; }
+    .reader-page {
+      margin-top: 6px; font-size: 12.5px; color: #888; text-align: center;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .reader-page:empty { display: none; }
+    #readerError { margin: 8px 0 0; }
     .link-btn { background: none; border: none; padding: 0; font: inherit; color: #4f46e5; cursor: pointer; }
     .link-btn:hover:not(:disabled) { text-decoration: underline; }
     .link-btn:disabled { color: #888; cursor: default; }
@@ -151,7 +191,7 @@
     @media (prefers-color-scheme: dark) {
       body { background-color: #1f2937; color: #e5e7eb; }
       .version, .footer-text, .or-divider { color: #9ca3af; }
-      input[type="email"] { background: #111827; color: #f3f4f6; border-color: #374151; }
+      input[type="email"], #codeInput { background: #111827; color: #f3f4f6; border-color: #374151; }
       .or-divider:before, .or-divider:after { background: #374151; }
       .language-button { border-color: #374151; }
       .language-button.active { background-color: rgba(129, 140, 248, 0.18); }
@@ -309,14 +349,27 @@
   </style>
 </head>
 <body>
-  <!-- Logged Out (Login) View -->
-  <div id="loggedOutPane" class="container">
+  <div id="topSection" class="container">
     <div class="header">
       <div class="logo-section">
         <div class="logo">Langfour</div>
-        <div class="version" id="version-login">v1.1</div>
+        <div class="version" id="version"></div>
       </div>
     </div>
+    <!-- The main action, signed in or not: shown when the current tab is a web page. -->
+    <div id="readerCard" class="hidden">
+      <button type="button" id="readerBtn" class="reader-btn">
+        <svg class="reader-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10.3 5.2 7.9 4.5 4 4.5v13c3.9 0 6.3.7 8 2 1.7-1.3 4.1-2 8-2v-13c-3.9 0-6.3.7-8 2z"/><path d="M12 6.5v13"/></svg>
+        <svg class="spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.55"/></svg>
+        <span id="readerBtnTitle">Read this page</span>
+      </button>
+      <p id="readerPageTitle" class="reader-page"></p>
+      <p id="readerError" class="form-message error hidden" role="alert"></p>
+    </div>
+  </div>
+
+  <!-- Logged Out (Login) View -->
+  <div id="loggedOutPane" class="container">
     
     <form id="loginForm">
       <div class="input-group">
@@ -349,7 +402,21 @@
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
       </div>
       <p class="sent-title">Check your email</p>
-      <p class="sent-text">We sent a sign-in link to <strong id="sentEmail"></strong>. Open it in this browser to finish signing in.</p>
+      <p class="sent-text">We sent a sign-in code to <strong id="sentEmail"></strong>. Enter it below, or open the link in the email in this browser.</p>
+      <form id="codeForm" class="code-form">
+        <input
+          type="text"
+          id="codeInput"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          pattern="[0-9 ]*"
+          maxlength="12"
+          placeholder="123456"
+          aria-label="Sign-in code"
+        >
+        <button type="submit" id="codeBtn">Sign in</button>
+      </form>
+      <p id="codeError" class="form-message error hidden" role="alert"></p>
       <div class="sent-actions">
         <button type="button" id="resendBtn" class="link-btn" disabled>Resend in <span id="timer">60</span>s</button>
         <span aria-hidden="true">·</span>
@@ -368,12 +435,6 @@
   
   <!-- Logged In View -->
   <div id="loggedInPane" class="hidden">
-    <div class="header">
-      <div class="logo-section">
-        <div class="logo">Langfour</div>
-        <div class="version" id="version">v1.1</div>
-      </div>
-    </div>
     <div id="languageButtons">
       <!-- Language buttons will be inserted here -->
     </div>
@@ -381,9 +442,6 @@
       <button type="button" id="reviewBtn" class="quick-link primary">Review flashcards</button>
       <button type="button" id="openAppBtn" class="quick-link">Open Langfour</button>
     </div>
-    <p class="footer-text">
-      <a id="remnoteDocumentLink" class="hidden" target="_blank" rel="noreferrer">Langfour document</a>
-    </p>
     <div class="footer">
       <div id="userInfo"></div>
       <button id="logoutBtn">Logout</button>

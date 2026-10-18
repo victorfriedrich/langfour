@@ -22,10 +22,9 @@
   /* Prevent popup from exceeding viewport height */
   overflow: hidden;
   /* Hide any overflowing content */
-  transition: width 0.3s ease, height 0.3s ease;
-  /* Smooth transitions */
-  margin-bottom: 10px;
-  transform: translateY(-38px);
+  /* No size transition: when the translation arrives the popup grows, and
+     near the player's edge it also has to move. Animating the size made it
+     crawl sideways in 100 ms steps. */
 }
 
 .sub-tr-popup-content {
@@ -62,6 +61,24 @@
   border-radius: 4px;
   transition: background-color 0.2s, color 0.2s;
   margin-left: 12px;
+}
+
+.sub-tr-sign-in-button {
+  display: block;
+  margin-top: 10px;
+  background: #fff;
+  border: none;
+  color: #232326;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+.sub-tr-sign-in-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
 .nomargin {
@@ -108,12 +125,39 @@
   word-break: break-all;
 }
 
-.sub-tr-loading {
-  width: 50%;
-  height: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.sub-tr-loading p {
+  margin: 0 0 4px;
+  color: #a1a1aa;
+  font-size: 13px;
+}
+
+/* Stands in for the translation line while it loads. */
+.sub-tr-skeleton {
+  display: block;
+  width: 140px;
+  max-width: 100%;
+  height: 14px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  animation: sub-tr-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sub-tr-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sub-tr-skeleton {
+    animation: none;
+  }
+}
+
+.sub-tr-plus-button.sub-tr-saved {
+  background-color: #22c55e;
+  border-color: #22c55e;
+  cursor: default;
 }
 
 .sub-tr-close-icon {
@@ -149,5 +193,117 @@
   .sub-tr-popup {
     max-width: 400px;
     /* Default max-width for larger screens */
+  }
+}
+/* Touch screens (Safari on iPhone): a compact card sized to the phone, with
+   finger-sized controls. The desktop popup above is unchanged. */
+@media (hover: none) {
+  .sub-tr-popup {
+    font-family: -apple-system, system-ui, sans-serif;
+    min-width: 0;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 10px 10px 10px 14px;
+    border: none;
+    border-radius: 16px;
+    background: rgba(24, 24, 27, 0.94);
+    box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
+
+  .sub-tr-dict-item {
+    margin-bottom: 0;
+  }
+
+  .sub-tr-dict-item-title {
+    margin-bottom: 0;
+    gap: 12px;
+  }
+
+  .sub-tr-dict-item-title p,
+  .sub-tr-loading p {
+    margin: 0 0 1px;
+    font-size: 13px;
+    color: #a1a1aa;
+  }
+
+  /* As tall as the 17px translation line. */
+  .sub-tr-skeleton {
+    height: 17px;
+    margin: 2px 0;
+  }
+
+  .sub-tr-dict-item-text {
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  /* A solid accent button with the plus drawn in CSS: the text glyph sat
+     off-centre and the thin outline looked like an icon, not a button. */
+  .sub-tr-plus-button {
+    position: relative;
+    flex: none;
+    width: 38px;
+    height: 38px;
+    margin-left: 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: #4f46e5;
+    font-size: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .sub-tr-plus-button:not(.sub-tr-saved)::before,
+  .sub-tr-plus-button:not(.sub-tr-saved)::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 2px;
+    border-radius: 1px;
+    background: #fff;
+    transform: translate(-50%, -50%);
+  }
+
+  .sub-tr-plus-button:not(.sub-tr-saved)::after {
+    transform: translate(-50%, -50%) rotate(90deg);
+  }
+
+  .sub-tr-plus-button:active:not(.sub-tr-saved) {
+    background-color: #4338ca;
+  }
+
+  .sub-tr-plus-button.sub-tr-saved {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .sub-tr-sign-in-button {
+    padding: 9px 14px;
+    font-size: 15px;
+    border-radius: 9px;
+  }
+}
+
+/* Sideways (fullscreen on iPhone) the captions are larger; match them. */
+@media (hover: none) and (orientation: landscape) {
+  .sub-tr-popup {
+    max-width: 360px;
+    padding: 12px 12px 12px 16px;
+  }
+
+  .sub-tr-dict-item-title p {
+    font-size: 14px;
+  }
+
+  .sub-tr-dict-item-text {
+    font-size: 20px;
+  }
+
+  .sub-tr-plus-button {
+    width: 42px;
+    height: 42px;
   }
 }

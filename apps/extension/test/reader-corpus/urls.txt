@@ -1,0 +1,44 @@
+# Pages the reader's extraction is checked against (see README.md here).
+# One per line: <name> <language> <url> [none]. Pages are not committed:
+# they are fetched into apps/extension/.corpus-cache by
+# scripts/fetch-reader-corpus.mjs. "none" marks a page that is not an
+# article, where the reader should say so instead of showing scraps.
+#
+# Spanish news, Spain
+eldiario       es  https://www.eldiario.es/catalunya/catalunya-trenes-rodalies-planton-maquinistas-circular_1_13567738.html
+elmundo        es  https://www.elmundo.es/espana/2018/04/19/5ad84fea468aeb1d1d8b459d.html
+rtve           es  https://www.rtve.es/noticias/20240109/estado-embalses-espana-datos/2281701.shtml
+elconfidencial es  https://www.elconfidencial.com/alma-corazon-vida/2026-10-04/javier-quintero-psiquiatra-hobbies-pueden-ayudar-cuidar-salud-mental-1qrt_4416639/
+abc            es  https://www.abc.es/bienestar/alimentacion/aurelio-rojas-cardiologo-aceite-oliva-oro-liquido-20261007160000-nt.html
+lavanguardia   es  https://www.lavanguardia.com/dinero/bolsillo/20261006/11651547/pablo-gil-economista-inversion-bolsillo-podcast-pca.html
+elespanol      es  https://www.elespanol.com/ciencia/20261006/expertos-coinciden-piensas-comer-hamburguesa-pedir-carne-hecha/1003744401974_0.html
+# Spanish news, Latin America and international
+lanacion       es  https://www.lanacion.com.ar/politica/desde-la-confirmacion-de-la-visita-del-papa-los-obispos-acentuaron-sus-criticas-por-las-deudas-nid07102026/
+clarin         es  https://www.clarin.com/arq/arquitecta-mexicana-frida-escobedo-cuenta-proyecto-nuevo-malba_0_GLyeJgyOag.html
+eltiempo       es  https://www.eltiempo.com/bogota/asi-lo-pueden-estar-perfilando-para-robarle-el-vehiculo-cuando-entra-a-su-casa-en-bogota-seguidilla-de-atracos-violentos-pone-en-alerta-a-ciudadania-3591937
+infobae        es  https://www.infobae.com/estados-unidos/2026/01/03/el-dictador-nicolas-maduro-llego-a-una-base-militar-de-nueva-york/
+bbcmundo       es  https://www.bbc.com/mundo/articles/c58jz72rk3rmo
+bbcmundo2      es  https://www.bbc.com/mundo/articles/c3gr80979x57o
+dw             es  https://www.dw.com/es/alemania-promete-seguir-luchando-contra-el-antisemitismo-y-por-la-seguridad-de-israel-en-el-tercer-aniversario-del-7-de-octubre/a-79575648
+# Spanish blogs, tech and recipes
+xataka         es  https://www.xataka.com/basics/como-hacer-que-fotos-videos-tu-movil-ocupen-espacio-perder-calidad-forma-notable
+xatakamx       es  https://www.xataka.com.mx/automovil/chevrolet-aveo-nuevo-cuesta-que-algunos-autos-usados-mexico-hay-condicion
+genbeta        es  https://www.genbeta.com/desarrollo/a-desarrolladores-software-se-les-fue-manos-como-bautizan-ahora-todos-pagamos-impuesto-cognitivo-ello
+receta         es  https://www.directoalpaladar.com/recetas-de-pescados-y-mariscos/receta-lubina-al-horno-verduras-sabrosa-facil-cena-rapida-completa
+# Encyclopedia
+wiki-es        es  https://es.wikipedia.org/wiki/Madrid
+wiki-de        de  https://de.wikipedia.org/wiki/Berlin
+wiki-fr        fr  https://fr.wikipedia.org/wiki/Paris
+wiki-it        it  https://it.wikipedia.org/wiki/Roma
+# German
+spiegel        de  https://www.spiegel.de/ausland/9-11-in-new-york-city-ein-stueck-von-mir-ist-auf-dem-broadway-liegen-geblieben-a-165ba7bf-9cdd-41c8-a288-2fb4faded1b0
+zeit           de  https://www.zeit.de/arbeit/2026-09/laurie-santos-glueck-psychologie-arbeitsplatz
+tagesschau     de  https://www.tagesschau.de/inland/gesellschaft/fall-hanning-bnd-100.html
+tagesschau-tv  de  https://www.tagesschau.de/inland/gesellschaft/wdr-auslieferung-eines-mitglieds-der-russischen-hackergruppe-qilin--aktuelle-stunde-100.html  none
+# French
+lemonde        fr  https://www.lemonde.fr/actualite-medias/article/2019/08/12/les-flux-rss-du-monde-fr_5498778_3236.html
+# Italian
+# Consent wall: the article is not in the page until cookies are accepted.
+repubblica     it  https://www.repubblica.it/commenti/2026/10/07/news/legge_elettorale_un_premierato_in_maschera-425630553/  none
+ilpost         it  https://www.ilpost.it/2025/08/01/cattivi-film-miliardari-tecnologia/
+ansa           it  https://www.ansa.it/sito/notizie/cronaca/2026/10/06/attentato-di-modena-el-koudri-tenta-il-suicidio-in-carcere_dc8802dc-c3f5-4b75-822e-36576ccf9789.html

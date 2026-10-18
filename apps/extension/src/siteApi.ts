@@ -15,6 +15,22 @@ interface SubtitleApiWithMask extends SubtitleApi {
   maskContainerSelector: string;
 }
 
+const youtube = {
+  subtitleTransformType: 'replace',
+  subtitleSelector: '#movie_player .ytp-caption-window-container',
+  subtitlePopupSelector: '#movie_player',
+  popupOffsetBottom: 8,
+  pause() {
+    if (document.querySelector<HTMLVideoElement>('#movie_player video')?.paused)
+      return false;
+    document.querySelector<HTMLVideoElement>('#movie_player video')?.pause();
+    return true;
+  },
+  play() {
+    document.querySelector<HTMLVideoElement>('#movie_player video')?.play();
+  },
+} satisfies SubtitleApiWithReplace;
+
 const siteApiMap = {
   'www.netflix.com': {
     subtitleTransformType: 'replace',
@@ -37,21 +53,9 @@ const siteApiMap = {
         ?.click();
     },
   },
-  'www.youtube.com': {
-    subtitleTransformType: 'replace',
-    subtitleSelector: '#movie_player .ytp-caption-window-container',
-    subtitlePopupSelector: '#movie_player',
-    popupOffsetBottom: 8,
-    pause() {
-      if (document.querySelector<HTMLVideoElement>('#movie_player video')?.paused)
-        return false;
-      document.querySelector<HTMLVideoElement>('#movie_player video')?.pause();
-      return true;
-    },
-    play() {
-      document.querySelector<HTMLVideoElement>('#movie_player video')?.play();
-    },
-  },
+  'www.youtube.com': youtube,
+  // The mobile site (Safari on iPhone) uses the same player and caption markup.
+  'm.youtube.com': youtube,
   'www.primevideo.com': {
     subtitleTransformType: 'mask',
     subtitleSelector: '.atvwebplayersdk-captions-overlay',
