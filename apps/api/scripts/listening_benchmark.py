@@ -5,6 +5,7 @@ opposed to how many of its words a learner knows (recommender.py).
     python3 scripts/listening_benchmark.py                    # 30 Spanish videos
     python3 scripts/listening_benchmark.py --n 10 --cooldown 120
     python3 scripts/listening_benchmark.py --cookies cookies.txt
+    BENCH_PROXY='http://USER:PASS@gate.decodo.com:{port}' python3 scripts/listening_benchmark.py
     python3 scripts/listening_benchmark.py --report-only      # recompute from cache
 
 For each video a fixed window (WINDOW_S seconds, starting at WINDOW_START_S)
@@ -17,7 +18,16 @@ once ("Sign in to confirm you're not a bot"). Downloads are therefore one at a
 time with a randomised --cooldown between them, and the run stops after
 MAX_BLOCKS refusals in a row instead of hammering. From a blocked address,
 pass --cookies (a Netscape cookies.txt exported from a logged-in browser) or
-run it from a home connection.
+run it from a home connection, or through a residential proxy (--proxy).
+
+Proxy traffic. YouTube's media URLs are bound to the IP that asked for them,
+so the page lookup and the audio download must leave from the same address:
+the download cannot skip the proxy. What the proxy carries is kept small
+instead: the lowest-bitrate audio (~48 kbps, plenty for speech), only the
+WINDOW_S window (ffmpeg fetches it by byte range), no watch page, and the
+player script cached between videos. About 2-3 MB a video. The proxy URL may
+contain {port}: each video then gets its own sticky port (PROXY_PORT_BASE + n),
+so one video is fetched from one IP and successive videos from different IPs.
 
 Metrics, per video
 ------------------
@@ -72,6 +82,7 @@ MIN_LENGTH_MIN, MAX_LENGTH_MIN = 7, 30
 PAUSE_S = 0.4                        # a gap a listener notices
 RARE_ZIPF = 3.0                      # rarer than ~1 per million words
 MAX_BLOCKS = 3
+PROXY_PORT_BASE = 10000              # Decodo's sticky ports start at 10001
 MIN_LANGUAGE_SHARE = 0.8             # of pieces Whisper hears as the language
 LANGUAGE_NAMES = {"es": "spanish", "fr": "french", "de": "german", "it": "italian"}
 MODELS = ("openai/whisper-large-v3-turbo", "openai/whisper-large-v3")
@@ -115,11 +126,12 @@ class Blocked(RuntimeError):
     pass
 
 
-def download(video_id: str, dest: str, cookies: str | None) -> None:
+def download(video_id: str, dest: str, cookies: str | None, proxy: str | None) -> None:
     """WINDOW_S seconds of audio as 16 kHz mono wav."""
     import yt_dlp
     opts = {
-        "format": "bestaudio/best",
+        "format": "worstaudio[acodec^=mp4a]/worstaudio/worst",
+        "keepvideo": True,   # the downloaded audio's size measures proxy traffic
         "outtmpl": dest + ".%(ext)s",
         "quiet": True, "no_warnings": True, "noprogress": True,
         "download_ranges": yt_dlp.utils.download_range_func(
@@ -128,11 +140,14 @@ def download(video_id: str, dest: str, cookies: str | None) -> None:
         "sleep_interval_requests": 2,
         "js_runtimes": {"node": {}},
         "remote_components": {"ejs:github"},   # YouTube's JS challenge solver
+        "extractor_args": {"youtube": {"player_skip": ["webpage"]}},
         "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
         "postprocessor_args": {"extractaudio": ["-ac", "1", "-ar", str(RATE)]},
     }
     if cookies:
         opts["cookiefile"] = cookies
+    if proxy:
+        opts["proxy"] = proxy
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
@@ -297,13 +312,15 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=4)
     p.add_argument("--cooldown", type=float, default=90, help="mean seconds between downloads")
     p.add_argument("--cookies")
+    p.add_argument("--proxy", default=os.getenv("BENCH_PROXY"),
+                   help="proxy URL, may contain {port}; default $BENCH_PROXY")
     p.add_argument("--out", default="benchmark")
     p.add_argument("--report-only", action="store_true")
     args = p.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
     videos = select_videos(args.corpus, args.n, args.seed)
-    blocks, downloaded_any = 0, False
+    blocks, downloaded_any, proxy_mb = 0, False, 0.0
     rows = []
     for i, v in enumerate(videos, 1):
         if len(rows) >= args.n:
@@ -324,8 +341,14 @@ def main() -> None:
             downloaded_any = True
             print(f"[{i}/{len(videos)}] downloading {v['id']} ({v['channel']})", flush=True)
             try:
-                download(v["id"], base, args.cookies)
+                proxy = args.proxy.replace("{port}", str(PROXY_PORT_BASE + i)) if args.proxy else None
+                download(v["id"], base, args.cookies, proxy)
                 blocks = 0
+                audio = [f for f in os.listdir(args.out) if f.startswith(v["id"] + ".")
+                         and not f.endswith((".wav", ".json", ".skip"))]
+                mb = sum(os.path.getsize(os.path.join(args.out, f)) for f in audio) / 1e6
+                proxy_mb += mb
+                print(f"  audio {mb:.1f} MB (run total {proxy_mb:.1f} MB)", flush=True)
             except Blocked as e:
                 blocks += 1
                 print(f"  blocked by YouTube ({blocks}/{MAX_BLOCKS}): {str(e)[:120]}", flush=True)
