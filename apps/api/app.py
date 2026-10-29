@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from contextlib import AsyncExitStack
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -12,6 +13,7 @@ from auth import AuthMiddleware, get_current_user
 from database import initialize_cache
 from flashcards import router as flashcards_router
 from languages import require_code
+from mcp_server import mcp
 from media_import import (
     ImportLimitError,
     MediaExistsError,
@@ -120,6 +122,22 @@ app.include_router(flashcards_router, prefix="/flashcards", tags=["flashcards"])
 app.include_router(remnote_web_router, prefix="/integrations/remnote", tags=["remnote"])
 app.include_router(remnote_sync_router, prefix="/sync/remnote", tags=["remnote"])
 app.include_router(remnote_pair_router, prefix="/pair/remnote", tags=["remnote"])
+
+# MCP server (mcp_server.py) at /mcp. Its route joins this app directly rather
+# than as a mounted sub-app, so /mcp needs no trailing slash and AuthMiddleware
+# covers it like any other path. The session manager runs for the app's life.
+app.router.routes.extend(mcp.streamable_http_app().routes)
+
+
+@app.on_event("startup")
+async def start_mcp():
+    app.state.mcp_stack = AsyncExitStack()
+    await app.state.mcp_stack.enter_async_context(mcp.session_manager.run())
+
+
+@app.on_event("shutdown")
+async def stop_mcp():
+    await app.state.mcp_stack.aclose()
 
 # Client now comes from supabase_client, which verifies the key is
 # service_role before the app is allowed to start.

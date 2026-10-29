@@ -329,3 +329,12 @@ BEGIN
     FETCH NEXT page_size ROWS ONLY;
 END;
 $function$;
+
+-- ---------------------------------------------------------------------------
+-- When the plugin last finished a sync run: set by the push that carries the
+-- sweep at the end of every run (present_rem_ids). The web app's "synced X ago" reads this, not
+-- api_tokens.last_used_at, which every plugin request refreshes, including the
+-- regular inbox checks, so it says nothing about whether syncs complete.
+-- ---------------------------------------------------------------------------
+alter table public.userdata
+    add column if not exists remnote_last_sync_at timestamptz;
