@@ -20,6 +20,7 @@ what lets the recommender skip garbled and low-content videos.
 
     python ingest.py seed-done --lang es --ledger data/yt_es.json
     python ingest.py run --lang es --limit 40
+    python ingest.py run --lang es --mix captions=20,whisper=30,proxy=150 --hours 24
     python ingest.py submit --lang es dQw4w9WgXcQ --source manual
 """
 
@@ -27,8 +28,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+import time
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -157,13 +160,14 @@ def prepare_cache() -> None:
     initialize_cache()
 
 
-def transcribe(video_id: str, lang: str, captions: bool = True) -> tuple[str, str | None]:
+def transcribe(video_id: str, lang: str, captions: bool = True,
+               proxy: bool = True) -> tuple[str, str | None]:
     """('done'|'failed', error). videoparsing is imported here because it drags
     in Whisper, spaCy and moviepy; the queue commands should not."""
     import videoparsing
     url = f"https://www.youtube.com/watch?v={video_id}"
     try:
-        videoparsing.main(url, lang, use_captions=captions)
+        videoparsing.main(url, lang, use_captions=captions, use_proxy=proxy)
     except Exception as exc:
         return "failed", f"{type(exc).__name__}: {str(exc)[:400]}"
     if processed_file(lang, video_id).exists():
@@ -185,6 +189,40 @@ def score(sb, http, video_id: str, lang: str) -> None:
         print(f"    not scored: {type(exc).__name__}: {str(exc)[:200]}", flush=True)
 
 
+class _Scorer:
+    """The scoring HTTP client, opened on the first finished video."""
+    def __init__(self):
+        self.http = None
+
+    def __call__(self, sb, vid: str, lang: str) -> None:
+        if self.http is None:
+            import video_quality
+            self.http = video_quality.client()
+        score(sb, self.http, vid, lang)
+
+    def close(self) -> None:
+        if self.http is not None:
+            self.http.close()
+
+
+def process(sb, row: dict, lang: str, scorer: _Scorer,
+            captions: bool = True, proxy: bool = True) -> str:
+    """Transcribe, score and finish one claimed row; 'done' or 'failed'."""
+    vid = row["video_id"]
+    # A transcript that already exists (a legacy run, a retry) is done: the
+    # file is the ground truth, the row only mirrors it.
+    if processed_file(lang, vid).exists():
+        status, error = "done", None
+    else:
+        status, error = transcribe(vid, lang, captions, proxy)
+    if status == "done":
+        scorer(sb, vid, lang)
+    finish(sb, vid, status, error)
+    if error:
+        print(f"    failed: {error}", flush=True)
+    return status
+
+
 def run(sb, lang: str, limit: int, dry_run: bool = False,
         captions: bool = True) -> dict[str, int]:
     rows = pending(sb, lang, limit) if dry_run else claim(sb, lang, limit)
@@ -193,30 +231,83 @@ def run(sb, lang: str, limit: int, dry_run: bool = False,
     # a full pass over words/wordforms, and a dry run parses nothing.
     if rows and not dry_run:
         prepare_cache()
-    http = None
+    scorer = _Scorer()
     for n, row in enumerate(rows, 1):
-        vid = row["video_id"]
-        print(f"[{n}/{len(rows)}] {vid}  {(row.get('title') or '')[:60]}", flush=True)
+        print(f"[{n}/{len(rows)}] {row['video_id']}  {(row.get('title') or '')[:60]}", flush=True)
         if dry_run:
             continue
-        # A transcript that already exists (a legacy run, a retry) is done: the
-        # file is the ground truth, the row only mirrors it.
-        if processed_file(lang, vid).exists():
-            status, error = "done", None
-        else:
-            status, error = transcribe(vid, lang, captions)
-        if status == "done":
-            if http is None:
-                import video_quality
-                http = video_quality.client()
-            score(sb, http, vid, lang)
-        finish(sb, vid, status, error)
-        tally[status] += 1
-        if error:
-            print(f"    failed: {error}", flush=True)
-    if http is not None:
-        http.close()
+        tally[process(sb, row, lang, scorer, captions)] += 1
+    scorer.close()
     return tally
+
+
+# ──────────────────────────────────────────────────────────────── mix ──
+#
+# A mix allocates videos per hour to each way of getting a transcript:
+#   captions  caption track fetched from our own IP (Whisper if it has none)
+#   proxy     metadata and caption track through CAPTION_PROXY_URL, a new IP
+#             per video (Whisper on our own IP if it has none)
+#   whisper   audio downloaded on our own IP and transcribed, captions unused
+# One process works through the mix in hourly cycles, with each method's
+# videos spread evenly across the hour and claimed one at a time, so a stopped
+# run leaves at most one row in 'processing'. A video that overruns its slot
+# delays the next ones, and the schedule catches up when later videos are quick.
+
+METHODS = {"captions": (True, False), "proxy": (True, True), "whisper": (False, False)}
+
+
+def parse_mix(text: str) -> dict[str, int]:
+    """'captions=20,whisper=30,proxy=150' -> videos per hour per method."""
+    mix = {}
+    for part in filter(None, (p.strip() for p in text.split(","))):
+        name, _, count = part.partition("=")
+        name, count = name.strip(), count.strip()
+        if name not in METHODS or not count.isdigit():
+            raise ValueError(f"bad mix entry {part!r}: use "
+                             f"{'|'.join(METHODS)}=<videos per hour>")
+        mix[name] = mix.get(name, 0) + int(count)
+    if not sum(mix.values()):
+        raise ValueError("the mix allocates no videos")
+    return mix
+
+
+def hourly_order(mix: dict[str, int]) -> list[str]:
+    """One hour of methods, each method's videos spread evenly across it."""
+    slots = sorted(((i + 0.5) / n, name) for name, n in mix.items() for i in range(n))
+    return [name for _, name in slots]
+
+
+def run_mix(sb, lang: str, mix: dict[str, int], hours: float,
+            clock=time.monotonic, sleep=time.sleep) -> dict[str, dict[str, int]]:
+    order = hourly_order(mix)
+    gap = 3600 / len(order)
+    tally = {name: {"done": 0, "failed": 0} for name in mix}
+    scorer, cache_ready = _Scorer(), False
+    start = clock()
+    for n in range(round(hours * len(order))):
+        wait = start + n * gap - clock()
+        if wait > 0:
+            sleep(wait)
+        method = order[n % len(order)]
+        rows = claim(sb, lang, 1)
+        if not rows:
+            print("queue empty", flush=True)
+            break
+        if not cache_ready:
+            prepare_cache()
+            cache_ready = True
+        row = rows[0]
+        print(f"[{n + 1}] {method:8} {row['video_id']}  {(row.get('title') or '')[:55]}", flush=True)
+        captions, proxy = METHODS[method]
+        tally[method][process(sb, row, lang, scorer, captions, proxy)] += 1
+        if (n + 1) % len(order) == 0:
+            print(f"hour {(n + 1) // len(order)}: {mix_summary(tally)}", flush=True)
+    scorer.close()
+    return tally
+
+
+def mix_summary(tally: dict[str, dict[str, int]]) -> str:
+    return ", ".join(f"{name} {t['done']} done/{t['failed']} failed" for name, t in tally.items())
 
 
 # ─────────────────────────────────────────────────────────────── seed ──
@@ -276,6 +367,9 @@ def main() -> None:
     p.add_argument("--dry-run", action="store_true", help="run: list what would be claimed")
     p.add_argument("--no-captions", action="store_true",
                    help="run: skip captions and transcribe every video with Whisper")
+    p.add_argument("--mix", help="run: videos per hour per method, e.g. "
+                                 "captions=20,whisper=30,proxy=150 (ignores --limit)")
+    p.add_argument("--hours", type=float, default=1.0, help="run --mix: how long to run")
     p.add_argument("--ledger", type=Path, help="seed-done: legacy yt_<lang>.json worklist")
     p.add_argument("--source", default="manual", choices=["manual", "user"])
     p.add_argument("--priority", type=int, default=None,
@@ -298,7 +392,19 @@ def main() -> None:
         sys.exit(f"{a.command} needs --lang")
     lang = require_code(a.lang)
 
-    if a.command == "run":
+    if a.command == "run" and a.mix:
+        try:
+            mix = parse_mix(a.mix)
+        except ValueError as exc:
+            sys.exit(str(exc))
+        if a.no_captions or a.dry_run:
+            sys.exit("--mix cannot be combined with --no-captions or --dry-run")
+        if mix.get("proxy") and not os.getenv("CAPTION_PROXY_URL"):
+            sys.exit("the mix has proxy videos but CAPTION_PROXY_URL is not set")
+        print(f"mix per hour: {', '.join(f'{k}={v}' for k, v in mix.items())}, "
+              f"for {a.hours:g} h", flush=True)
+        print(mix_summary(run_mix(sb, lang, mix, a.hours)))
+    elif a.command == "run":
         tally = run(sb, lang, a.limit, a.dry_run, captions=not a.no_captions)
         if not a.dry_run:
             print(f"done {tally['done']}, failed {tally['failed']}")
