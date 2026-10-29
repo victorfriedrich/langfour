@@ -174,7 +174,7 @@ def test_caption_requests_are_spaced_and_time_out(monkeypatch):
     monkeypatch.setattr(vp.requests.Session, "request",
                         lambda self, *a, **k: sent.append((vp.time.monotonic(), k["timeout"])))
     monkeypatch.setattr(vp, "CAPTION_MIN_INTERVAL_S", 0.2)
-    monkeypatch.setattr(vp._ThrottledSession, "_next_at", 0.0)
+    monkeypatch.setattr(vp._ThrottledSession, "_next_at", {False: 0.0, True: 0.0})
     session = vp._ThrottledSession()
     for _ in range(3):
         session.request("GET", "https://www.youtube.com/")
@@ -194,9 +194,10 @@ def blocking(calls, failures=99):
 
 @pytest.fixture
 def captions(monkeypatch):
-    monkeypatch.setattr(vp, "_captions_blocked_until", 0.0)
+    monkeypatch.setattr(vp, "_captions_blocked_until", {False: 0.0, True: 0.0})
     monkeypatch.setattr(vp, "_proxy_strikes", 0)
     monkeypatch.setattr(vp, "CAPTION_MIN_INTERVAL_S", 0)
+    monkeypatch.setattr(vp, "CAPTION_PROXY_INTERVAL_S", 0)
     return monkeypatch
 
 
@@ -259,11 +260,11 @@ def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp
     download = []
     monkeypatch.setattr(vp, "download_video", lambda info: download.append(info["url"]))
 
-    monkeypatch.setattr(vp, "caption_text", lambda vid, lang: "hola mundo")
+    monkeypatch.setattr(vp, "caption_text", lambda vid, lang, proxied=None: "hola mundo")
     vp.main("https://www.youtube.com/watch?v=abc", "es")
     assert processed == ["hola mundo"] and download == []
 
-    monkeypatch.setattr(vp, "caption_text", lambda vid, lang: None)
+    monkeypatch.setattr(vp, "caption_text", lambda vid, lang, proxied=None: None)
     vp.main("https://www.youtube.com/watch?v=def", "es")
     assert download == ["https://www.youtube.com/watch?v=def"]
 
@@ -319,9 +320,44 @@ def test_a_failed_download_from_proxied_info_rereads_on_our_own_ip(monkeypatch, 
     reads = []
     monkeypatch.setattr(vp, "video_info", lambda url, proxied=False: (
         reads.append(proxied), {"url": url, "proxied": proxied})[1])
-    monkeypatch.setattr(vp, "caption_text", lambda info, lang: None)
+    monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None: None)
     downloads = []
     monkeypatch.setattr(vp, "download_video",
                         lambda info: (downloads.append(info["proxied"]), None)[1])
     vp.main("https://www.youtube.com/watch?v=abc", "es")
     assert reads == [True, False] and downloads == [True, False]
+
+
+def test_own_ip_and_proxy_captions_are_spaced_and_paused_separately(captions):
+    """An ingest mix fetches captions both ways at once. A block on our own IP
+    must not stop the proxy, and the proxy's 0.5 s spacing must not apply to
+    our own IP."""
+    calls = []
+    captions.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+
+    def fetch(info, language, session):
+        calls.append((info["id"], session.proxied))
+        if not session.proxied:
+            raise vp.CaptionsBlocked(info["id"])
+        return SPANISH
+
+    captions.setattr(vp, "fetch_transcript", fetch)
+    assert vp.caption_text({"id": "own1"}, "es", proxied=False) is None
+    assert vp.caption_text({"id": "own2"}, "es", proxied=False) is None      # paused
+    assert vp.caption_text({"id": "px1"}, "es", proxied=True) == SPANISH
+    assert calls == [("own1", False), ("px1", True)]
+    assert vp.caption_session(False).proxies == {} and vp.caption_session(True).proxies
+
+
+def test_use_proxy_false_keeps_a_caption_video_on_our_own_ip(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+    seen = []
+    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False: (
+        seen.append(("read", proxied)), {"url": url})[1])
+    monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None: (
+        seen.append(("captions", proxied)), "hola")[1])
+    monkeypatch.setattr(vp, "process_transcription", lambda *a: None)
+    vp.main("https://www.youtube.com/watch?v=abc", "es", use_proxy=False)
+    vp.main("https://www.youtube.com/watch?v=def", "es")
+    assert seen == [("read", False), ("captions", False), ("read", True), ("captions", True)]

@@ -286,8 +286,10 @@ _DETECTOR = None
 #   CAPTION_COOLDOWN_S and videos go straight to Whisper instead of extending
 #   the block.
 CAPTION_PROXY_URL = os.getenv("CAPTION_PROXY_URL") or None
-CAPTION_MIN_INTERVAL_S = float(os.getenv("CAPTION_MIN_INTERVAL_S",
-                                         "0.5" if CAPTION_PROXY_URL else "10"))
+# Caption requests from our own IP and through the proxy are spaced, and
+# paused after a block, separately: an ingest mix can use both routes at once.
+CAPTION_MIN_INTERVAL_S = float(os.getenv("CAPTION_MIN_INTERVAL_S", "10"))
+CAPTION_PROXY_INTERVAL_S = float(os.getenv("CAPTION_PROXY_INTERVAL_S", "0.5"))
 CAPTION_COOLDOWN_S = float(os.getenv("CAPTION_COOLDOWN_S", "3600"))
 CAPTION_PROXY_STRIKES = 3
 CAPTION_TIMEOUT_S = 15
@@ -302,16 +304,22 @@ class CaptionsBlocked(Exception):
 
 
 class _ThrottledSession(requests.Session):
-    """Spaces every caption request, across all sessions, CAPTION_MIN_INTERVAL_S apart."""
+    """Spaces every caption request on one route (our IP, or the proxy), across
+    all sessions, CAPTION_MIN_INTERVAL_S or CAPTION_PROXY_INTERVAL_S apart."""
     _lock = threading.Lock()
-    _next_at = 0.0
+    _next_at = {False: 0.0, True: 0.0}
+
+    def __init__(self, proxied: bool = False):
+        super().__init__()
+        self.proxied = proxied
 
     def request(self, *args, **kwargs):
+        interval = CAPTION_PROXY_INTERVAL_S if self.proxied else CAPTION_MIN_INTERVAL_S
         with self._lock:
-            wait = _ThrottledSession._next_at - time.monotonic()
+            wait = _ThrottledSession._next_at[self.proxied] - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
-            _ThrottledSession._next_at = time.monotonic() + CAPTION_MIN_INTERVAL_S
+            _ThrottledSession._next_at[self.proxied] = time.monotonic() + interval
         kwargs.setdefault("timeout", CAPTION_TIMEOUT_S)
         return super().request(*args, **kwargs)
 
@@ -321,51 +329,62 @@ def proxy_url() -> str:
     return CAPTION_PROXY_URL.replace("{session}", uuid.uuid4().hex[:12])
 
 
-def caption_session() -> requests.Session:
-    """A fresh session (no cookies) for one video, on its own proxy session."""
-    session = _ThrottledSession()
-    if CAPTION_PROXY_URL:
+def caption_session(proxied: bool | None = None) -> requests.Session:
+    """A fresh session (no cookies) for one video; on its own proxy session
+    when proxied (by default, whenever CAPTION_PROXY_URL is set)."""
+    proxied = _route(proxied)
+    session = _ThrottledSession(proxied)
+    if proxied:
         url = proxy_url()
         session.proxies = {"http": url, "https": url}
     return session
 
 
-_captions_blocked_until = 0.0
+def _route(proxied: bool | None) -> bool:
+    """Whether to use the proxy: never without CAPTION_PROXY_URL."""
+    return bool(CAPTION_PROXY_URL) and (proxied is None or proxied)
+
+
+_captions_blocked_until = {False: 0.0, True: 0.0}
 _proxy_strikes = 0
 
 
-def _pause_captions(reason: str) -> None:
-    global _captions_blocked_until
-    _captions_blocked_until = time.monotonic() + CAPTION_COOLDOWN_S
-    print(f"{reason}; using Whisper only for the next {CAPTION_COOLDOWN_S / 60:.0f} min")
+def _pause_captions(reason: str, proxied: bool) -> None:
+    _captions_blocked_until[proxied] = time.monotonic() + CAPTION_COOLDOWN_S
+    route = "through the proxy" if proxied else "from our own IP"
+    print(f"{reason}; no captions {route} for the next {CAPTION_COOLDOWN_S / 60:.0f} min, "
+          f"those videos go to Whisper")
 
 
-def caption_text(info: dict, language: str) -> str | None:
+def caption_text(info: dict, language: str, proxied: bool | None = None) -> str | None:
     """The video's caption text, or None when there is no usable track, the
-    track reads as another language, or YouTube is blocking caption requests."""
+    track reads as another language, or YouTube is blocking caption requests
+    on this route. proxied=None means the proxy whenever one is configured."""
     global _proxy_strikes
-    if time.monotonic() < _captions_blocked_until:
+    proxied = _route(proxied)
+    if time.monotonic() < _captions_blocked_until[proxied]:
         return None
     video_id = info.get("id")
-    attempts = 2 if CAPTION_PROXY_URL else 1
+    attempts = 2 if proxied else 1
     for attempt in range(attempts):
         try:
             start_time = time.time()
-            text = fetch_transcript(info, language, caption_session())
+            text = fetch_transcript(info, language, caption_session(proxied))
             print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
             _proxy_strikes = 0
             break
         except requests.exceptions.ProxyError as e:
             reason = str(e).rsplit("failed: ", 1)[-1].split("'")[0][:80]
-            _pause_captions(f"The caption proxy refused the request ({reason})")
+            _pause_captions(f"The caption proxy refused the request ({reason})", proxied)
             return None
         except CaptionsBlocked:
             if attempt + 1 < attempts:
                 print(f"Caption request for {video_id} blocked; retrying on a new IP")
                 continue
-            _proxy_strikes += 1
-            if not CAPTION_PROXY_URL or _proxy_strikes >= CAPTION_PROXY_STRIKES:
-                _pause_captions("YouTube is blocking caption requests (HTTP 429)")
+            if proxied:
+                _proxy_strikes += 1
+            if not proxied or _proxy_strikes >= CAPTION_PROXY_STRIKES:
+                _pause_captions("YouTube is blocking caption requests (HTTP 429)", proxied)
             return None
         except Exception as e:
             print(f"No usable '{language}' captions for {video_id} "
@@ -444,7 +463,7 @@ def fetch_transcript(info: dict, language: str, session: requests.Session | None
     return text
 
 
-def main(url, language: str, use_captions=True):
+def main(url, language: str, use_captions=True, use_proxy=True):
     
     # Was an if/elif ending in an unguarded `else: 'de'`, so an ISO code
     # (what every client now sends) silently routed the transcript into the
@@ -466,7 +485,8 @@ def main(url, language: str, use_captions=True):
     
     try:
         # Whisper-only runs read on our own IP: they download from it anyway.
-        proxied = use_captions and bool(CAPTION_PROXY_URL)
+        # use_proxy=False keeps a caption video on our own IP too.
+        proxied = use_captions and _route(use_proxy)
         info = video_info(url, proxied=proxied)
         title = info.get("title")
         creator = info.get("channel") or info.get("uploader")
@@ -489,7 +509,7 @@ def main(url, language: str, use_captions=True):
     # video. Manual tracks are punctuated, ASR tracks mostly are not, which
     # parse() doesn't need.
     if use_captions:
-        text = caption_text(info, language)
+        text = caption_text(info, language, proxied)
         if text:
             with open(txt_filename, "w", encoding='utf-8') as txt_file:
                 txt_file.write(text)

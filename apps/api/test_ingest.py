@@ -26,7 +26,7 @@ def scored(monkeypatch):
 def test_run_scores_finished_transcripts_only(corpus, monkeypatch, scored):
     (corpus / "a_processed.json").write_text("{}")
     monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
-    monkeypatch.setattr(ingest, "transcribe", lambda vid, lang, captions: ("failed", "boom"))
+    monkeypatch.setattr(ingest, "transcribe", lambda vid, lang, *_: ("failed", "boom"))
     sb = FakeSupabase([pending("a"), pending("b")])
     ingest.run(sb, "es", limit=5)
     assert scored == [("a", "es")]
@@ -70,7 +70,7 @@ def test_run_treats_existing_transcript_as_done(corpus, monkeypatch):
 
 def test_run_records_failure_and_leaves_row_retryable(corpus, monkeypatch):
     monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
-    monkeypatch.setattr(ingest, "transcribe", lambda vid, lang, captions: ("failed", "boom"))
+    monkeypatch.setattr(ingest, "transcribe", lambda vid, lang, *_: ("failed", "boom"))
     sb = FakeSupabase([pending("a")])
     assert ingest.run(sb, "es", limit=5) == {"done": 0, "failed": 1}
     row = sb.row("a")
@@ -148,7 +148,7 @@ def test_run_loads_the_word_cache_before_the_first_transcript(corpus, monkeypatc
     order = []
     monkeypatch.setattr(ingest, "prepare_cache", lambda: order.append("cache"))
     monkeypatch.setattr(ingest, "transcribe",
-                        lambda vid, lang, captions: (order.append(vid), ("done", None))[1])
+                        lambda vid, lang, *_: (order.append(vid), ("done", None))[1])
     ingest.run(FakeSupabase([pending("a"), pending("b")]), "es", limit=5)
     assert order == ["cache", "a", "b"]          # once, and before any parsing
 
@@ -180,8 +180,60 @@ def test_dry_run_lists_exactly_what_run_would_claim(corpus, monkeypatch):
     claimed = []
     monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
     monkeypatch.setattr(ingest, "transcribe",
-                        lambda vid, lang, captions: (claimed.append(vid), ("done", None))[1])
+                        lambda vid, lang, *_: (claimed.append(vid), ("done", None))[1])
     ingest.run(FakeSupabase(rows), "es", limit=3)
     # priority outranks score; the attempt-capped and other-language rows are
     # invisible to both. Same query, so the same answer, in the same order.
     assert listed == ["urgent", "high", "low"] == claimed
+
+
+# ──────────────────────────────────────────────────────────────── mix ──
+
+def test_parse_mix_reads_videos_per_method_and_rejects_typos():
+    assert ingest.parse_mix("captions=20, whisper=30,proxy=150") == {
+        "captions": 20, "whisper": 30, "proxy": 150}
+    for bad in ("captions=20,whsiper=30", "proxy=lots", "captions=0", ""):
+        with pytest.raises(ValueError):
+            ingest.parse_mix(bad)
+
+
+def test_each_methods_videos_are_spread_across_the_hour():
+    order = ingest.hourly_order({"captions": 2, "whisper": 3, "proxy": 15})
+    assert len(order) == 20 and order.count("whisper") == 3
+    halves = order[:10], order[10:]
+    assert [h.count("captions") for h in halves] == [1, 1]
+    assert all(h.count("proxy") in (7, 8) for h in halves)
+
+
+def test_run_mix_paces_claims_and_routes_each_method(corpus, monkeypatch):
+    queue = [pending(f"v{i}") for i in range(10)]
+    monkeypatch.setattr(ingest, "claim", lambda sb, lang, n: [queue.pop(0)] if queue else [])
+    monkeypatch.setattr(ingest, "finish", lambda *a, **k: None)
+    monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
+    routes = []
+
+    def transcribe(vid, lang, captions, proxy):
+        routes.append((captions, proxy))
+        (corpus / f"{vid}_processed.json").write_text("{}")
+        return "done", None
+
+    monkeypatch.setattr(ingest, "transcribe", transcribe)
+    now, slept = [0.0], []
+
+    def sleep(s):
+        slept.append(s)
+        now[0] += s
+
+    tally = ingest.run_mix(None, "es", {"captions": 1, "whisper": 1, "proxy": 2},
+                           hours=1, clock=lambda: now[0], sleep=sleep)
+    assert sorted(routes) == sorted([(True, False), (False, False), (True, True), (True, True)])
+    assert slept == [900.0] * 3                       # 4 videos an hour: one every 15 min
+    assert tally == {"captions": {"done": 1, "failed": 0}, "whisper": {"done": 1, "failed": 0},
+                     "proxy": {"done": 2, "failed": 0}}
+
+
+def test_run_mix_stops_when_the_queue_is_empty(corpus, monkeypatch):
+    monkeypatch.setattr(ingest, "claim", lambda sb, lang, n: [])
+    monkeypatch.setattr(ingest, "transcribe", lambda *a: pytest.fail("nothing to do"))
+    tally = ingest.run_mix(None, "es", {"proxy": 100}, hours=5, sleep=lambda s: None)
+    assert tally == {"proxy": {"done": 0, "failed": 0}}
