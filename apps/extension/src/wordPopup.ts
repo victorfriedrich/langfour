@@ -53,7 +53,9 @@ export function createWordPopup(
   const header = document.createElement('div');
   header.className = 'popup-header';
   const headword = translation.root || wordText;
-  header.textContent = headword === wordText ? headword : `${wordText} (${headword})`;
+  // Only when they differ by more than case: not "Perro (perro)" at the
+  // start of a sentence.
+  header.textContent = headword.toLowerCase() === wordText.toLowerCase() ? headword : `${wordText} (${headword})`;
   // Pronounces the word on the line above, right after it.
   if (language) {
     const speakButton = document.createElement('button');
