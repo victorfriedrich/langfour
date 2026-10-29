@@ -19,6 +19,11 @@ const DEMOS: Record<DemoMode, { label: string; caption: string }> = {
         label: 'Reader',
         caption: 'For reading. Press ⌘⇧Y on any article to open it in a clean page where every unknown word is one click away.',
     },
+    chatgpt: {
+        label: 'ChatGPT',
+        caption:
+            'For chatting. Switch on Langfour in ChatGPT’s header and new words in its answers light up. Click one to translate it, or double-click it to add it to your learning words straight away.',
+    },
 };
 
 function CopyExtensionsUrl() {
@@ -57,7 +62,7 @@ export default function ExtensionGuide() {
         <div className="min-h-screen bg-gray-50">
             <div className="max-w-3xl px-4 md:pl-10 md:pr-3 py-8 pb-16">
                 <h1 className="text-2xl font-semibold text-gray-900">Langfour for Chrome</h1>
-                <p className="mt-1.5 text-sm text-gray-500">Translate words and add them to your flashcards as you watch or read.</p>
+                <p className="mt-1.5 text-sm text-gray-500">Translate words and add them to your flashcards as you watch, read or chat with ChatGPT.</p>
 
                 {installed ? (
                     <div className="mt-5 max-w-md rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-900/5">
