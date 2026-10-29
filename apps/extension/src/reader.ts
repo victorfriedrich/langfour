@@ -3,7 +3,7 @@
 import { getPrefs, Prefs, setPrefs } from './preferencePopup/prefs';
 import { Language, LANGUAGES, toLanguage } from './languages';
 import { fetchTranslation, requestBackend, translateSection } from './api-service';
-import { buildLibraryImport, existingIdFrom } from './libraryImport';
+import { Block, buildLibraryImport, existingIdFrom, Passage } from './libraryImport';
 import { sanitizeHTML } from './sanitizeHTML';
 import { WEB_URL } from './config';
 import { AccountResponse, askBackground, ClassifyWordsResponse, sendToBackground, WordProgressResponse, WordStatus } from './messages';
@@ -212,11 +212,14 @@ function renderArticle(container: HTMLElement, article: StoredArticle): void {
 
 const BLOCKS = 'p, li, h2, h3, h4, h5, blockquote, pre, figcaption';
 
-/** The reader's text, one passage per paragraph, list item or stanza. */
-function passagesOf(root: HTMLElement): string[] {
+// h5 is rare enough to share h4's look.
+const BLOCK_OF: Record<string, Block> = { H2: 'h2', H3: 'h3', H4: 'h4', H5: 'h4', LI: 'li', BLOCKQUOTE: 'blockquote', PRE: 'pre', FIGCAPTION: 'figcaption' };
+
+/** The reader's text, one passage per paragraph, heading, list item or stanza. */
+function passagesOf(root: HTMLElement): Passage[] {
   const blocks = Array.from(root.querySelectorAll<HTMLElement>(BLOCKS)).filter((el) => !el.querySelector(BLOCKS));
   // innerText keeps the <br>s between lyric lines, which textContent drops.
-  return blocks.length ? blocks.map((el) => el.innerText) : [root.innerText];
+  return blocks.length ? blocks.map((el) => ({ text: el.innerText, block: BLOCK_OF[el.tagName] })) : [{ text: root.innerText }];
 }
 
 /**

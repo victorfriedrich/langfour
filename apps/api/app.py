@@ -171,6 +171,9 @@ class TranscriptChunk(BaseModel):
     # Absent for articles and lyrics, which are passages rather than cues.
     timestamp: list[float] | None = Field(None, min_length=2, max_length=2)
     text: str = Field(..., min_length=1, max_length=5_000)
+    # The reader element the passage came from (h2, li, blockquote...);
+    # absent for paragraphs. Unknown values are dropped, not rejected.
+    block: str | None = Field(None, max_length=20)
 
 class MediaImportRequest(BaseModel):
     language: str = Field(..., description="Language name or ISO code")
