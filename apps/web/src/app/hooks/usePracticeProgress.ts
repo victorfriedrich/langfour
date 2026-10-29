@@ -6,8 +6,8 @@ import type { ReviewProvider } from './useReviewProvider';
 // disagree on what "learned" means.
 import type { WordCards } from '../../../../remnote-plugin/src/stats';
 
-/** A word with its cards, and when the user saved it. */
-export type ProgressWord = WordCards & { addedAt: number | null };
+/** A word with its cards, its translation, and when the user saved it. */
+export type ProgressWord = WordCards & { translation: string | null; addedAt: number | null };
 
 const PAGE = 1000;
 // srs_reviews.outcome in RemNote's scores, which the stats module reads.
@@ -31,13 +31,13 @@ async function providerWords(provider: ReviewProvider): Promise<ProgressWord[]> 
   type Row = {
     id: number;
     word_id: number;
-    userwords: { created_at: string | null; words: { root: string; language: string } | null } | null;
+    userwords: { created_at: string | null; words: { root: string; language: string; translation: string | null } | null } | null;
     srs_cards: { next_due_at: string | null; srs_reviews: { reviewed_at: string; outcome: string }[] }[];
   };
   const rows = await selectAll<Row>(() => {
     const query = supabase
       .from('srs_notes')
-      .select('id, word_id, userwords!inner(created_at, words(root, language)), srs_cards(next_due_at, srs_reviews(reviewed_at, outcome))')
+      .select('id, word_id, userwords!inner(created_at, words(root, language, translation)), srs_cards(next_due_at, srs_reviews(reviewed_at, outcome))')
       .eq('provider', provider)
       .is('removed_at', null);
     // Langfour keeps cards for known words that have review history; its
@@ -51,6 +51,7 @@ async function providerWords(provider: ReviewProvider): Promise<ProgressWord[]> 
     wordId: row.word_id,
     root: row.userwords?.words?.root ?? '',
     language: row.userwords?.words?.language ?? '?',
+    translation: row.userwords?.words?.translation ?? null,
     addedAt: row.userwords?.created_at ? Date.parse(row.userwords.created_at) : null,
     cards: row.srs_cards.map((card) => ({
       remId: String(row.id),

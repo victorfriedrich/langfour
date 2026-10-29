@@ -98,6 +98,6 @@ describe('summarize', () => {
 
   it('lists words learned this week and words slipping', () => {
     expect(s.newlyLearned.map((w) => w.root)).toEqual(['w2']);
-    expect(s.slipping).toEqual([{ remId: 'rem-3', root: 'w3', lapses: 1 }]);
+    expect(s.slipping).toEqual([{ remId: 'rem-3', root: 'w3', lapses: 1, lastLapse: daysAgo(10) }]);
   });
 });

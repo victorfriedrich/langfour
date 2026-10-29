@@ -88,11 +88,12 @@ export function wordStageAt(cards: CardLike[], at: number): Stage {
 
 /** "Again" answers in the last `days`, across the word's cards. */
 export function recentLapses(cards: CardLike[], now: number, days = 30): number {
-  const since = now - days * DAY_MS;
-  return cards.reduce(
-    (n, c) => n + gradedReviews(c).filter((r) => r.score === AGAIN && r.date >= since).length,
-    0,
-  );
+  return lapsesSince(cards, now - days * DAY_MS).length;
+}
+
+/** The dates of the word's "again" answers since `since`, across its cards. */
+function lapsesSince(cards: CardLike[], since: number): number[] {
+  return cards.flatMap((c) => gradedReviews(c).filter((r) => r.score === AGAIN && r.date >= since).map((r) => r.date));
 }
 
 export interface WordRef {
@@ -106,7 +107,9 @@ export interface Summary {
   learnedLastWeek: number; // net change in learned words over 7 days
   trend: { day: number; learned: number }[]; // one point per day, oldest first
   newlyLearned: WordRef[]; // learned now, not a week ago
-  slipping: (WordRef & { lapses: number })[]; // forgotten recently, not learned
+  // Forgotten in the last 30 days and not learned: most lapses first, then
+  // the most recently forgotten. All of them; each view caps its own list.
+  slipping: (WordRef & { lapses: number; lastLapse: number })[];
 }
 
 function endOfDay(ms: number): number {
@@ -138,9 +141,9 @@ export function summarize(words: WordCards[], now: number, trendDays = 90): Summ
     if (stage === 'learned' && wordStageAt(word.cards, weekAgo) !== 'learned') {
       newlyLearned.push({ remId: word.remId, root: word.root });
     }
-    const lapses = recentLapses(word.cards, now);
-    if (stage !== 'learned' && lapses > 0) {
-      slipping.push({ remId: word.remId, root: word.root, lapses });
+    const lapses = lapsesSince(word.cards, now - 30 * DAY_MS);
+    if (stage !== 'learned' && lapses.length > 0) {
+      slipping.push({ remId: word.remId, root: word.root, lapses: lapses.length, lastLapse: Math.max(...lapses) });
     }
   }
 
@@ -151,6 +154,6 @@ export function summarize(words: WordCards[], now: number, trendDays = 90): Summ
     learnedLastWeek: stages.learned - learnedPerDay[weekAgoIndex],
     trend: days.map((day, i) => ({ day, learned: learnedPerDay[i] })),
     newlyLearned,
-    slipping: slipping.sort((a, b) => b.lapses - a.lapses).slice(0, 12),
+    slipping: slipping.sort((a, b) => b.lapses - a.lapses || b.lastLapse - a.lastLapse),
   };
 }
