@@ -39,6 +39,10 @@ SUMMARY_COLUMNS = (
 )
 DETAIL_COLUMNS = SUMMARY_COLUMNS + ",chunks"
 
+# What a passage was in the reader, so the Library can lay the text out the
+# same way. Plain paragraphs (and every timed cue) leave it out.
+BLOCKS = {"h2", "h3", "h4", "li", "blockquote", "pre", "figcaption"}
+
 
 class MediaExistsError(Exception):
     def __init__(self, media_id: str):
@@ -94,7 +98,10 @@ def _normalize_chunks(chunks: list[dict]) -> tuple[list[dict], bool]:
         if (timestamp is not None) != timed:
             raise ValueError(f"Chunk {index} must {'have' if timed else 'not have'} a timestamp like the first one")
         if not timed:
-            normalized.append({"timestamp": None, "text": text})
+            passage = {"timestamp": None, "text": text}
+            if chunk.get("block") in BLOCKS:
+                passage["block"] = chunk["block"]
+            normalized.append(passage)
             continue
         if len(timestamp) != 2:
             raise ValueError(f"Chunk {index} must have a start and end timestamp")
@@ -244,8 +251,31 @@ def import_media(
     # parse() returns every token, space and punctuation mark; the missing-words
     # list only needs each word's id once.
     row["words"] = [{"id": i} for i in dict.fromkeys(w["id"] for w in parsed if w.get("id") is not None)]
+    _mark_words(row["chunks"], parsed)
     store.insert(user_id, row)
     return to_api(row)
+
+
+def _mark_words(chunks: list[dict], parsed: list[dict]) -> None:
+    """Gives each chunk `words`: [start, end, word id] for every recognised
+    word, as character offsets into its text, so the Library can show the
+    text with its new words marked. parse() returns the transcript's tokens in
+    order and unchanged; if they don't add up to it, nothing is marked."""
+    if "".join(token["content"] for token in parsed) != "\n".join(chunk["text"] for chunk in chunks):
+        return
+    spans: list[list[list[int]]] = [[] for _ in chunks]
+    index, chunk_start, offset = 0, 0, 0
+    for token in parsed:
+        start, offset = offset, offset + len(token["content"])
+        if token.get("id") is None:
+            continue
+        # Chunks are joined with one newline, which no word contains.
+        while start >= chunk_start + len(chunks[index]["text"]) + 1:
+            chunk_start += len(chunks[index]["text"]) + 1
+            index += 1
+        spans[index].append([start - chunk_start, offset - chunk_start, token["id"]])
+    for chunk, words in zip(chunks, spans):
+        chunk["words"] = words
 
 
 def list_media(store: MediaStore, user_id: str, language: str) -> list[dict]:

@@ -209,6 +209,24 @@ def test_import_article_without_timestamps():
     assert result["chunks"][1] == {"timestamp": None, "text": "Segundo párrafo."}
 
 
+def test_an_article_keeps_its_headings_and_where_each_word_is():
+    store = FakeStore()
+    chunks = [{"text": "Subtítulo", "block": "h2"}, {"text": "Hola, mundo.", "block": "aside"}]
+    tokens = [{"content": "Subtítulo", "id": 1}, {"content": "\n"}, {"content": "Hola", "id": 2},
+              {"content": ", "}, {"content": "mundo", "id": 3}, {"content": "."}]
+    result, _ = run(store, {"media_type": "article", "title": "Noticia", "language": "es", "chunks": chunks}, words=tokens)
+    assert result["chunks"] == [
+        {"timestamp": None, "text": "Subtítulo", "block": "h2", "words": [[0, 9, 1]]},
+        {"timestamp": None, "text": "Hola, mundo.", "words": [[0, 4, 2], [6, 11, 3]]},
+    ]
+
+
+def test_words_are_not_marked_when_the_tokens_do_not_match_the_text():
+    store = FakeStore()
+    result, _ = run(store, episode(), words=[{"content": "otra cosa", "id": 9}])
+    assert all("words" not in chunk for chunk in result["chunks"])
+
+
 def test_import_rejects_mixed_timestamps_and_missing_titles():
     store = FakeStore()
     with pytest.raises(ValueError, match="timestamp"):
