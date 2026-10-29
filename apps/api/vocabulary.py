@@ -49,10 +49,6 @@ def _chunks(items: list, size: int) -> Iterable[list]:
         yield items[i:i + size]
 
 
-def _spellings(roots: list[str]) -> set[str]:
-    return set(roots) | {r.lower() for r in roots} | {r.capitalize() for r in roots}
-
-
 # ---------------------------------------------------------------------------
 # Payloads
 # ---------------------------------------------------------------------------
@@ -96,8 +92,7 @@ class ExposureSummary(BaseModel):
 
 
 class StatusChange(BaseModel):
-    changed: list[str]    # words now in the requested status
-    unchanged: list[str]  # already in it
+    changed: list[str]    # now in the requested status, including any already in it
     not_found: list[str]  # not in the user's list in that language, or turned off
 
 
@@ -143,24 +138,18 @@ class VocabularyStore:
         return len(res.data or [])
 
     def user_words(self, user_id: str, language: str, roots: list[str]) -> list[dict]:
-        """The user's learning and known words spelled as given, lowercased or
-        capitalized (German nouns): [{word_id, status, root}]."""
-        out: list[dict] = []
-        for chunk in _chunks(roots, _IN_CHUNK):
-            spellings = sorted(_spellings(chunk))
-            res = (self.db.table("userwords").select("word_id, status, words!inner(root, language)")
-                   .eq("user_id", user_id).eq("words.language", language)
-                   .in_("status", ["learning", "known"]).in_("words.root", spellings).execute())
-            out += [{"word_id": r["word_id"], "status": r["status"], "root": r["words"]["root"]}
-                    for r in res.data or []]
-        return out
+        """The user's learning and known words with these roots: [{word_id, root}]."""
+        res = (self.db.table("userwords").select("word_id, words!inner(root, language)")
+               .eq("user_id", user_id).eq("words.language", language)
+               .in_("status", ["learning", "known"]).in_("words.root", roots).execute())
+        return [{"word_id": r["word_id"], "root": r["words"]["root"]} for r in res.data or []]
 
     def set_status(self, user_id: str, word_ids: list[int], status: str) -> None:
         # Not set_userwords_status: it updates auth.uid()'s words, and the API
-        # runs as the service role.
-        for chunk in _chunks(word_ids, _IN_CHUNK):
-            (self.db.table("userwords").update({"status": status})
-             .eq("user_id", user_id).in_("word_id", chunk).execute())
+        # runs as the service role. Rows already in the status are left alone,
+        # so the userwords trigger doesn't touch their cards.
+        (self.db.table("userwords").update({"status": status})
+         .eq("user_id", user_id).in_("word_id", word_ids).neq("status", status).execute())
 
 
 def get_vocabulary_store() -> VocabularyStore:
@@ -225,20 +214,10 @@ def record_exposure(store: VocabularyStore, user_id: str, language: str,
 def set_word_status(store: VocabularyStore, user_id: str, language: str, words: list[str],
                     status: Literal["known", "learning"]) -> StatusChange:
     asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
+    # Every word with a given root moves: homographs are listed under one spelling.
     rows = store.user_words(user_id, language, asked)
-    # A spelling can be several of the user's words (homographs); all of them move.
-    exact: dict[str, list[dict]] = {}
-    loose: dict[str, list[dict]] = {}
-    for r in rows:
-        exact.setdefault(r["root"], []).append(r)
-        loose.setdefault(r["root"].lower(), []).append(r)
-    matched = {w: exact.get(w) or loose.get(w.lower(), []) for w in asked}
-
-    to_change = {r["word_id"] for rs in matched.values() for r in rs if r["status"] != status}
-    store.set_status(user_id, sorted(to_change), status)
-    return StatusChange(
-        changed=[w for w, rs in matched.items() if any(r["word_id"] in to_change for r in rs)],
-        unchanged=[w for w, rs in matched.items()
-                   if rs and not any(r["word_id"] in to_change for r in rs)],
-        not_found=[w for w, rs in matched.items() if not rs],
-    )
+    if rows:
+        store.set_status(user_id, sorted({r["word_id"] for r in rows}), status)
+    found = {r["root"] for r in rows}
+    return StatusChange(changed=[w for w in asked if w in found],
+                        not_found=[w for w in asked if w not in found])
