@@ -10,6 +10,7 @@ os.environ.setdefault(
 )
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -19,6 +20,7 @@ from practice import (
     PracticeDecision,
     PracticeReport,
     PracticeRequest,
+    PracticeStore,
     pending_practice,
     record_practice,
     report_practice,
@@ -45,7 +47,9 @@ class FakeStore:
         self.outbox: dict[int, dict] = {}
 
     def resolve_words(self, language, words):
-        return {w: self.dictionary[w] for w in words if w in self.dictionary}
+        lower = {k.lower(): v for k, v in self.dictionary.items()}
+        return {w: self.dictionary.get(w, lower.get(w.lower())) for w in words
+                if w in self.dictionary or w.lower() in lower}
 
     def review_provider(self, user_id):
         return self.provider
@@ -204,3 +208,38 @@ def test_only_an_applied_decision_carries_a_review_date(status, review_at):
 def test_a_session_is_capped():
     with pytest.raises(ValidationError):
         answers(*[("hablar", "recognize", True)] * 201)
+
+
+class StubClient:
+    """Just enough of the supabase client for PracticeStore.resolve_words:
+    find_roots matches without case, like sql/find_roots.sql."""
+
+    def __init__(self, roots, forms=()):
+        self.roots, self.forms = roots, forms  # (id, root, status), (form, word_id)
+
+    def rpc(self, name, params):
+        assert name == "find_roots"
+        wanted = {r.lower() for r in params["roots"]}
+        rows = [{"id": i, "root": r, "status": st} for i, r, st in self.roots if r.lower() in wanted]
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=sorted(rows, key=lambda r: r["id"])))
+
+    def table(self, name):
+        stub, client = SimpleNamespace(), self
+        for method in ("select", "eq", "order"):
+            setattr(stub, method, lambda *a, **k: stub)
+
+        def in_(column, values):
+            rows = [{"form": f, "word_id": w} for f, w in client.forms if f in values]
+            stub.execute = lambda: SimpleNamespace(data=rows)
+            return stub
+        stub.in_ = in_
+        return stub
+
+
+def test_german_nouns_are_found_and_case_tells_noun_from_verb():
+    store = PracticeStore(StubClient(
+        roots=[(4, "Haus", "valid"), (5, "essen", "valid"), (6, "Essen", "valid"), (7, "Bank", "invalid")],
+        forms=[("Häuser", 4), ("aß", 5)],
+    ))
+    found = store.resolve_words("de", ["Haus", "haus", "Essen", "essen", "Häuser", "aß", "Bank"])
+    assert found == {"Haus": 4, "haus": 4, "Essen": 6, "essen": 5, "Häuser": 4, "aß": 5}

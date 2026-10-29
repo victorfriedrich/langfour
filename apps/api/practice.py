@@ -47,7 +47,7 @@ def _chunks(items: list, size: int = _IN_CHUNK) -> Iterable[list]:
 
 
 def _key(word: str) -> str:
-    return word.strip().lower()
+    return word.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -109,21 +109,34 @@ class PracticeStore:
         self.db = client
 
     def resolve_words(self, language: str, words: list[str]) -> dict[str, int]:
-        """Lowercased word -> word_id: a valid root first, then a valid form."""
+        """word as given -> word_id: a valid root first, then a valid form.
+
+        Case matters in German (Essen, essen), so a root spelled exactly as given
+        wins over one that only matches ignoring case (find_roots, sql/find_roots.sql).
+        Forms are stored lowercase except German nouns, so they're tried as given
+        and lowercased, like classify_words."""
         found: dict[str, int] = {}
         for chunk in _chunks(words):
-            res = (self.db.table("words").select("id, root")
-                   .eq("language", language).eq("status", "valid")
-                   .in_("root", chunk).order("id").execute())
-            for r in res.data or []:
-                found.setdefault(_key(r["root"]), r["id"])
+            rows = self.db.rpc("find_roots", {"language_param": language, "roots": chunk}).execute().data
+            valid = [r for r in rows or [] if r["status"] == "valid"]
+            for w in chunk:
+                exact = [r["id"] for r in valid if r["root"] == w]
+                loose = [r["id"] for r in valid if r["root"].lower() == w.lower()]
+                if exact or loose:
+                    found[w] = (exact or loose)[0]
         missing = [w for w in words if w not in found]
         for chunk in _chunks(missing):
+            spellings = sorted(set(chunk) | {w.lower() for w in chunk})
             res = (self.db.table("wordforms").select("form, word_id, words!inner(language, status)")
                    .eq("words.language", language).eq("words.status", "valid")
-                   .eq("status", "valid").in_("form", chunk).order("word_id").execute())
+                   .eq("status", "valid").in_("form", spellings).order("word_id").execute())
+            by_form: dict[str, int] = {}
             for r in res.data or []:
-                found.setdefault(_key(r["form"]), r["word_id"])
+                by_form.setdefault(r["form"], r["word_id"])
+            for w in chunk:
+                word_id = by_form.get(w, by_form.get(w.lower()))
+                if word_id is not None:
+                    found[w] = word_id
         return found
 
     def review_provider(self, user_id: str) -> str:
