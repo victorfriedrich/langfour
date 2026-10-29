@@ -55,3 +55,19 @@ it('shows five forgotten words until asked for all', () => {
   fireEvent.click(within(section).getByRole('button', { name: 'Show all 7' }));
   expect(within(section).getAllByRole('listitem')).toHaveLength(7);
 });
+
+it('lists learned words whose review is late, and how many dropped this week', () => {
+  // Answered right 60 days ago with a 30-day gap: stopped counting 15 days ago.
+  const late = (daysAgo: number): CardLike => ({
+    remId: 'r',
+    repetitionHistory: [{ date: Date.now() - daysAgo * DAY_MS, score: 1 }],
+    nextRepetitionTime: Date.now() - (daysAgo - 30) * DAY_MS,
+  });
+  render(<ProgressOverview words={[word('la lámpara', null, [late(60)], 'the lamp'), word('el vino', null, [late(48)])]} />);
+  const section = screen.getByRole('heading', { name: /Overdue/ }).closest('section')!;
+  const rows = within(section).getAllByRole('listitem');
+  expect(rows[0]).toHaveTextContent('el vino3 days ago');
+  expect(rows[1]).toHaveTextContent('la lámparathe lamp');
+  expect(within(section).getByText('1 this week')).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: /Forgotten recently/ })).toBeNull();
+});
