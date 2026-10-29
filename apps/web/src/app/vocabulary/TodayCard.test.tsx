@@ -7,7 +7,7 @@ const db = vi.hoisted(() => ({ from: vi.fn(), select: vi.fn(), eq: vi.fn(), mayb
 vi.mock('@/lib/supabaseclient', () => ({ supabase: { from: db.from } }));
 vi.mock('@/context/UserContext', async () => {
   const { createContext } = await import('react');
-  return { UserContext: createContext({ user: { id: 'reader' } }) };
+  return { UserContext: createContext({ user: { id: 'reader' }, language: { code: 'es' } }) };
 });
 
 beforeEach(() => {
@@ -18,25 +18,33 @@ beforeEach(() => {
 });
 
 function PracticeActions() {
-  const { provider, remnoteDocumentUrl } = useReviewProvider();
-  return provider && <TodayCard provider={provider} remnoteDocumentUrl={remnoteDocumentUrl}
+  const { provider, remnoteUrl } = useReviewProvider();
+  return provider && <TodayCard provider={provider} remnoteUrl={remnoteUrl}
     due={2} onStartReview={() => {}} onContextReview={() => {}} />;
 }
 
-it('keeps all cards reachable alongside the document without a second settings request', async () => {
-  db.maybeSingle.mockResolvedValue({ data: { review_provider: 'remnote', remnote_root_rem_id: 'doc_123' } });
+it('opens the notes of the language being learned', async () => {
+  db.maybeSingle.mockResolvedValue({ data: {
+    review_provider: 'remnote', remnote_root_rem_id: 'doc_123', remnote_language_rem_ids: { es: 'spanish_1', it: 'italian_1' },
+  } });
   render(<PracticeActions />);
-  expect(await screen.findByRole('link', { name: /Review 2 due/ })).toHaveAttribute('href', 'https://www.remnote.com/flashcards');
-  expect(screen.getByRole('link', { name: 'Langfour document' })).toHaveAttribute('href', 'https://www.remnote.com/flashcards/doc_123');
+  expect(await screen.findByRole('link', { name: /Review 2 due/ })).toHaveAttribute('href', 'https://www.remnote.com/document/spanish_1');
   expect(db.from).toHaveBeenCalledTimes(1);
-  expect(db.select).toHaveBeenCalledWith('review_provider, remnote_root_rem_id');
+  expect(db.select).toHaveBeenCalledWith('review_provider, remnote_root_rem_id, remnote_language_rem_ids');
 });
 
-it.each([null, '../../invalid'])('keeps all reviews reachable without a valid document (%s)', async (root) => {
-  db.maybeSingle.mockResolvedValue({ data: { review_provider: 'remnote', remnote_root_rem_id: root } });
+it('opens the Langfour document when the language has none yet', async () => {
+  db.maybeSingle.mockResolvedValue({ data: {
+    review_provider: 'remnote', remnote_root_rem_id: 'doc_123', remnote_language_rem_ids: { it: 'italian_1', es: '../../invalid' },
+  } });
   render(<PracticeActions />);
-  expect(await screen.findByRole('link', { name: /Review 2 due/ })).toHaveAttribute('href', 'https://www.remnote.com/flashcards');
-  expect(screen.queryByRole('link', { name: 'Langfour document' })).not.toBeInTheDocument();
+  expect(await screen.findByRole('link', { name: /Review 2 due/ })).toHaveAttribute('href', 'https://www.remnote.com/document/doc_123');
+});
+
+it.each([null, '../../invalid'])('opens RemNote before the plugin has reported a document (%s)', async (root) => {
+  db.maybeSingle.mockResolvedValue({ data: { review_provider: 'remnote', remnote_root_rem_id: root, remnote_language_rem_ids: {} } });
+  render(<PracticeActions />);
+  expect(await screen.findByRole('link', { name: /Review 2 due/ })).toHaveAttribute('href', 'https://www.remnote.com/');
 });
 
 it('uses Langfour reviews without loading separate document settings', async () => {
