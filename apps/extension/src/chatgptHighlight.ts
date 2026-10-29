@@ -412,16 +412,18 @@ const BUTTON_CSS = `
   button {
     display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 12px 0 10px;
     font: 400 14px/18px ${FONT}; white-space: nowrap;
-    color: #0d0d0d; background: transparent; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+    color: #0d0d0d; background: #fff; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
   }
-  button:hover { background: rgba(0, 0, 0, 0.06); }
+  /* Solid, like ChatGPT's own header actions, so a message scrolling
+     under the header doesn't show through. */
+  button:hover { background: #efefef; }
   button:focus-visible { outline: 2px solid #0d0d0d; outline-offset: 0; }
   .icon { display: inline-flex; width: 20px; height: 20px; border-radius: 5px; }
   .icon svg { width: 20px; height: 20px; fill: currentColor; }
   /* On: the glyph sits on a highlighter-yellow square, like a marked word. */
   button[aria-pressed="true"] .icon { background: rgba(255, 214, 10, 0.55); }
-  :host-context(.dark) button { color: #fff; }
-  :host-context(.dark) button:hover { background: rgba(255, 255, 255, 0.1); }
+  :host-context(.dark) button { color: #fff; background: #212121; }
+  :host-context(.dark) button:hover { background: #383838; }
   :host-context(.dark) button:focus-visible { outline-color: #fff; }
   :host-context(.dark) button[aria-pressed="true"] .icon { background: rgba(250, 204, 21, 0.35); }
 `;
@@ -430,7 +432,7 @@ const BUTTON_CSS = `
 const TOOLTIP_CSS = `
   :host { all: initial; position: fixed; z-index: 1; pointer-events: none; }
   div {
-    font: 600 14px/18px ${FONT}; white-space: nowrap; color: #fff; background: #0d0d0d;
+    font: 400 14px/18px ${FONT}; white-space: nowrap; color: #fff; background: #0d0d0d;
     padding: 5px 12px; border-radius: 16px; box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
   }
 `;
