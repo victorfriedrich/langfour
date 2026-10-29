@@ -162,16 +162,19 @@ On Langfour's side they stay identifiable: the plugin reports the date of the re
    fetches the rows (`GET /sync/remnote/practice`), applies each result to its card, pushes those
    cards' reviews, and reports `applied` with the review's date, or `skipped` with a reason
    (`POST /sync/remnote/practice`). All under one lease, so two devices never add the same
-   review. Decisions are kept in plugin storage until the report succeeds, so a failed report
-   doesn't add a review twice. No full sync.
+   review. Before changing a card the plugin saves how many reviews it had, and decisions are
+   kept in plugin storage until the report succeeds: an attempt cut off at any point is
+   reconciled against the card's history instead of adding the review twice, and an applied
+   result's review is uploaded again before it's reported. No full sync.
 3. Langfour users: event only, no outbox row, until step 3.
 
 `practice.py` currently checks `review_provider == 'remnote'` by name. Step 3 makes it
 provider-neutral: the active scheduler is Langfour → apply now; an outside app → queue in
 `srs_outbox` for it.
 
-**What gets applied:** wrong → `again`, always. Right → `good` (never `easy`), only if the card
-is due or overdue, judged by the plugin on the live card. At most one result per card per day:
+**What gets applied:** nothing while the Rem's flashcards are turned off (checked on the live Rem).
+Otherwise wrong → `again`, always; right → `good` (never `easy`), only if the card is due or
+overdue, judged by the plugin on the live card. At most one result per card per day:
 within one `record_practice` call a wrong answer wins over a right one; a later call the same day
 gets no outbox row for that card. Everything else is `skipped`, and the event stays as evidence.
 
