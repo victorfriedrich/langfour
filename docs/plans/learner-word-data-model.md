@@ -1,12 +1,18 @@
 # Learner–word data model
 
-Status as of 2026-10-29. Steps 1, 2, 2a and 4 are implemented on branch
-`feat/learner-word-data-model`; none of the SQL is applied to the live database yet. Step 3 is
-not started (see its section for why). Covers how Langfour stores what a user does
-with a word: the decisions they make, the reviews from either flashcard system, and evidence from
-outside both (ChatGPT practice through the MCP server, the reader, videos). Written while
-designing the MCP server; the `record_practice` tool depends on steps 1 and 2. Section 2a lists
-improvements to the RemNote plugin's speed and reliability found along the way.
+Status as of 2026-10-29. Steps 1, 2, 2a and 4 are implemented in PR #54
+(`feat/learner-word-data-model`); none of the SQL is applied to the live database yet. **Step 3
+is next**, before ChatGPT practice goes to users. Covers how Langfour stores what a user does
+with a word: the decisions they make, the reviews from any flashcard system, and evidence from
+outside them (ChatGPT practice through the MCP server, the reader, videos). Written while
+designing the MCP server. Section 2a lists improvements to the RemNote plugin's speed and
+reliability found along the way.
+
+**Langfour schedules reviews itself; RemNote is an optional integration**, and Anki may become
+another. Every user starts on Langfour's scheduler, and only some connect an outside app. The data
+model follows from that: Langfour's scheduler is the base every word has, outside apps are
+providers added on top, and features such as ChatGPT practice must work for a user who never
+connects one.
 
 Database numbers below are from the live project (`Lang`) on 2026-10-29. Function lists come from
 `pg_proc` in the live database, not from the schema map, and callers from `origin/main`.
@@ -15,12 +21,12 @@ Database numbers below are from the live project (`Lang`) on 2026-10-29. Functio
 
 | Table | Holds | Rows | Problem |
 |---|---|---|---|
-| `userwords` | the user's decision on a word **and** Langfour's SM-2 schedule | 315,324 | 654 rows (0.2%) have ever been reviewed; the five SM-2 columns sit unused on every other row, and on every word a RemNote user has |
+| `userwords` | the user's decision on a word **and** Langfour's SM-2 schedule | 315,324 | every learning word (5,231) has a schedule, since `next_review_due_at` defaults to `now()`, but only 654 rows were ever reviewed; on known words, most of the rows, the five SM-2 columns are unused |
 | `flashcardtests` | Langfour's own reviews, right/wrong | 890 (30 users ever, 2 in the last 60 days; all `test_type = 'flashcard'`) | a second review table every reader has to combine with `srs_reviews` by hand; `tested_at` has no time zone |
 | `srs_notes` / `srs_cards` / `srs_reviews` | RemNote's notes, cards and review history | 2,396 cards, 4,679 reviews (1 user) | none; this is the model the rest should follow |
 | `userwordinteraction` | exposure (word, `location`, `seen_at`) | **0**, never written | read by `get_user_counts_with_wordforms`, whose "seen" count is always 0 |
 
-158 users; one (the author) reviews in RemNote.
+158 users; one (the author) reviews in RemNote. Everyone else is on Langfour's own scheduler.
 
 The cost of combining review tables by hand is already visible: `word_progress` notes that
 `get_user_counts_with_wordforms` "only sees Langfour's" reviews and misses RemNote's.
@@ -39,7 +45,7 @@ SCHEDULING     srs_notes(user_id, word_id, provider, external_id, created_at, re
 (any provider) srs_cards(note_id, external_id, kind, next_due_at)
                srs_card_sm2(card_id, ease_factor, repetition, interval_days)   -- Langfour cards only
                srs_reviews(card_id, reviewed_at, outcome)
-               provider: remnote | langfour
+               provider: langfour | remnote (| anki later)
 
 EVIDENCE       word_events(id, user_id, word_id, kind, source, occurred_at, context)   -- append-only
                kind: saved | lookup | exposure | recall_correct | recall_wrong
@@ -49,6 +55,21 @@ DELIVERY       srs_outbox(event_id, card_id, status, decided_at, reason)
 
 DERIVED        user_known_words (view); later word_knowledge
 ```
+
+### Providers
+
+- **Langfour is the base scheduler.** Every learning word has a Langfour note and card, for every
+  user, whatever else is connected. Cards are created by a trigger on `userwords`, with no
+  condition on the provider.
+- **An outside app is a provider added on top.** While it's connected, it has its own notes and
+  cards for the same words (`srs_notes.provider`), and `userdata.review_provider` says which
+  scheduler is active. One user, one active scheduler.
+- **Disconnecting needs no migration.** The Langfour cards are still there, and Langfour's
+  schedule takes over again.
+- **Outside apps are pull-based.** RemNote has no backend API or webhooks, and neither does Anki;
+  both need code running inside the app (the RemNote plugin, an Anki add-on) that comes to
+  Langfour for work. `srs_outbox` and the inbox pattern (2a) serve any such provider. Langfour's
+  own scheduler applies results immediately and needs neither.
 
 ### Rules
 
@@ -75,14 +96,14 @@ DERIVED        user_known_words (view); later word_knowledge
 
 ## 2. Migration order
 
-Each step is shippable on its own. Steps 1 and 2 are what the MCP server needs; step 3 is the
-largest and can wait. All SQL goes through the Supabase connector, like the other files in
-`apps/api/sql/`.
+Each step is shippable on its own. All SQL goes through the Supabase connector, like the other
+files in `apps/api/sql/`.
 
-Step 2 only needs step 1. It covers RemNote users only, because Langfour users have no
-`srs_cards` rows until step 3; their recalls are logged but don't change their schedule until
-then (2 users reviewed in Langfour in the last 60 days). Step 3 then applies them against real
-cards, with no interim code path to remove.
+Order: 1, 2, 2a and 4 (built, PR #54), then **3 before `record_practice` is offered to users**.
+Step 2 covers RemNote users only, because Langfour users have no `srs_cards` rows until step 3;
+their recalls are logged but don't change their schedule. Since Langfour's scheduler is the
+default, that leaves most users without the feature, so step 3 comes before any rollout. It then
+applies their recalls against real cards, with no interim code path to remove.
 
 ### Step 1: `word_events` (replaces `userwordinteraction`)
 
@@ -144,6 +165,10 @@ On Langfour's side they stay identifiable: the plugin reports the date of the re
    review. Decisions are kept in plugin storage until the report succeeds, so a failed report
    doesn't add a review twice. No full sync.
 3. Langfour users: event only, no outbox row, until step 3.
+
+`practice.py` currently checks `review_provider == 'remnote'` by name. Step 3 makes it
+provider-neutral: the active scheduler is Langfour → apply now; an outside app → queue in
+`srs_outbox` for it.
 
 **What gets applied:** wrong → `again`, always. Right → `good` (never `easy`), only if the card
 is due or overdue, judged by the plugin on the live card. At most one result per card per day:
@@ -218,23 +243,27 @@ comes with item 2.
 
 ### Step 3: Langfour as a provider
 
-**Not started: bigger than first estimated.** The first version of this plan counted 654
-schedules: the `userwords` rows that were ever reviewed. But `next_review_due_at` defaults to
-`now()`, so **every learning word has a Langfour schedule**: 5,231 learning words across 65 users,
-4,647 of them never reviewed. Langfour's review session finds due words through that column, so
-moving to `srs_cards` means:
-- a note and card for every learning word of every user, not only the reviewed ones;
-- a trigger on `userwords` (insert, and status changing to `learning`) that creates the card,
-  because words are saved through many paths: `move_words_to_userwords`, `initialize_account`,
-  imports, the API's media and flashcard imports, `set_userwords_status`;
-- a decision on whether RemNote users also get Langfour cards (needed if they disconnect, since
-  disconnecting moves reviews back to Langfour).
+**Next.** Langfour's scheduler is the default every user starts on (see the top of this plan), so
+this step is what makes ChatGPT practice, and any later feature built on cards, work for most
+users. It also gives one review table, with Langfour and any outside app as providers.
 
-The payoff (one review table) is unchanged, and nothing in steps 1, 2 or 2a needs it.
+**Bigger than first estimated.** The first version of this plan counted 654 schedules: the
+`userwords` rows that were ever reviewed. But `next_review_due_at` defaults to `now()`, so
+**every learning word has a Langfour schedule**: 5,231 learning words across 65 users, 4,647 of
+them never reviewed. Langfour's review session finds due words through that column, so moving to
+`srs_cards` means:
+- a Langfour note and card for every learning word of every user, not only the reviewed ones,
+  and for RemNote users too (Langfour is the base scheduler);
+- a trigger on `userwords` (insert, and status changing to `learning`) that creates the card,
+  with no condition on the provider, because words are saved through many paths:
+  `move_words_to_userwords`, `initialize_account`, imports, the API's media and flashcard
+  imports, `set_userwords_status`;
+- `practice.py` deciding by the active scheduler instead of checking for RemNote by name.
 
 **Data to move:** 5,231 learning words' schedules and 890 `flashcardtests` rows (688 distinct
-words). 232 reviewed words also have a RemNote note (the author switched providers); they get a
-second note with `provider = 'langfour'`, which the unique `(user_id, provider, word_id)` allows.
+words). Words that also have a RemNote note (232 of the reviewed ones; the author switched
+providers) get a second note with `provider = 'langfour'`, which the unique
+`(user_id, provider, word_id)` allows.
 8 `flashcardtests` rows have no `userwords` row any more and can't hang off `srs_notes`; drop
 them.
 
@@ -259,16 +288,22 @@ them.
 | `insert_flashcard_test(_word_id, _test_type, _test_result)` | fold into `update_spaced_repetition`, so one call records and schedules | `updateFlashCardInfo.ts` |
 | `user_known_words` (view) | the Langfour branch becomes the same per-card rule as RemNote's, over `srs_*` | recommender, Vocabulary page, `classify_words`, `my_word_statuses`, `known_words_summary`, `get_known_words_page` |
 | `word_progress(word_id_param)` | reviews and due date from `srs_*` only; output shape unchanged | `backgroundScript.ts` (extension) |
-| `get_learning_words` (4 overloads) | due date from `srs_cards`, review counts from `srs_reviews`; keep the overload the web calls, drop the rest | `useLearningWords.ts`, `LearningWordsTable.tsx` |
+| `get_learning_words` (the overload left after step 4) | due date from `srs_cards`, review counts from `srs_reviews` | `useLearningWords.ts`, `LearningWordsTable.tsx` |
 | `get_userwords_filtered(language_filter, due_type, page_size, p_source)` | due date from `srs_cards` | `useOverdueWords.ts` → `LearningWordsTable`, `vocabulary/page.tsx` |
-| `get_user_counts_with_wordforms(_word_id)` | `reviewcount` from `srs_reviews`, both providers (fixes the RemNote gap) | `useWordInfo.ts` |
+| `get_user_counts_with_wordforms(_word_id)` | `reviewcount` from `srs_reviews` only (step 1 already counts both tables) | `useWordInfo.ts` |
 | `initialize_account` (2 overloads) | stop writing SM-2 defaults into `userwords` | `useInitializeAccount.ts` |
 | `merge_roots(payload)` | move `srs_notes` (both providers) and their cards instead of `flashcardtests` and SM-2 columns; mind the unique `(user_id, provider, word_id)` | `apps/api/scripts/review_flagged.py` |
 
-**Recalls for Langfour users:** once their cards exist, `record_practice` writes outbox rows
-for them too, and the API applies each in the same request: the same due and once-a-day rules,
-then `update_spaced_repetition` against the card, and the row marked `applied`. Recalls logged
-before step 3 stay as events and are not applied afterwards.
+**Recalls for Langfour users:** once their cards exist, `record_practice` applies each result in
+the same request: the same due and once-a-day rules, then `update_spaced_repetition` against the
+card. It still writes an outbox row, straight away as `applied` with the review's date, so the
+scoring rule (reviews + events, minus applied recalls) is the same for every provider. Recalls
+logged before step 3 stay as events and are not applied afterwards.
+
+**Switching schedulers:** a RemNote user's Langfour cards keep their old due dates while RemNote
+schedules, so on disconnect many would come up at once. When `revoke_token` hands reviews back to
+Langfour, copy each RemNote card's `next_due_at` onto the word's Langfour card, so the schedule
+carries over instead of flooding the review session.
 
 **App code reading tables directly**
 - `apps/web/src/app/hooks/usePracticeProgress.ts`: reads `userwords.next_review_due_at` for
@@ -290,6 +325,7 @@ calls from old deployed clients before dropping.
 | `get_streak_data`, `get_revision_counts_by_language`, `words_known_by_date`, `unique_learned` | `flashcardtests` |
 | `recall_efficiency_last_7_days` | `flashcardtests`; its hook `useRecallEfficiency.ts` is imported nowhere |
 | `get_learning_and_unknown_words` | SM-2 columns |
+| `get_learning_words`, the 3 overloads the web doesn't call | `flashcardtests`, SM-2 columns |
 
 Dropping these before step 3 means step 3 has fewer functions to rewrite.
 
@@ -301,3 +337,9 @@ Dropping these before step 3 means step 3 has fewer functions to rewrite.
   needs one.
 - **Exposure from the reader and videos:** not designed yet. Decide raw events vs daily counts
   when there's a writer.
+- **Anki as a provider:** not designed. To check first: whether an Anki add-on can record a review
+  on a card the way RemNote's `updateCardRepetitionStatus` does (AnkiConnect alone only works on
+  the same machine, so an add-on is the likely route); how card directions map to Anki note types
+  (`srs_cards.kind`); and whether the `/sync/remnote/*` endpoints become provider-generic
+  (`/sync/{provider}/*`) or Anki gets its own set. The tables need only `anki` added to the
+  provider check.
