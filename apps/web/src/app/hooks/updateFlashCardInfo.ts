@@ -7,38 +7,23 @@ interface FlashcardTestParams {
 }
 
 export const useUpdateFlashCardInfo = () => {
+  // testType (flashcard or typing) no longer changes anything: a Langfour
+  // word has one card, which both kinds of test review.
   const updateFlashCardInfo = async ({
     wordId,
-    testType,
     testResult,
   }: FlashcardTestParams) => {
 
     try {
-      const { data, error } = await supabase.rpc('insert_flashcard_test', {
+      // Records the answer and reschedules the word's Langfour card.
+      const { error } = await supabase.rpc('update_spaced_repetition', {
+        _test_result: testResult,
         _word_id: wordId,
-        _test_type: testType,
-        _test_result: testResult,
       });
-
       if (error) {
-        console.error('Error updating flashcard info:', error);
+        console.error('Error recording the review:', error);
         throw error;
-      } else {
-        console.log('Flashcard info updated successfully:', wordId);
       }
-
-      // Update spaced repetition
-      const { data: spacedRepData, error: spacedRepError } = await supabase.rpc('update_spaced_repetition', {
-        _test_result: testResult,
-        _word_id: wordId
-      });
-
-      if (spacedRepError) {
-        console.error('Error updating spaced repetition:', spacedRepError);
-      } else {
-        console.log('Spaced repetition updated successfully:', spacedRepData);
-      }
-
     } catch (err) {
       console.error('Unexpected error:', err);
       throw err;

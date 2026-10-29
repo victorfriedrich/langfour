@@ -37,6 +37,7 @@ from remnote_sync import (
     pending_words,
     relink,
     review_outcome,
+    revoke_token,
     sync_router,
 )
 
@@ -204,6 +205,10 @@ class FakeStore:
     def revoke_tokens(self, user_id, now):
         self.token = None
 
+    def carry_over_due(self, user_id):
+        self.carried_over = True
+        return 0
+
     def insert_token(self, user_id, token_hash):
         self.token = {"created_at": "now", "last_used_at": None, "hash": token_hash}
 
@@ -212,6 +217,12 @@ class FakeStore:
 
     def set_root_rem(self, user_id, rem_id):
         self.root_rem_id = rem_id
+
+    def set_last_sync(self, user_id, at):
+        self.last_sync_at = at
+
+    def last_sync(self, user_id):
+        return getattr(self, "last_sync_at", None)
 
     def active_token(self, user_id):
         return self.token
@@ -623,10 +634,12 @@ def test_the_lease_passes_on_after_release_or_expiry():
 def test_every_plugin_request_of_a_run_holds_the_lease():
     # /linked is a run's first request, and the plugin rearranges Rems right
     # after it, so it must turn a second device away too. /release only hands
-    # the lease back.
+    # the lease back; /inbox only counts. Practice results are leased too: two
+    # devices applying them would add each review twice.
+    unleased = {"/release", "/inbox"}
     for route in sync_router.routes:
         calls = {d.call for d in route.dependant.dependencies}
-        assert (hold_sync_lease in calls) == (route.path != "/release"), route.path
+        assert (hold_sync_lease in calls) == (route.path not in unleased), route.path
 
 
 # -- connection status ------------------------------------------------------
@@ -643,6 +656,16 @@ def test_status_counts_match_what_pending_would_hand_out():
     pending = pending_words(store, USER, limit=100)
     assert status.pending_words == len(pending.words) == 2
     assert status.linked_words == 1
+
+
+def test_only_the_sweep_marks_a_sync_completed():
+    store = FakeStore(spanish(1))
+    store.token = {"created_at": "t", "last_used_at": "a minute ago"}
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-a")]), now=NOW)
+    assert connection_status(SimpleNamespace(id=USER), store).last_sync_at is None
+
+    apply_push(store, USER, PushRequest(present_rem_ids=["rem-a"]), now=NOW)
+    assert connection_status(SimpleNamespace(id=USER), store).last_sync_at == NOW.isoformat()
 
 
 def test_status_skips_the_pending_count_without_a_token():
@@ -795,3 +818,11 @@ def test_relinking_is_refused_when_it_could_lose_or_steal_data(reason, setup, re
     with pytest.raises(HTTPException) as refused:
         relink(store, USER, RelinkRequest(**req))
     assert refused.value.status_code == 409, reason
+
+
+def test_disconnecting_hands_reviews_back_with_remnotes_due_dates():
+    store = FakeStore()
+    store.token = {"created_at": "t", "last_used_at": None}
+    store.provider = "remnote"
+    revoke_token(SimpleNamespace(id=USER), store)
+    assert (store.token, store.provider, store.carried_over) == (None, "langfour", True)

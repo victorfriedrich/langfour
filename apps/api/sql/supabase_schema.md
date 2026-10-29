@@ -17,6 +17,7 @@ with the `service_role` key, i.e. only by the API.
 |---|---|---|
 | `words` | `id`, `root`, `language`, `translation`, `source`, `flagged`, `cognate` | PK `id`; unique `(root, language)`; `language` in `es, de, it, fr`; index on `root` |
 | `wordforms` | `id`, `word_id`, `form`, `flagged` | PK `id`; FK `word_id → words`; unique `(word_id, form)`; index on `form` |
+| `lexicon_pages` | `language`, `last_word_id`, `entries`, `built_at` | PK `(language, last_word_id)`; the valid dictionary as text pages, built by `rebuild_lexicon_pages` (lexicon.sql); authenticated read |
 | `languagelevels` | `id`, `word_id`, `language`, `language_level` | PK `id`; FK `word_id → words`; unique `(word_id, language_level, language)`; level in `A1..C1` |
 
 Policies on all three: `*_select_authenticated`, `*_insert_admin`,
@@ -30,7 +31,6 @@ Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 | `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known, disabled` (`disabled`: flashcards turned off in RemNote, set by the sync; see `remnote_sync.sql`); SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
 | `flashcardtests` | `id`, `user_id`, `word_id`, `test_type`, `test_result`, `tested_at` | PK `id`; `test_type` in `flashcard, typing`; index `(user_id, word_id, test_result)` |
 | `usertranslations` | `id`, `user_id`, `word_id`, `custom_translation`, `created_at` | PK `id`; index `(user_id, word_id)` |
-| `userwordinteraction` | `id`, `user_id`, `word_id`, `location`, `seen_at` | PK `id`. Never written to; read only by `get_user_counts_with_wordforms` |
 | `videos_seen` | `id`, `user_id`, `video_id`, `seen_at` | PK `id` (identity); unique `(user_id, video_id)` |
 | `user_roles` | `user_id`, `role`, `created_at` | PK `user_id`; `role` in `user, admin` |
 
@@ -42,7 +42,7 @@ with `service_role`).
 
 | Table | Columns | Keys and constraints |
 |---|---|---|
-| `srs_notes` | `id`, `user_id`, `word_id`, `provider`, `external_id`, `created_at`, `removed_at` | PK `id` (identity); FK `(user_id, word_id) → userwords` on delete cascade; unique `(user_id, provider, word_id)` and `(user_id, provider, external_id)`; `provider` in `remnote` |
+| `srs_notes` | `id`, `user_id`, `word_id`, `provider`, `external_id`, `created_at`, `removed_at` | PK `id` (identity); FK `(user_id, word_id) → userwords` on delete cascade; unique `(user_id, provider, word_id)` and `(user_id, provider, external_id)`; `provider` in `remnote`, plus `langfour` once `langfour_provider.sql` is applied (then `external_id` is null for Langfour notes) |
 | `srs_cards` | `id`, `note_id`, `external_id`, `kind`, `next_due_at` | PK `id` (identity); FK `note_id → srs_notes` on delete cascade; unique `(note_id, external_id)`; `kind` in `forward, backward, cloze`; index on `note_id` |
 | `srs_reviews` | `card_id`, `reviewed_at`, `outcome` | PK `(card_id, reviewed_at)`; FK `card_id → srs_cards` on delete cascade; `outcome` in `again, hard, good, easy` |
 | `api_tokens` | `id`, `user_id`, `purpose`, `token_hash`, `created_at`, `last_used_at`, `revoked_at` | PK `id`; unique `token_hash`; partial unique `(user_id, purpose) where revoked_at is null`; `purpose` in `remnote_sync` |
@@ -53,6 +53,27 @@ Policies: `srs_*_select_own` on the three `srs_` data tables (cards and
 reviews check ownership through `srs_notes`). `api_tokens`,
 `api_token_pairings` and `srs_sync_leases` have none: only the API reads or
 writes them.
+
+### Word events and the practice outbox (`word_events.sql`, `srs_outbox.sql`, applied 2026-10-29)
+
+| Table | Columns | Keys and constraints |
+|---|---|---|
+| `word_events` | `id`, `user_id`, `word_id`, `kind`, `source`, `occurred_at`, `context jsonb` | PK `id` (identity); FK `user_id → auth.users` on delete cascade, `word_id → words`; `kind` in `saved, lookup, exposure, recall_correct, recall_wrong`; `source` in `chatgpt, reader, video, extension, web`; indexes `(user_id, word_id)`, `(user_id, occurred_at)`. Append-only: policies `select_own`, `insert_own`, no update/delete for clients |
+| `srs_outbox` | `event_id`, `card_id`, `outcome`, `status`, `decided_at`, `reason`, `applied_review_at` | PK `event_id` → `word_events` on delete cascade; FK `card_id → srs_cards` on delete set null; `outcome` in `again, good`; `status` in `pending, applied, skipped`; partial index `(card_id) where status = 'pending'`. Policy `select_own` through `word_events`; written only by the API |
+
+### Langfour as a provider (`langfour_provider.sql`, not applied yet)
+
+Langfour's schedule moves from the SM-2 columns on `userwords` into the
+`srs_*` tables as provider `langfour`: a note and one `forward` card per
+learning word (a trigger on `userwords` creates them), its reviews in
+`srs_reviews`. New table `srs_card_sm2` (`card_id` PK → `srs_cards`,
+`ease_factor`, `repetition`, `interval_days`; policy `select_own`). New
+functions, service role only: `srs_langfour_card`, `srs_langfour_review`
+(the API's practice path), `srs_carry_over_due` (on disconnecting RemNote).
+The SM-2 columns and `flashcardtests` stay, unread, until they are dropped.
+
+Also `userdata.remnote_last_sync_at` (end of `remnote_sync.sql`): when the
+plugin last completed a sync run. See `docs/plans/learner-word-data-model.md`.
 
 ### Known words (`known_words.sql`, applied 2026-10-01)
 
@@ -68,10 +89,14 @@ Vocabulary page; see the functions `known_words_summary` and
 | Table | Columns | Keys and constraints |
 |---|---|---|
 | `video_queue` | `video_id`, `lang`, `channel_id`, `title`, `duration_s`, `views`, `score`, `source`, `priority`, `status`, `attempts`, `error`, `submitted_by`, `created_at`, `claimed_at`, `done_at` | PK `video_id`; FK `submitted_by → auth.users`; `source` in `discovery, user, manual, legacy`; `status` in `pending, processing, done, failed, skipped`; partial index `(lang, priority desc, score desc) where status = 'pending'`, which is exactly `ingest.py`'s claim query; index on `channel_id` |
+| `pending_words` | `language`, `word`, `outcome`, `source`, `candidates text[]`, `jev jsonb`, `seen`, `created_at`, `resolved_at` | PK `(language, word)`; `outcome` in `pending, not_a_word`. Unknown tokens `parse()` did not attach to a root; written through `record_pending_words(rows jsonb)` (service role only) |
+| `video_scores` | `video_id`, `language`, `rubric_version`, `integrity`, `p_garbled`, `p_foreign_lesson`, `p_sung`, `grammar`, `content`, `developed`, `transferable`, `jev jsonb`, `scored_at` | PK `video_id`; `integrity` in `clean, patchy, garbled`; index `(language, video_id)`. Jev's rating of each transcript (`video_quality.py`), written by `ingest.py` and `scripts/score_videos.py`, read by the recommender at startup |
 
 Policies: `users queue own videos [insert]`, `users read own submissions
 [select]`. Workers claim and update rows with `service_role`. Definition in
-`video_queue.sql`.
+`video_queue.sql`. `pending_words` (`pending_words.sql`, applied 2026-10-15) has RLS on
+and no policies: only `service_role` reads or writes it. The same holds for
+`video_scores` (`video_scores.sql`, applied 2026-10-29).
 
 ## Functions
 
@@ -87,50 +112,36 @@ name in each app; `none` means nothing in the repo calls it today.
 | `get_known_words(user_id text, include_cognates bool)` | table(word_id) | extension |
 | `get_known_words(_target_language text, _limit int, _offset int)` | table(word, total_count) | none |
 | `get_known_words_update_timestamp()` | timestamp | extension |
-| `get_learning_and_unknown_words(_word_ids int[])` | table(word_id, status) | none |
-| `get_learning_words(order_direction, cursor_word_id, search_term, page_size)` | table(word_id, word, translation, status, review_due) | web |
-| `get_learning_words(…, language_filter)` | same | web |
 | `get_learning_words(…, language_filter, source_filter)` | same + `source` | web |
-| `get_learning_words(order_direction, cursor_days_due, cursor_word_id, search_term, page_size, language_filter)` | same | web |
-| `get_overdue_words(language_filter, due_type, page_size)` | table(word_id, word_root, translation, next_review_due_at) | none |
 | `get_random_words(language_code, limit_words)` | table(id, root) | api |
-| `get_revision_counts_by_language(language_filter)` | table(revision_date, revision_count) | web |
 | `get_seen_video_ids()` | table(video_id) | web |
-| `get_streak_data()` | table(revision_date, revision_count) | none |
-| `get_top_words_by_due_date()` | table(word_id, word_root, translation, next_review_due_at) | none |
 | `get_translation_for_word(_word_id)` | text | web |
-| `get_user_counts_with_wordforms(_word_id)` | table(reviewcount, seencount, alternative_wordforms) | web |
+| `get_user_counts_with_wordforms(_word_id)` | table(reviewcount, seencount, alternative_wordforms) | web. Reviews from `srs_reviews` (live notes, any provider), exposures from `word_events` |
 | `get_user_default_language()` | text | web, extension |
-| `get_user_words(language_filter)` | table(word_id, word_root, translation, next_review_due_at) | web |
-| `get_user_words_with_cursor(last_fetched_id, fetch_limit)` | table(word, translation, status) | none |
-| `get_user_words_with_tests(page_size, cursor_word_id)` | table(word_id, word, translation, status) | web |
-| `get_user_words_with_tests(…, order_direction, search_term)` | same | web |
-| `get_user_words_with_tests(…, order_direction, search_term, word_language)` | same | web |
 | `get_userword_sources()` | table(source) | web |
 | `get_userwords_filtered(language_filter, due_type, page_size, p_source)` | table(word_id, word_root, translation, next_review_due_at) | web |
-| `get_userwords_for_review(language_filter)` | table(word_id, root, translation, next_review_due_at) | none |
 | `get_words_by_ids(word_ids int[])` | table(word_id, word, translation) | web |
 | `get_words_with_many_forms()` | table(id, root) | api |
 | `get_words_with_wordforms_cursor(language_param, last_fetched_word_id, fetch_limit)` | table(word_id, word, wordform) | api, loads the word cache at boot |
 | `get_known_words_page(language_filter, search_term, cursor_word_id, page_size)` | table(word_id, word, translation, source) | web. Reads `user_known_words` |
 | `initialize_account(_language_level varchar)` | void | web |
 | `initialize_account(_language text, _language_level text)` | void | web |
-| `insert_flashcard_test(_word_id, _test_type, _test_result)` | void | web |
+| `insert_flashcard_test(_word_id, _test_type, _test_result)` | void | web; no longer called once `langfour_provider.sql` is applied (update_spaced_repetition records the review) |
 | `is_admin()` | boolean | RLS policies. `SECURITY DEFINER`, reads `user_roles` |
 | `load_unseen_words()` | table(word_id, root, translation) | web |
 | `known_words_summary(language_filter)` | table(declared, from_reviews) | web. Reads `user_known_words` |
+| `lexicon_page(language_filter, after_word_id, page_words)` | table(last_word_id, entries text) | extension. Reads `lexicon_pages` (lexicon.sql) |
 | `mark_video_as_seen(input_video_id)` | void | web |
 | `move_words_to_userwords(_word_ids int[])` | void | extension |
 | `move_words_to_userwords(_word_ids int[], _status, _source)` | void | none |
-| `recall_efficiency_last_7_days()` | numeric | web |
+| `my_word_statuses()` | jsonb [[word_id, status]] | extension. Reads `userwords`, `user_known_words` (lexicon.sql) |
+| `rebuild_lexicon_pages(language_filter, page_words)` | integer | run by hand after dictionary changes; not granted to clients (lexicon.sql) |
 | `set_user_default_language(_language)` | void | web, extension |
 | `srs_acquire_sync_lease(p_user_id uuid, p_holder text, p_seconds int)` | boolean | api. Execute granted to `service_role` only; takes a user id for that reason |
 | `set_userwords_status(_word_ids int[], _status)` | void | web |
 | `total_words_known()` | integer | web |
 | `total_words_known(language_filter)` | integer | web |
-| `unique_learned(p_language)` | integer | web |
-| `update_spaced_repetition(_word_id, _test_result)` | void | web. The SM-2 update lives here, not in client code |
-| `words_known_by_date(language_filter)` | table(date, words_known) | web |
+| `update_spaced_repetition(_word_id, _test_result)` | void | web. The SM-2 update lives here, not in client code. `langfour_provider.sql` (not applied yet) makes it record the review too and work on the word's Langfour card |
 
 `unaccent`, `unaccent_init`, `unaccent_lexize` are the `unaccent` extension,
 installed into `public`.

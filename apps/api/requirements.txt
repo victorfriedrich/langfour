@@ -25,3 +25,5 @@ zstandard==0.25.0
 # videothumbnailcreation.py imports PIL directly. It resolves today only
 # as moviepy -> imageio -> pillow; declared so it survives moviepy moving.
 pillow==12.3.0
+# mcp_server.py: the MCP endpoint at /mcp.
+mcp==1.12.4

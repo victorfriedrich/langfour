@@ -1,8 +1,11 @@
 .idea
 .cache
 .parcel-cache
+.parcel-cache-safari
 build
 dist
+dist-safari
+.corpus-cache
 dist.zip
 build.zip
 node_modules

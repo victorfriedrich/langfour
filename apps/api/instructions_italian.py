@@ -81,14 +81,6 @@ INSTRUCTION_FILTER_LANGUAGE = """From an italian text, filter out words that are
     Text to analyze: "{text}"
     """
     
-INSTRUCTION_CATEGORIZE = """Given a title and the first words of a non-english video, characterize it and provide english subcategories and tags to label it.
-    Return a single-level JSON array containing just 4-5 subcategories / tags that describe what type of video it is
-    
-    title: {title}
-    text:
-    {text}
-    """
-    
 INSTRUCTION_ROOT_FORM = """For the italian word '{word}' return a 2 element json dictionary that determines the "type" which is either "verb" if it could be a verb, "noun", "adjective", or otherwise "other".
     In words ending with *, the star represents multiple letters being allowed there
     
@@ -117,7 +109,7 @@ Return a JSON object:
 }}
 
 "reason": if definitely_not_valid is true, say specifically what's wrong; otherwise a brief confirmation.
-"translation": a 1-3 word English translation of "root", without a leading article for nouns. Empty string if definitely_not_valid is true.
+"translation": 1-3 short English senses of "root" in its word class ({type}), separated by ", ", most common first; no leading article for nouns and no "to" for verbs. A root that is spelled like a word of another class keeps the meaning of its own class: dovere (verb) -> "must, have to, owe", not "duty" (that is the noun il dovere). Empty string if definitely_not_valid is true.
 
 Return ONLY the JSON object.
 """

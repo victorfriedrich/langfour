@@ -4,6 +4,7 @@ import React, { useState, useEffect, FormEvent, useContext } from 'react';
 import { Send, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabaseclient';
 import { useRouter } from 'next/navigation';
+import { peekAfterLogin } from '@/lib/afterLogin';
 import { UserContext } from '@/context/UserContext';
 
 function Login() {
@@ -31,13 +32,15 @@ function Login() {
 
   useEffect(() => {
     if (user && !isLoading && !user.is_anonymous) {
-      // Redirect authenticated users to the dashboard or home page
-      router.push('/');
+      // The magic link may sign in the original tab as well as its callback.
+      // Both must resume the pending connection rather than discard it.
+      router.push(peekAfterLogin());
     }
   }, [user, isLoading, router]);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
+    setError('');
     setIsLoading(true);
     try {
       const { error } = await supabase.auth.signInWithOtp({
@@ -50,12 +53,9 @@ function Login() {
       setEmailSent(true);
       setRetryTimer(60);
     } catch (error) {
-      if (error instanceof Error) {
-        
-        console.log(error.message);
-      } else {
-        alert('An unknown error occurred');
-      }
+      // Supabase refuses a second email within 60 seconds (also across the
+      // extension's sign-in page), so the reason has to be shown.
+      setError(error instanceof Error ? error.message : 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -125,6 +125,11 @@ function Login() {
               </button>
             </div>
           </form>
+          {error && (
+            <p role="alert" className="text-center text-sm text-red-600">
+              {error}
+            </p>
+          )}
           {emailSent && (
             <div className="text-center text-sm text-gray-600">
               <button

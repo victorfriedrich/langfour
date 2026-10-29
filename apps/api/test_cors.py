@@ -17,9 +17,9 @@ os.environ.setdefault(
     "eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIn0.test-signature",
 )
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from app import app  # noqa: E402
+from app import app
 
 client = TestClient(app)
 

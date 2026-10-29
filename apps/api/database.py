@@ -219,19 +219,54 @@ def save_to_supabase(root: str, forms: set, language: str, source: str | None = 
         else:
             print(f"Error saving to Supabase: {e}")
 
+def find_roots(roots: list[str], language: str) -> dict[str, dict]:
+    """Existing roots for `roots`, matched without case, invalid ones included,
+    keyed by the lowercased root: {'el coche': {'id': .., 'status': ..}}.
+
+    One request for any number of roots (sql/find_roots.sql). The old lookup was
+    one ILIKE request per root, which no index serves: ~350 ms each.
+    """
+    found: dict[str, dict] = {}
+    for i in range(0, len(roots), 500):
+        rows = supabase.rpc("find_roots", {"language_param": language_key(language),
+                                           "roots": roots[i:i + 500]}).execute().data
+        for row in rows:     # lowest id first, like the cache
+            found.setdefault(row["root"].lower(), {"id": row["id"], "status": row["status"]})
+    return found
+
+
 def find_dictionary_root(root: str, language: str) -> dict | None:
     """Find an existing root, including invalid entries, without matching forms.
 
     Creation uses this to preserve audit decisions; token matching must check
     the returned status before using its id.
     """
-    # Match the cache's case-insensitive names (including German nouns), but
-    # treat SQL wildcard characters as literal parts of the supplied root.
-    pattern = root.strip().replace('\\', '\\\\').replace('%', r'\%').replace('_', r'\_')
-    response = (supabase.table("words").select("id, status")
-                .ilike("root", pattern).eq("language", language_key(language))
-                .order("id").limit(1).execute())
-    return response.data[0] if response.data else None
+    root = root.strip()
+    return find_roots([root], language).get(root.lower())
+
+
+def cached_word_id(word: str, language: str) -> int | None:
+    """The word's id from the in-memory cache, or None. No database call."""
+    cache = word_cache[language_key(language)]
+    word_lower = word.lower().strip()
+    word_title = word.title().strip()
+    if word_lower in cache['words']:
+        return cache['words'][word_lower]
+    if word_title in cache['words']:
+        return cache['words'][word_title]
+    return cache['wordforms'].get(word_lower)
+
+
+def resolve_uncached(words: list[str], language: str) -> dict[str, int]:
+    """Ids for cache misses whose root was added after the cache loaded (by
+    another worker), in one request. Invalid roots don't count as matches."""
+    language = language_key(language)
+    found = {}
+    for root, row in find_roots(words, language).items():
+        if row['status'] != 'invalid':
+            word_cache[language]['words'][root] = row['id']
+            found[root] = row['id']
+    return found
 
 
 def identify_word_id(word: str, language: str):
@@ -241,35 +276,21 @@ def identify_word_id(word: str, language: str):
     :param language: The language of the word.
     :return: The word ID.
     """
-    global word_cache
     language = language_key(language)
+    word_id = cached_word_id(word, language)
+    if word_id is not None:
+        return word_id
 
-    # Step 1: Cache Lookup
-    word_lower = word.lower().strip()
-    word_title = word.title().strip()
-    
-    # Check in words cache
-    if word_lower in word_cache[language]['words']:
-        return word_cache[language]['words'][word_lower]
-    elif word_title in word_cache[language]['words']:
-        return word_cache[language]['words'][word_title]
-
-    # Check in wordforms cache
-    if word_lower in word_cache[language]['wordforms']:
-        return word_cache[language]['wordforms'][word_lower]
-    
     # If not found in cache, attempt to fetch from the database
     print(f"{word} not found in {language} cache")
     try:
-        root = find_dictionary_root(word_lower, language)
-        if root and root['status'] != 'invalid':
-            word_id = root['id']
-            # Update the cache
-            word_cache[language]['words'][word_lower] = word_id
+        word_lower = word.lower().strip()
+        word_id = resolve_uncached([word_lower], language).get(word_lower)
+        if word_id is not None:
             return word_id
     except Exception as e:
         print(f"Error fetching word '{word}' from Supabase: {e}")
-    
+
     raise ValueError(f"Word '{word}' not found in language '{language}'")
 
 def get_words_with_many_forms():
@@ -361,6 +382,36 @@ def add_wordform(wordform: str, root_id: int, language: str,
         print(f"Error adding wordform '{wordform}' in language '{language}': {e}")
         raise
 
+def invalid_root_ids(ids: list[int]) -> set[int]:
+    """Of `ids`, the roots an audit marked invalid. The deployed cache function
+    still loads invalid roots (without their forms), so callers check here."""
+    found: set[int] = set()
+    for i in range(0, len(ids), 300):
+        rows = (supabase.table("words").select("id").in_("id", ids[i:i + 300])
+                .eq("status", "invalid").execute().data)
+        found.update(r["id"] for r in rows)
+    return found
+
+
+def existing_wordforms(pairs: list[tuple[int, str]]) -> dict[tuple[int, str], str]:
+    """Status of each (root id, form) row that already exists. The cache leaves
+    out invalid forms, so a token can miss it and still have a row."""
+    if not pairs:
+        return {}
+    rows = (supabase.table("wordforms").select("word_id, form, status")
+            .in_("word_id", sorted({w for w, _ in pairs}))
+            .in_("form", sorted({f for _, f in pairs})).execute().data)
+    wanted = set(pairs)
+    return {(r["word_id"], r["form"]): r["status"] for r in rows
+            if (r["word_id"], r["form"]) in wanted}
+
+
+def record_pending_words(rows: list[dict]) -> None:
+    """Keep tokens parse() did not attach for a later pass (sql/pending_words.sql)."""
+    if rows:
+        supabase.rpc("record_pending_words", {"rows": rows}).execute()
+
+
 def get_or_create_translation(word_id: int, language: str) -> str:
     """
     Get the translation of a word. If it doesn't exist, create it using OpenAI.
@@ -385,7 +436,11 @@ def get_or_create_translation(word_id: int, language: str) -> str:
         prompt = (
             f"Translate the following {display_name(language)} word to English. "
             "Provide 1-3 comma separated words for the translation. "
-            "Don't include the article in the translation for nouns: "
+            "Don't include the article in the translation for nouns. "
+            # Nouns are stored with their article (el amanecer), so a bare
+            # infinitive is the verb and must not get the noun's meaning.
+            "Nouns are written with their article; a word without one is not a noun, "
+            "so translate it in its own word class (a verb gets the verb's meanings, without 'to'): "
             f"{word_data['root']}"
         )
 

@@ -38,7 +38,10 @@ export default function SchedulerLabel({ provider, remnote, onDisconnect }: Sche
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
 
-  const lastSync = remnote?.token_last_used_at ?? null;
+  // A completed sync, not the token's last use: the plugin's inbox checks use
+  // the token every few minutes whether or not syncs succeed. Before the
+  // first completed sync is recorded, the token's last use is all there is.
+  const lastSync = remnote?.last_sync_at ?? remnote?.token_last_used_at ?? null;
   const inRemnote = provider === 'remnote';
   const stale = inRemnote && (!lastSync || now - Date.parse(lastSync) > 2 * DAY_MS);
   const label = inRemnote ? `Scheduled in RemNote${lastSync ? ` · synced ${timeAgo(lastSync, now)}` : ''}` : 'Scheduled by Langfour';

@@ -8,6 +8,7 @@ import {
   SETTING_LINK_EXISTING,
   SLOT_WORD_ID,
 } from '../constants';
+import { checkInbox } from '../inbox';
 import { watchForChanges } from '../live';
 import { describeSync, linkExistingFlashcards, syncNow } from '../sync';
 
@@ -117,10 +118,12 @@ async function onActivate(plugin: ReactRNPlugin) {
   // In the background: RemNote finishes loading the plugin only once
   // onActivate returns. Sync after RemNote has loaded the knowledge base;
   // before that, Rems that exist but have not arrived yet would look deleted.
-  // Answers and turned-off cards are sent as they happen from then on.
-  void plugin.app.waitForInitialSync().then(() => {
+  // Answers and turned-off cards are sent as they happen from then on, and
+  // practice results waiting in Langfour are added right after the sync.
+  void plugin.app.waitForInitialSync().then(async () => {
     stopWatching = watchForChanges(plugin);
-    return syncAndReport(plugin, { quiet: true });
+    await syncAndReport(plugin, { quiet: true });
+    await checkInbox(plugin);
   });
 }
 

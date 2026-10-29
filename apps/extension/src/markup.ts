@@ -3,7 +3,6 @@ import { WordMask } from './textProcessing/wrapNodeWords';
 
 export const popupWidth = 100;
 export const popupHeight = 20;
-export const popupVerticalOffset = 35;
 export const subContainerClassName = 'sub-tr-text';
 export const subWordClassName = 'sub-tr-word';
 export const subWordMaskClassName = 'sub-tr-mask';
@@ -32,19 +31,35 @@ export function getSubtitlesHiddenWordHTML(word: string) {
   return `<span class="${subWordClassName} ${subWordHiddenClassName}">${escapeHTML(word)}</span>`;
 }
 
-export function getPopupHTML(offsetBottom: number) {
+export function getPopupHTML(offsetBottom: number, word: string) {
+  // The tapped word and a bar where the translation will go, so the popup
+  // opens at about its final size instead of growing when it arrives.
   return `
     <div class="${subPopupClassName}">
       <div class="sub-tr-popup-container" style="margin-bottom: ${offsetBottom}px;">
-        <div class="${subLoadingClassName}">
-
+        <div class="${subLoadingClassName}" role="status" aria-label="Translating">
+          <p>${escapeHTML(word)}</p>
+          <span class="sub-tr-skeleton"></span>
         </div>
       </div>
     </div>
   `;
 }
 
-export function getTranslationHTML(translations: Translation[]) {
+/**
+ * "caía → caer" when the tapped form is not the dictionary form. A noun's
+ * dictionary form carries its article ("la diversión", "l'eau"), which is
+ * the same word, so that shows as the dictionary form alone.
+ */
+function formAndRoot(word: string, root: string | null | undefined): string {
+  if (!root) return word;
+  const tapped = word.toLowerCase();
+  const dictionary = root.toLowerCase();
+  const sameWord = dictionary === tapped || dictionary.endsWith(` ${tapped}`) || dictionary.endsWith(`'${tapped}`);
+  return sameWord ? root : `${word} → ${root}`;
+}
+
+export function getTranslationHTML(translations: Translation[], word: string, offerSaving: boolean) {
   // prettier-ignore
   return `
     <div class="sub-tr-popup-content">
@@ -53,13 +68,26 @@ export function getTranslationHTML(translations: Translation[]) {
           <div class="sub-tr-dict-item">
             <div class="sub-tr-dict-item-title">
               <div class="nomargin">
-                ${translation.root ? `<p>${escapeHTML(translation.root)}</p>` : ''}
+                <p>${escapeHTML(formAndRoot(word, translation.root))}</p>
                 <span class="sub-tr-dict-item-text">${escapeHTML(translation.translation ?? '')}</span>
               </div>
-              <button class="sub-tr-plus-button" data-id="${escapeHTML(translation.id)}" aria-label="Add ${escapeHTML(translation.root ?? translation.translation)} to flashcards" title="Add to flashcards">+</button>
+              ${offerSaving && translation.id > 0 ? `<button class="sub-tr-plus-button" data-id="${escapeHTML(translation.id)}" aria-label="Add ${escapeHTML(translation.root ?? translation.translation)} to flashcards" title="Add to flashcards">+</button>` : ''}
             </div>
           </div>
         `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+export function getSignInPromptHTML(word: string) {
+  // prettier-ignore
+  return `
+    <div class="sub-tr-popup-content">
+      <div class="sub-tr-dict-item">
+        <p>${escapeHTML(word)}</p>
+        <span class="sub-tr-dict-item-text">Sign in to Langfour to see translations.</span>
+        <button class="sub-tr-sign-in-button">Sign in</button>
       </div>
     </div>
   `;

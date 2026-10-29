@@ -11,3 +11,6 @@ youtubers_*
 
 # Local overrides
 local_settings.py
+
+# scripts/listening_benchmark.py output: audio, transcripts, results
+benchmark/
