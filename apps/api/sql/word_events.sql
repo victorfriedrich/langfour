@@ -75,10 +75,11 @@ $$;
 revoke execute on function public.record_word_events(jsonb) from public, anon;
 grant execute on function public.record_word_events(jsonb) to authenticated, service_role;
 
--- The word popup's counts. seencount now reads exposures from word_events, and
--- reviewcount counts both review systems: Langfour's flashcardtests and the
--- RemNote reviews of the word's live note (as word_progress does). It used to
--- count only flashcardtests, so a RemNote user always saw 0 reviews.
+-- The word popup's counts. seencount reads exposures from word_events, and
+-- reviewcount the reviews of the word's live notes in Langfour and any
+-- connected app (as word_progress does). It used to count only flashcardtests,
+-- so a RemNote user always saw 0 reviews; since langfour_provider.sql moved
+-- Langfour's reviews into srs_reviews, that one table holds them all.
 create or replace function public.get_user_counts_with_wordforms(_word_id integer)
 returns table (reviewcount integer, seencount integer, alternative_wordforms text[])
 language sql
@@ -86,9 +87,7 @@ stable
 set search_path = ''
 as $$
     select
-        (select count(*)::integer from public.flashcardtests ft
-          where ft.user_id = (select auth.uid()) and ft.word_id = _word_id)
-        + (select count(*)::integer
+        (select count(*)::integer
              from public.srs_reviews r
              join public.srs_cards c on c.id = r.card_id
              join public.srs_notes n on n.id = c.note_id

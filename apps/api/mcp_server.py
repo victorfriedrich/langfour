@@ -31,7 +31,8 @@ mcp = FastMCP(
     "langfour",
     instructions=(
         "Langfour knows which words of a language the user is learning and schedules their "
-        "flashcard reviews (often in RemNote). When you practise vocabulary with the user, "
+        "flashcard reviews, itself or in a connected app such as RemNote. When you practise "
+        "vocabulary with the user, "
         "report the results with record_practice at the end of the session."
     ),
     stateless_http=True,

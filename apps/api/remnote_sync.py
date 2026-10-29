@@ -442,6 +442,13 @@ class SyncStore:
             "user_id": user_id, "purpose": TOKEN_PURPOSE, "token_hash": token_hash,
         }).execute()
 
+    def carry_over_due(self, user_id: str) -> int:
+        """Copy RemNote's due dates onto the user's Langfour cards
+        (sql/langfour_provider.sql)."""
+        return self.db.rpc("srs_carry_over_due", {
+            "p_user_id": user_id, "p_provider": PROVIDER,
+        }).execute().data or 0
+
     def set_review_provider(self, user_id: str, provider: str) -> None:
         (self.db.table("userdata").update({"review_provider": provider})
          .eq("user_id", user_id).execute())
@@ -871,8 +878,11 @@ def pairing_approve(code: str, user=Depends(get_current_user), store: SyncStore 
 
 @web_router.delete("/token", status_code=204)
 def revoke_token(user=Depends(get_current_user), store: SyncStore = Depends(get_store)):
-    """Disconnect: the token stops working and reviews move back to Langfour.
-    The sync history is kept, so reconnecting later does not duplicate Rems."""
+    """Disconnect: the token stops working and reviews move back to Langfour,
+    each word due when RemNote had it due, so cards that went stale meanwhile
+    don't all come up at once. The sync history is kept, so reconnecting later
+    does not duplicate Rems."""
     user_id = str(user.id)
     store.revoke_tokens(user_id, datetime.now(UTC).isoformat())
+    store.carry_over_due(user_id)
     store.set_review_provider(user_id, "langfour")

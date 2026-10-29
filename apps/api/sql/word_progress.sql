@@ -2,17 +2,17 @@
 --
 -- status          as in classify_words: known, learning, ignored or new
 -- added_at        when the word went into the user's words
--- review_count    reviews in both systems: Langfour's own (flashcardtests)
---                 and RemNote's (srs_reviews), like user_known_words counts
---                 both; get_user_counts_with_wordforms only sees Langfour's
--- correct_count   of those, answered right (RemNote: anything but 'again')
+-- review_count    reviews of the word's live notes, in Langfour and any
+--                 connected app (srs_reviews), like user_known_words counts
+--                 them
+-- correct_count   of those, answered right (anything but 'again')
 -- last_reviewed_at
--- next_review_at  from whichever system schedules the user now
---                 (userdata.review_provider): Langfour's SM-2 due date, or
---                 the earliest due card of the word's RemNote note
+-- next_review_at  from whichever scheduler the user has now
+--                 (userdata.review_provider): the earliest due card of the
+--                 word's note there
 --
--- userwords and flashcardtests store UTC without a time zone; they are
--- returned as timestamptz so the client can show local dates.
+-- userwords stores UTC without a time zone; added_at is returned as
+-- timestamptz so the client can show local dates.
 --
 -- HOW THIS GETS APPLIED: through the Supabase connector, like the other
 -- files here. Idempotent.
@@ -39,8 +39,8 @@ as $$
         from public.userwords uw, me
         where uw.user_id = me.user_id and uw.word_id = word_id_param
     ),
-    remnote_cards as (
-        select c.id, c.next_due_at
+    cards as (
+        select c.id, c.next_due_at, n.provider
         from public.srs_cards c
         join public.srs_notes n on n.id = c.note_id, me
         where n.user_id = me.user_id
@@ -48,13 +48,9 @@ as $$
           and n.removed_at is null
     ),
     reviews as (
-        select ft.tested_at at time zone 'utc' as reviewed_at, ft.test_result as correct
-        from public.flashcardtests ft, me
-        where ft.user_id = me.user_id and ft.word_id = word_id_param
-        union all
-        select r.reviewed_at, r.outcome <> 'again'
+        select r.reviewed_at, r.outcome <> 'again' as correct
         from public.srs_reviews r
-        join remnote_cards c on c.id = r.card_id
+        join cards c on c.id = r.card_id
     ),
     provider as (
         select coalesce(
@@ -75,14 +71,8 @@ as $$
         (select m.created_at at time zone 'utc' from mine m),
         (select count(*)::integer from reviews),
         (select count(*) filter (where correct)::integer from reviews),
-        greatest(
-            (select max(r.reviewed_at) from reviews r),
-            (select m.last_reviewed_at at time zone 'utc' from mine m)
-        ),
-        case
-            when (select name from provider) = 'remnote' then (select min(c.next_due_at) from remnote_cards c)
-            else (select m.next_review_due_at at time zone 'utc' from mine m)
-        end;
+        (select max(r.reviewed_at) from reviews r),
+        (select min(c.next_due_at) from cards c where c.provider = (select name from provider));
 $$;
 
 grant execute on function public.word_progress(integer) to authenticated;

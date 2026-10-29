@@ -32,18 +32,10 @@ from (
 
     union all
 
-    -- Learned in Langfour's own reviews. update_spaced_repetition keeps the
-    -- current gap in interval_days and sets it to 0 on a wrong answer.
-    select uw.user_id, uw.word_id, 'reviews', 2
-    from public.userwords uw
-    where uw.status = 'learning'
-      and uw.interval_days >= 21
-      and uw.last_reviewed_at is not null
-      and now() <= uw.next_review_due_at + make_interval(days => uw.interval_days) * 0.5
-
-    union all
-
-    -- Learned in RemNote: every card of the note, judged by its latest review.
+    -- Learned in reviews, in Langfour or a connected app (srs_notes.provider):
+    -- every card of the note, judged by its latest review. Langfour's cards
+    -- have been here since langfour_provider.sql; before that its schedule
+    -- lived on userwords.
     select n.user_id, n.word_id, 'reviews', 2
     from public.srs_notes n
     where n.removed_at is null
