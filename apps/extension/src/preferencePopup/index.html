@@ -16,8 +16,13 @@
       background-color: white;
       color: #333;
       width: 380px;
-      /* Safari on iOS shows the popup as a sheet narrower than 380px. */
-      max-width: 100vw;
+    }
+
+    /* Safari on iOS shows the popup as a sheet narrower than 380px. Desktop
+       Chrome can't take 100vw: it sizes the popup from the page, so the
+       body collapsed to Chrome's starting width and the buttons wrapped. */
+    @media (hover: none) and (pointer: coarse) {
+      body { max-width: 100vw; }
     }
     
     .container {
@@ -330,11 +335,17 @@
     }
     
     #userInfo {
+      min-width: 0;
       font-size: 14px;
       color: #555;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     
     #logoutBtn {
+      flex-shrink: 0;
+      margin-left: 12px;
       background-color: #4f46e5;
       border: none;
       border-radius: 4px;

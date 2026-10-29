@@ -1,0 +1,112 @@
+/* The reader's word popup (wordPopup.ts) on chatgpt.com, inside a shadow
+ * root. The rules are reader.css's "Translation popups" section with its
+ * light and dark theme values; keep the two in step. Here the popup is
+ * fixed to the viewport (chatgptHighlight.ts places it), follows
+ * ChatGPT's theme instead of the reader's, and uses ChatGPT's sans type
+ * rather than the reader's serif. It appears without a transition.
+ */
+
+:host {
+  all: initial;
+  --sans: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  --surface: #ffffff;
+  --text: #1d1d1f;
+  --text-2: #6e6e73;
+  --line: rgba(0, 0, 0, 0.1);
+  --accent: #4f46e5;
+  --accent-soft: rgba(79, 70, 229, 0.1);
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.14);
+  --learning-line: #d9a760;
+}
+:host-context(.dark) {
+  --surface: #2c2c2e;
+  --text: #e5e5ea;
+  --text-2: #98989f;
+  --line: rgba(255, 255, 255, 0.12);
+  --accent: #a5b4fc;
+  --accent-soft: rgba(165, 180, 252, 0.16);
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  --learning-line: #e0a87d;
+}
+
+* { box-sizing: border-box; }
+
+.word-popup {
+  position: fixed;
+  width: min(300px, calc(100vw - 32px));
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  border: 0.5px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  font-family: var(--sans);
+}
+
+.sheet-handle { display: none; }
+
+.popup-header {
+  padding: 12px 14px 2px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+/* Small, right after the word at the top. */
+.speak-btn {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 2px;
+  padding: 3px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.speak-btn:hover { background: rgba(127, 127, 127, 0.15); color: inherit; }
+.speak-btn.speaking { opacity: 0.5; }
+.translations-container {
+  padding: 0 14px 12px;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.translation { display: block; }
+.popup-message { padding: 4px 16px 14px; font-size: 15px; line-height: 1.45; color: var(--text-2); }
+.loading-content { display: flex; justify-content: center; padding: 14px 16px 18px; }
+
+.word-progress {
+  margin: 0 14px 4px;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.progress-mark { color: var(--text); font-weight: 500; }
+.progress-mark.progress-learning { border-bottom: 1.5px solid var(--learning-line); }
+
+.flashcard-btn {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 0 12px 12px;
+  padding: 9px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+:host-context(.dark) .flashcard-btn { color: #1c1c1e; }
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2.5px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
