@@ -250,7 +250,8 @@ def test_a_proxy_that_refuses_pauses_captions(captions):
 
 def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(vp, "video_info", lambda url: {
+    monkeypatch.setattr(vp, "CAPTION_PROXY_URL", None)      # whatever .env says
+    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False: {
         "url": url, "title": "t", "channel": "a", "view_count": 1, "duration": 60})
     processed = []
     monkeypatch.setattr(vp, "process_transcription",
@@ -282,3 +283,45 @@ def test_ytdlp_calls_are_spaced(monkeypatch):
     now[0] += 3
     vp._space_ytdlp()
     assert slept == [7.0]
+
+
+def test_a_caption_run_reads_metadata_through_the_proxy_and_unspaced(monkeypatch):
+    opts = []
+
+    class YDL:
+        def __init__(self, o):
+            opts.append(o)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def extract_info(self, url, download):
+            return {"id": "v1"}
+
+    monkeypatch.setattr(__import__("yt_dlp"), "YoutubeDL", YDL)
+    spaced = []
+    monkeypatch.setattr(vp, "_space_ytdlp", lambda: spaced.append(1))
+    monkeypatch.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+    vp.video_info("u", proxied=True)
+    vp.video_info("u", proxied=True)
+    assert opts[0]["proxy"] != opts[1]["proxy"] and "{session}" not in opts[0]["proxy"]
+    assert spaced == []
+    vp.video_info("u")                                   # our own IP: spaced, no proxy
+    assert "proxy" not in opts[2] and spaced == [1]
+
+
+def test_a_failed_download_from_proxied_info_rereads_on_our_own_ip(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+    reads = []
+    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False: (
+        reads.append(proxied), {"url": url, "proxied": proxied})[1])
+    monkeypatch.setattr(vp, "caption_text", lambda info, lang: None)
+    downloads = []
+    monkeypatch.setattr(vp, "download_video",
+                        lambda info: (downloads.append(info["proxied"]), None)[1])
+    vp.main("https://www.youtube.com/watch?v=abc", "es")
+    assert reads == [True, False] and downloads == [True, False]
