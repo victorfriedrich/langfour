@@ -1,6 +1,6 @@
 # Grammar tracking
 
-Status as of 2026-10-29: built on branch `feat/grammar-tracking`, not merged; `sql/grammar.sql` not applied yet. Covers how Langfour keeps track of the grammar
+Status as of 2026-10-29: built in PR #71, not merged; `sql/grammar.sql` applied to the live database the same day. Covers how Langfour keeps track of the grammar
 a user has worked through, so the LLM a user talks to through the MCP server can write texts with
 grammar they know, teach the next chapter, and work fading rules back into what it writes.
 Written after the vocabulary tools (`get_vocabulary`, `record_practice`, `score_text`,
@@ -206,8 +206,10 @@ with `record_grammar`.
    inventory once its pages can be reached (they returned 404). The draft passes a structural
    check: YAML parses, IDs unique, fields valid, every `later`/`see`/`continues` reference
    resolves and `later` never points backwards. That check is `parse_curriculum` in `grammar.py`.
-2. **SQL** in `apps/api/sql/grammar.sql`: three tables, RLS, `record_grammar`. Built; not
-   applied to the live database yet.
+2. **SQL** in `apps/api/sql/grammar.sql`: three tables, RLS, `record_grammar`. Applied
+   2026-10-29 as migration `grammar`, checked live: RLS on, select-own policies only, no
+   client writes, `record_grammar` executable by the service role alone, and a rolled-back
+   call wrote the expected rows.
 3. **Python** in `apps/api/grammar.py`, following `vocabulary.py`: curriculum loading and
    validation, the store, the overview formatter, the refresh rule. `test_grammar.py` covers
    them; `test_mcp_server.py` calls the tools over HTTP. The three tools and the instructions are
