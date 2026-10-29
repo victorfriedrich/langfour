@@ -29,3 +29,5 @@ zstandard==0.25.0
 pillow==12.3.0
 # mcp_server.py: the MCP endpoint at /mcp.
 mcp==1.12.4
+# grammar.py reads the grammar curriculum from apps/api/grammar/*/*.yaml.
+pyyaml==6.0.3

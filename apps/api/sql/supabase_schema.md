@@ -61,6 +61,22 @@ writes them.
 | `word_events` | `id`, `user_id`, `word_id`, `kind`, `source`, `occurred_at`, `context jsonb` | PK `id` (identity); FK `user_id → auth.users` on delete cascade, `word_id → words`; `kind` in `saved, lookup, exposure, recall_correct, recall_wrong`; `source` in `chatgpt, reader, video, extension, web`; indexes `(user_id, word_id)`, `(user_id, occurred_at)`. Append-only: policies `select_own`, `insert_own`, no update/delete for clients |
 | `srs_outbox` | `event_id`, `card_id`, `outcome`, `status`, `decided_at`, `reason`, `applied_review_at` | PK `event_id` → `word_events` on delete cascade; FK `card_id → srs_cards` on delete set null; `outcome` in `again, good`; `status` in `pending, applied, skipped`; partial index `(card_id) where status = 'pending'`. Policy `select_own` through `word_events`; written only by the API |
 
+### Grammar progress (`grammar.sql`, not applied yet)
+
+The curriculum isn't in the database: the API reads it from
+`apps/api/grammar/<language>/*.yaml`, and `chapter_id` / `concept_id` are the
+slugs from those files, with no foreign key.
+
+| Table | Columns | Keys and constraints |
+|---|---|---|
+| `user_grammar_chapters` | `user_id`, `chapter_id`, `status`, `started_at`, `finished_at` | PK `(user_id, chapter_id)`; FK `user_id → auth.users` on delete cascade; `status` in `started, done` |
+| `user_grammar_concepts` | `user_id`, `concept_id`, `first_correct_at`, `last_seen_at`, `last_produced_at`, `interval_days`, `interval_grown_at`, `refresh_at`, `produced_count`, `error_count` | PK `(user_id, concept_id)`; FK `user_id → auth.users` on delete cascade; `interval_days` 1–180 |
+| `grammar_events` | `id`, `user_id`, `concept_id`, `kind`, `correct`, `self_reported`, `sentence`, `source`, `occurred_at` | PK `id` (identity); FK `user_id → auth.users` on delete cascade; `kind` in `seen, produced`, `correct` set exactly for `produced`; `sentence` ≤ 300 chars; `source` in `chatgpt, reader, web`; index `(user_id, occurred_at)`. Append-only |
+
+All three: policy `select_own`; written only by the API, through
+`record_grammar(p_user_id, p_events, p_concepts, p_chapters)` (service role
+only), which writes a session's events and new state in one transaction.
+
 ### Langfour as a provider (`langfour_provider.sql`, not applied yet)
 
 Langfour's schedule moves from the SM-2 columns on `userwords` into the
