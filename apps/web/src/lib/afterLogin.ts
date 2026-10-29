@@ -1,5 +1,6 @@
-// Where to go once a magic-link login completes. The link may open in a new
-// tab, so this lives in localStorage rather than in the URL or React state.
+// The magic link can open in a second tab, so keep the pending destination
+// in localStorage. The login tab can resume it without consuming it before
+// the callback tab has had a chance to read it.
 const KEY = 'after-login';
 
 export function rememberAfterLogin(path: string) {
@@ -10,14 +11,20 @@ export function rememberAfterLogin(path: string) {
   }
 }
 
-/** The remembered path, once, and only if it stays on this site. */
-export function takeAfterLogin(): string {
+export function peekAfterLogin(): string {
   try {
     const path = localStorage.getItem(KEY);
-    localStorage.removeItem(KEY);
-    if (path && path.startsWith('/') && !path.startsWith('//')) return path;
+    // Backslashes also become slashes in browser URL parsing.
+    if (path && path.startsWith('/') && !path.startsWith('//') && !path.includes('\\')) return path;
   } catch {
     // fall through
   }
   return '/';
+}
+
+/** The remembered path, once, and only if it stays on this site. */
+export function takeAfterLogin(): string {
+  const path = peekAfterLogin();
+  try { localStorage.removeItem(KEY); } catch { /* storage unavailable */ }
+  return path;
 }

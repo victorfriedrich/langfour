@@ -4,6 +4,7 @@ import React, { useState, useEffect, FormEvent, useContext } from 'react';
 import { Send, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabaseclient';
 import { useRouter } from 'next/navigation';
+import { peekAfterLogin } from '@/lib/afterLogin';
 import { UserContext } from '@/context/UserContext';
 
 function Login() {
@@ -31,8 +32,9 @@ function Login() {
 
   useEffect(() => {
     if (user && !isLoading && !user.is_anonymous) {
-      // Redirect authenticated users to the dashboard or home page
-      router.push('/');
+      // The magic link may sign in the original tab as well as its callback.
+      // Both must resume the pending connection rather than discard it.
+      router.push(peekAfterLogin());
     }
   }, [user, isLoading, router]);
 
