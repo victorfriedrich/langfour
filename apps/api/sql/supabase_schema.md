@@ -90,11 +90,13 @@ Vocabulary page; see the functions `known_words_summary` and
 |---|---|---|
 | `video_queue` | `video_id`, `lang`, `channel_id`, `title`, `duration_s`, `views`, `score`, `source`, `priority`, `status`, `attempts`, `error`, `submitted_by`, `created_at`, `claimed_at`, `done_at` | PK `video_id`; FK `submitted_by → auth.users`; `source` in `discovery, user, manual, legacy`; `status` in `pending, processing, done, failed, skipped`; partial index `(lang, priority desc, score desc) where status = 'pending'`, which is exactly `ingest.py`'s claim query; index on `channel_id` |
 | `pending_words` | `language`, `word`, `outcome`, `source`, `candidates text[]`, `jev jsonb`, `seen`, `created_at`, `resolved_at` | PK `(language, word)`; `outcome` in `pending, not_a_word`. Unknown tokens `parse()` did not attach to a root; written through `record_pending_words(rows jsonb)` (service role only) |
+| `video_scores` | `video_id`, `language`, `rubric_version`, `integrity`, `p_garbled`, `p_foreign_lesson`, `p_sung`, `grammar`, `content`, `developed`, `transferable`, `jev jsonb`, `scored_at` | PK `video_id`; `integrity` in `clean, patchy, garbled`; index `(language, video_id)`. Jev's rating of each transcript (`video_quality.py`), written by `ingest.py` and `scripts/score_videos.py`, read by the recommender at startup |
 
 Policies: `users queue own videos [insert]`, `users read own submissions
 [select]`. Workers claim and update rows with `service_role`. Definition in
 `video_queue.sql`. `pending_words` (`pending_words.sql`, applied 2026-10-15) has RLS on
-and no policies: only `service_role` reads or writes it.
+and no policies: only `service_role` reads or writes it. The same holds for
+`video_scores` (`video_scores.sql`, applied 2026-10-29).
 
 ## Functions
 

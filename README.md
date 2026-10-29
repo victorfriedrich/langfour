@@ -131,7 +131,7 @@ A working prototype I use daily — deployed and usable, not a polished product.
 
 - **Browsers:** Chrome only (Manifest V3), distributed as a zip rather than through the Web Store.
 - **Languages:** Spanish, German, Italian and French are supported in code, but the hosted app enables Spanish only, and the corpus is 10,650 Spanish videos out of 11,798. Anki import covers Spanish and Italian.
-- **Recommendations:** ranked on unique-word coverage alone — not word frequency within a video, grammar or speaking speed.
+- **Recommendations:** ranked on unique-word coverage alone — not word frequency within a video, grammar or speaking speed. Spanish videos are rated by a decision model at ingest, and garbled captions, lessons for other languages, songs and low-content videos are left out. A grammar level and a "developed thought" score are stored for later but not used yet. → [plan](docs/plans/video-quality-filters.md)
 - **Setup:** the database schema lives in the hosted Supabase project rather than as migrations here, so a from-scratch install needs it applied by hand. [`supabase_schema.md`](apps/api/sql/supabase_schema.md) is the inventory of what that means.
 - **Tests:** heavy on the discovery pipeline, absent on the NLP layer and both clients. CI lints and type-checks the extension only.
 
