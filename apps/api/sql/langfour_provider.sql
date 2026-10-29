@@ -101,7 +101,7 @@ security definer
 set search_path = ''
 as $$
 begin
-    if new.status = 'learning' then
+    if new.status = 'learning' and new.user_id is not null then
         perform public.srs_langfour_card(new.user_id, new.word_id,
                                          coalesce(new.next_review_due_at at time zone 'utc', now()));
     end if;
@@ -119,13 +119,16 @@ create trigger userwords_langfour_card
 -- ---------------------------------------------------------------------------
 -- Backfill. Words that are learning or disabled (their schedule is kept), and
 -- known words with Langfour review history, so none of it is left behind.
+-- userwords.user_id is nullable, and 3 rows from 2025 have none: they belong
+-- to nobody and are skipped, here and in the trigger above.
 -- ---------------------------------------------------------------------------
 insert into public.srs_notes (user_id, word_id, provider)
 select uw.user_id, uw.word_id, 'langfour'
 from public.userwords uw
-where uw.status in ('learning', 'disabled')
+where uw.user_id is not null
+  and (uw.status in ('learning', 'disabled')
    or exists (select 1 from public.flashcardtests ft
-              where ft.user_id = uw.user_id and ft.word_id = uw.word_id)
+              where ft.user_id = uw.user_id and ft.word_id = uw.word_id))
 on conflict (user_id, provider, word_id) do nothing;
 
 insert into public.srs_cards (note_id, external_id, kind, next_due_at)
