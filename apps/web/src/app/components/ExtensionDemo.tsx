@@ -1,18 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { BookCopy, Captions, Check, Highlighter, Languages, Layers, Maximize, Play, Plus, RotateCcw, Settings, Volume2 } from 'lucide-react';
+import { ArrowUp, BookCopy, Captions, Check, Highlighter, Languages, Layers, Maximize, Play, Plus, RotateCcw, Settings, Volume2 } from 'lucide-react';
 
 /**
  * A hands-on imitation of the extension: hover (or tap) a highlighted word to
- * see its translation, then add it. Styled after the real popups in
- * apps/extension/src/translationPopup.css and reader.css so the demo matches
- * what people get after installing.
+ * see its translation, then add it; on ChatGPT, click a word or double-click
+ * it to add it straight away. Styled after the real popups in
+ * apps/extension/src/translationPopup.css, reader.css and chatgptPopup.css so
+ * the demo matches what people get after installing.
  */
 
 type Word = { id: string; text: string; lemma?: string; translation: string };
 type Segment = string | Word;
 
-export type DemoMode = 'video' | 'reader';
+export type DemoMode = 'video' | 'reader' | 'chatgpt';
 
 const SUBTITLE: Segment[] = [
     'Nunca ',
@@ -54,10 +55,25 @@ const ARTICLE_2: Segment[] = [
     ' que el día terminara.',
 ];
 
+const PROMPT = '¿Qué puedo hacer un domingo en Madrid?';
+
+const ANSWER: Segment[] = [
+    'Empieza con un paseo por el ',
+    { id: 'rastro', text: 'Rastro', translation: 'flea market' },
+    ', el mercadillo que se ',
+    { id: 'monta', text: 'monta', lemma: 'montar', translation: 'is set up, sets up' },
+    ' cada domingo en La Latina. Después, ',
+    { id: 'tapear', text: 'tapea', lemma: 'tapear', translation: 'have tapas' },
+    ' por la Cava Baja y ',
+    { id: 'descansa', text: 'descansa', lemma: 'descansar', translation: 'rest, relax' },
+    ' a la sombra en el Retiro.',
+];
+
 const isWord = (s: Segment): s is Word => typeof s !== 'string';
 const FIRST_WORD: Record<DemoMode, string> = {
     video: (SUBTITLE.find(isWord) as Word).id,
     reader: (ARTICLE.find(isWord) as Word).id,
+    chatgpt: (ANSWER.find(isWord) as Word).id,
 };
 
 const popupMotion = {
@@ -133,16 +149,18 @@ function InteractiveText({
                         ? isAdded
                             ? 'text-white'
                             : 'text-[#ffb732] hover:text-[#ffc95e]'
-                        : isAdded
-                          ? ''
-                          : 'bg-[#ffecb3]/30 border-b border-dashed border-[#d9a760] px-px hover:bg-[#ffecb3]/50 hover:text-[#8B4513]';
+                        : mode === 'chatgpt'
+                          ? // New words highlighted, saved ones underlined, as chatgptHighlight.ts paints them.
+                            isAdded
+                              ? 'select-none underline decoration-[#d9a760] decoration-2 underline-offset-[3px]'
+                              : 'select-none bg-[rgba(255,214,10,0.45)]'
+                          : isAdded
+                            ? ''
+                            : 'bg-[#ffecb3]/30 border-b border-dashed border-[#d9a760] px-px hover:bg-[#ffecb3]/50 hover:text-[#8B4513]';
+                // On ChatGPT a popup opens on click only; hovering does nothing.
+                const hover = mode !== 'chatgpt' && { onMouseEnter: () => onOpen(seg.id), onMouseLeave: onClose };
                 return (
-                    <span
-                        key={seg.id}
-                        className="relative inline-block"
-                        onMouseEnter={() => onOpen(seg.id)}
-                        onMouseLeave={onClose}
-                    >
+                    <span key={seg.id} className="relative inline-block" {...hover}>
                         {hinted === seg.id && (
                             <motion.span
                                 aria-hidden
@@ -164,6 +182,14 @@ function InteractiveText({
                                 e.stopPropagation();
                                 onOpen(seg.id);
                             }}
+                            onDoubleClick={
+                                mode === 'chatgpt'
+                                    ? () => {
+                                          onClose();
+                                          onAdd(seg.id);
+                                      }
+                                    : undefined
+                            }
                             className={`cursor-pointer rounded-sm transition-colors duration-300 ${wordClass}`}
                         >
                             {seg.text}
@@ -173,14 +199,14 @@ function InteractiveText({
                                 <WordPopup mode={mode}>
                                     <motion.span
                                         {...popupMotion}
-                                        {...(mode === 'reader' && { initial: { opacity: 0, y: -6, scale: 0.96 } })}
+                                        {...(mode !== 'video' && { initial: { opacity: 0, y: -6, scale: 0.96 } })}
                                         onClick={(e) => e.stopPropagation()}
                                         className={`block ${mode === 'video' ? 'origin-bottom' : 'origin-top'}`}
                                     >
                                         {mode === 'video' ? (
                                             <VideoPopup word={seg} added={isAdded} onAdd={() => onAdd(seg.id)} />
                                         ) : (
-                                            <ReaderPopup word={seg} added={isAdded} onAdd={() => onAdd(seg.id)} />
+                                            <ReaderPopup word={seg} added={isAdded} sans={mode === 'chatgpt'} onAdd={() => onAdd(seg.id)} />
                                         )}
                                     </motion.span>
                                 </WordPopup>
@@ -230,10 +256,15 @@ function VideoPopup({ word, added, onAdd }: { word: Word; added: boolean; onAdd:
     );
 }
 
-function ReaderPopup({ word, added, onAdd }: { word: Word; added: boolean; onAdd: () => void }) {
+// The reader's popup; ChatGPT shows the same one in sans type.
+function ReaderPopup({ word, added, sans, onAdd }: { word: Word; added: boolean; sans?: boolean; onAdd: () => void }) {
     const [main, ...rest] = word.translation.split(',').map((t) => t.trim());
     return (
-        <span className="block w-max min-w-[220px] overflow-hidden rounded-md border border-black/[0.08] bg-white text-left font-serif shadow-[0_4px_15px_rgba(0,0,0,0.15)]">
+        <span
+            className={`block w-max min-w-[220px] overflow-hidden rounded-md border border-black/[0.08] bg-white text-left shadow-[0_4px_15px_rgba(0,0,0,0.15)] ${
+                sans ? 'font-sans' : 'font-serif'
+            }`}
+        >
             <span className="block border-b border-[#e2d1c3] bg-[#f8f5f0] px-4 py-3 text-[17px] font-bold text-[#5d2e0d]">
                 {word.text}
                 {word.lemma && ` (${word.lemma})`}
@@ -261,7 +292,7 @@ function ReaderPopup({ word, added, onAdd }: { word: Word; added: boolean; onAdd
     );
 }
 
-function AddedCounter({ count, tone }: { count: number; tone: 'dark' | 'light' }) {
+function AddedCounter({ count, tone, at = 'right-3 top-3' }: { count: number; tone: 'dark' | 'light'; at?: string }) {
     return (
         <AnimatePresence>
             {count > 0 && (
@@ -269,7 +300,7 @@ function AddedCounter({ count, tone }: { count: number; tone: 'dark' | 'light' }
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
-                    className={`absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                    className={`absolute ${at} z-10 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
                         tone === 'dark'
                             ? 'bg-white/10 text-white ring-1 ring-white/15 backdrop-blur-md'
                             : 'bg-white/80 text-[#5d2e0d] ring-1 ring-[#e2d1c3] backdrop-blur'
@@ -385,6 +416,41 @@ function ReaderStage(props: StageProps) {
     );
 }
 
+function ChatStage(props: StageProps) {
+    return (
+        <div className="relative flex h-full w-full flex-col overflow-clip bg-white" onClick={props.onClose}>
+            <div aria-hidden className="flex items-center justify-between px-4 py-3">
+                <span className="text-[15px] font-medium text-gray-800">ChatGPT</span>
+                {/* The toggle chatgptHighlight.ts adds to ChatGPT's header, switched on. */}
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-800">
+                    <Languages size={13} />
+                    Langfour
+                </span>
+            </div>
+            <div data-popup-bounds className="relative flex-1 overflow-clip">
+                {/* Below the answer: at the top it would cover the prompt. */}
+                <AddedCounter count={props.added.size} tone="light" at="bottom-3 right-3" />
+                <div className="mx-auto max-w-[34rem] px-5 pt-3 md:px-8">
+                    <div className="ml-auto w-fit max-w-[80%] rounded-3xl bg-gray-100 px-4 py-2 text-[14px] text-gray-900 md:text-[15px]">
+                        {PROMPT}
+                    </div>
+                    <p className="mt-5 text-[14px] leading-[1.75] text-gray-900 md:text-[15px]">
+                        <InteractiveText segments={ANSWER} mode="chatgpt" {...props} />
+                    </p>
+                </div>
+            </div>
+            <div aria-hidden className="px-5 pb-4 md:px-8">
+                <div className="mx-auto flex max-w-[34rem] items-center justify-between rounded-3xl border border-gray-200 py-2 pl-4 pr-2 text-[13px] text-gray-400 shadow-sm">
+                    Pregunta lo que quieras
+                    <span className="grid h-7 w-7 place-items-center rounded-full bg-gray-200 text-white">
+                        <ArrowUp size={15} />
+                    </span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 type StageProps = {
     added: Set<string>;
     open: string | null;
@@ -394,7 +460,7 @@ type StageProps = {
     onAdd: (id: string) => void;
 };
 
-const SEGMENTS: Record<DemoMode, Segment[]> = { video: SUBTITLE, reader: ARTICLE };
+const SEGMENTS: Record<DemoMode, Segment[]> = { video: SUBTITLE, reader: ARTICLE, chatgpt: ANSWER };
 
 // Scales every autoplay delay and cursor move; lower is faster.
 const AUTOPLAY_PACE = 0.85;
@@ -480,12 +546,30 @@ function useAutoplay({
             await sleep(500);
 
             while (!cancelled) {
-                for (const word of words) {
+                for (const [i, word] of words.entries()) {
                     await waitUntilVisible();
                     if (cancelled) return;
                     moveTo(pointAt(`[data-word="${word.id}"]`));
                     await sleep(1100);
                     if (cancelled) return;
+                    if (mode === 'chatgpt' && i > 0) {
+                        // A double click saves the word without the popup.
+                        for (let press = 0; press < 2; press++) {
+                            setCursor((c) => ({ ...c, pressed: true }));
+                            await sleep(90);
+                            setCursor((c) => ({ ...c, pressed: false }));
+                            await sleep(90);
+                        }
+                        if (cancelled) return;
+                        setAdded((prev) => new Set(prev).add(word.id));
+                        await sleep(1300);
+                        continue;
+                    }
+                    if (mode === 'chatgpt') {
+                        setCursor((c) => ({ ...c, pressed: true }));
+                        await sleep(140);
+                        setCursor((c) => ({ ...c, pressed: false }));
+                    }
                     setOpenWord(word.id);
                     await sleep(1000);
                     if (cancelled) return;
@@ -567,7 +651,7 @@ export default function ExtensionDemo({ mode }: { mode: DemoMode }) {
         },
     };
 
-    const total = (mode === 'video' ? SUBTITLE : [...ARTICLE, ...ARTICLE_2]).filter(isWord).length;
+    const total = (mode === 'reader' ? [...ARTICLE, ...ARTICLE_2] : SEGMENTS[mode]).filter(isWord).length;
 
     return (
         <div
@@ -585,17 +669,21 @@ export default function ExtensionDemo({ mode }: { mode: DemoMode }) {
                         <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
                     </div>
                     <div className="mx-auto w-full max-w-xs truncate rounded-md bg-gray-50 px-3 py-1 text-center text-[11px] text-gray-400">
-                        {mode === 'video' ? 'youtube.com/watch' : 'elpais.com/example'}
+                        {mode === 'video' ? 'youtube.com/watch' : mode === 'chatgpt' ? 'chatgpt.com' : 'elpais.com/example'}
                     </div>
                     <div className="w-[42px]" />
                 </div>
                 <div
                     ref={stageRef}
                     className={`relative ${
-                        mode === 'video' ? 'h-[clamp(240px,34vh,340px)]' : 'h-[clamp(320px,50vh,460px)]'
+                        mode === 'video'
+                            ? 'h-[clamp(240px,34vh,340px)]'
+                            : mode === 'chatgpt'
+                              ? 'h-[clamp(300px,42vh,380px)]'
+                              : 'h-[clamp(320px,50vh,460px)]'
                     }`}
                 >
-                    {mode === 'video' ? <VideoStage {...props} /> : <ReaderStage {...props} />}
+                    {mode === 'video' ? <VideoStage {...props} /> : mode === 'chatgpt' ? <ChatStage {...props} /> : <ReaderStage {...props} />}
                     <FakeCursor cursor={cursor} />
                 </div>
             </div>
@@ -612,7 +700,9 @@ export default function ExtensionDemo({ mode }: { mode: DemoMode }) {
                         {added.size === 0 || playing
                             ? playing
                                 ? 'Move your mouse here or tap to try it yourself.'
-                                : 'Hover or tap a highlighted word.'
+                                : mode === 'chatgpt'
+                                  ? 'Click a highlighted word, or double-click it to add it.'
+                                  : 'Hover or tap a highlighted word.'
                             : added.size === total
                               ? 'All added.'
                               : 'Added to your flashcards.'}
