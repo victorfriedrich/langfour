@@ -126,19 +126,15 @@ function DayRow({ label, words }: { label: string; words: ProgressWord[] }) {
     <li className="grid grid-cols-[5.5rem_1.5rem_minmax(0,1fr)] items-baseline gap-3 py-2 text-sm">
       <span className="text-gray-900">{label}</span>
       <span className="tabular-nums text-gray-400">{words.length}</span>
-      {words.length === 0 ? (
-        <span className="text-gray-300">—</span>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className={`text-left text-gray-700 ${open ? '' : 'truncate'}`}
-          title={open ? undefined : text}
-        >
-          {text}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={`text-left text-gray-700 ${open ? '' : 'truncate'}`}
+        title={open ? undefined : text}
+      >
+        {text}
+      </button>
     </li>
   );
 }
@@ -210,11 +206,15 @@ export default function ProgressOverview({ words }: { words: ProgressWord[] }) {
           New this week
           <span className="ml-2 font-normal tabular-nums text-gray-400">{addedThisWeek.toLocaleString()}</span>
         </h2>
-        <ul className="mt-2 divide-y divide-gray-100">
-          {added.map((day, i) => (
-            <DayRow key={day.start} label={addedDayLabel(day.start, i)} words={day.words} />
-          ))}
-        </ul>
+        {addedThisWeek === 0 ? (
+          <p className="mt-2 text-sm text-gray-500">No words saved in the last seven days.</p>
+        ) : (
+          <ul className="mt-2 divide-y divide-gray-100">
+            {added.map(
+              (day, i) => day.words.length > 0 && <DayRow key={day.start} label={addedDayLabel(day.start, i)} words={day.words} />,
+            )}
+          </ul>
+        )}
       </section>
     </div>
   );
