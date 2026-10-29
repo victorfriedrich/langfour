@@ -136,6 +136,7 @@
     .sent-text { margin-top: 6px; font-size: 13px; line-height: 1.5; color: #555; overflow-wrap: anywhere; }
     .sent-actions { margin-top: 14px; display: flex; justify-content: center; gap: 8px; font-size: 13px; color: #aaa; }
     .code-form { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+    .code-form.hidden { display: none; }
     #codeInput {
       width: 140px; height: 42px; padding: 0 12px;
       border: 1px solid #ddd; border-radius: 4px;
@@ -402,8 +403,8 @@
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
       </div>
       <p class="sent-title">Check your email</p>
-      <p class="sent-text">We sent a sign-in code to <strong id="sentEmail"></strong>. Enter it below, or open the link in the email in this browser.</p>
-      <form id="codeForm" class="code-form">
+      <p class="sent-text">We sent a sign-in link to <strong id="sentEmail"></strong>. <span id="sentHint">Open it in this browser.</span></p>
+      <form id="codeForm" class="code-form hidden">
         <input
           type="text"
           id="codeInput"
