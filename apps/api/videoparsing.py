@@ -1,20 +1,16 @@
 import json
 import os
+import re
 import threading
 import time
 import traceback
+import urllib.parse
 import uuid
 from datetime import datetime
 
 import requests
 from dotenv import load_dotenv
 from moviepy.editor import VideoFileClip
-from youtube_transcript_api import (
-    NoTranscriptFound,
-    RequestBlocked,
-    YouTubeRequestFailed,
-    YouTubeTranscriptApi,
-)
 
 from languages import require_code
 from llm_client import transcription_client
@@ -258,29 +254,38 @@ _DETECTOR = None
 
 
 # YouTube blocks an IP's caption requests after a burst: on 2026-10-17 about 40
-# requests in three minutes got this machine IpBlocked, and the block covered
-# yt-dlp's subtitle downloads too (HTTP 429) and still held a day later. So:
+# requests in three minutes got this machine IpBlocked, and on 2026-10-29 about
+# 36 in seven minutes did it again despite 10 s spacing -- so the limit counts
+# requests, not just their rate. The track is therefore fetched straight from
+# the URL yt-dlp's metadata read already returned: one request per video, where
+# youtube_transcript_api made three (watch page, player, track) on top of it.
 #
-# - CAPTION_PROXY_URL (optional) sends caption requests through a rotating
-#   residential proxy. A "{session}" in it is replaced per video, which for
-#   Decodo-style usernames (user-NAME-session-{session}-sessionduration-1)
-#   keeps one video's three requests (watch page, player, track) on one IP and
-#   moves the next video to another. Each video also gets a fresh Session, so
-#   no cookie or visitor id links the IPs together.
+# - CAPTION_PROXY_URL (optional) sends the track request through a rotating
+#   residential proxy. A "{session}" in it is replaced per video, and each
+#   video gets a fresh Session, so nothing links one video's IP to the next.
+#   The track URLs are signed with ipbits=0, so a URL read on our own IP still
+#   works from the proxy's.
 # - Requests are spaced CAPTION_MIN_INTERVAL_S apart: 10 s on our own IP, 0.5 s
-#   (a second or two per video) when the proxy spreads them over many IPs.
-#   They also time out: the library sets no timeout, and one stalled request
-#   hung a run for ten minutes.
-# - A blocked video is retried once on a new proxy session. Without a proxy, or
-#   after CAPTION_PROXY_STRIKES blocked videos in a row, or when the proxy
-#   itself refuses (out of traffic: 407), captions pause for CAPTION_COOLDOWN_S
-#   and videos go straight to Whisper instead of extending the block.
+#   when the proxy spreads them over many IPs. They also time out.
+# - A blocked video (HTTP 429) is retried once on a new proxy session. Without
+#   a proxy, or after CAPTION_PROXY_STRIKES blocked videos in a row, or when
+#   the proxy itself refuses (out of traffic: 407), captions pause for
+#   CAPTION_COOLDOWN_S and videos go straight to Whisper instead of extending
+#   the block.
 CAPTION_PROXY_URL = os.getenv("CAPTION_PROXY_URL") or None
 CAPTION_MIN_INTERVAL_S = float(os.getenv("CAPTION_MIN_INTERVAL_S",
                                          "0.5" if CAPTION_PROXY_URL else "10"))
 CAPTION_COOLDOWN_S = float(os.getenv("CAPTION_COOLDOWN_S", "3600"))
 CAPTION_PROXY_STRIKES = 3
 CAPTION_TIMEOUT_S = 15
+
+
+class NoCaptions(Exception):
+    """The video has no usable track in the language."""
+
+
+class CaptionsBlocked(Exception):
+    """YouTube answered the track request with 429."""
 
 
 class _ThrottledSession(requests.Session):
@@ -311,28 +316,24 @@ _captions_blocked_until = 0.0
 _proxy_strikes = 0
 
 
-def _is_block(exc: Exception) -> bool:
-    return isinstance(exc, RequestBlocked) or (
-        isinstance(exc, YouTubeRequestFailed) and "429" in str(exc))
-
-
 def _pause_captions(reason: str) -> None:
     global _captions_blocked_until
     _captions_blocked_until = time.monotonic() + CAPTION_COOLDOWN_S
     print(f"{reason}; using Whisper only for the next {CAPTION_COOLDOWN_S / 60:.0f} min")
 
 
-def caption_text(video_id: str, language: str) -> str | None:
+def caption_text(info: dict, language: str) -> str | None:
     """The video's caption text, or None when there is no usable track, the
     track reads as another language, or YouTube is blocking caption requests."""
     global _proxy_strikes
     if time.monotonic() < _captions_blocked_until:
         return None
+    video_id = info.get("id")
     attempts = 2 if CAPTION_PROXY_URL else 1
     for attempt in range(attempts):
         try:
             start_time = time.time()
-            transcript = fetch_transcript(video_id, language, caption_session())
+            text = fetch_transcript(info, language, caption_session())
             print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
             _proxy_strikes = 0
             break
@@ -340,26 +341,19 @@ def caption_text(video_id: str, language: str) -> str | None:
             reason = str(e).rsplit("failed: ", 1)[-1].split("'")[0][:80]
             _pause_captions(f"The caption proxy refused the request ({reason})")
             return None
-        except Exception as e:
-            if _is_block(e) and attempt + 1 < attempts:
+        except CaptionsBlocked:
+            if attempt + 1 < attempts:
                 print(f"Caption request for {video_id} blocked; retrying on a new IP")
                 continue
-            if _is_block(e):
-                _proxy_strikes += 1
-                if not CAPTION_PROXY_URL or _proxy_strikes >= CAPTION_PROXY_STRIKES:
-                    _pause_captions(f"YouTube is blocking caption requests ({type(e).__name__})")
-                return None
-            # Deliberately any failure, not just the library's typed ones:
-            # youtube_transcript_api is a scraper, and a scraper's failure mode is
-            # not always a tidy exception (0.6.2 died in xml.etree with ParseError).
+            _proxy_strikes += 1
+            if not CAPTION_PROXY_URL or _proxy_strikes >= CAPTION_PROXY_STRIKES:
+                _pause_captions("YouTube is blocking caption requests (HTTP 429)")
+            return None
+        except Exception as e:
             print(f"No usable '{language}' captions for {video_id} "
                   f"({type(e).__name__}: {(str(e).splitlines() or [''])[0][:120]})")
             return None
 
-    # TODO: Localize based on language
-    # Música
-    # 1.x yields FetchedTranscriptSnippet objects, not dicts.
-    text = ' '.join(snippet.text for snippet in transcript if snippet.text != '[Musik]')
     if not transcript_language_matches(text, language):
         print(f"Caption track for {video_id} is labelled '{language}' but reads as "
               f"another language; not using it")
@@ -367,39 +361,72 @@ def caption_text(video_id: str, language: str) -> str | None:
     return text
 
 
-def fetch_transcript(video_id: str, language: str, session: requests.Session | None = None):
-    """Caption cues for `language`, matched on the primary subtag.
+def caption_track(info: dict, language: str) -> str | None:
+    """URL of the json3 track for `language` in yt-dlp's info, or None.
 
-    YouTube's track codes are inconsistent -- bare 'es' on one video, 'pt-BR',
-    'en-US' or 'de-DE' on the next -- while `language` is always a bare ISO
-    639-1 code, because require_code() normalises it. The library compares the
-    two with `in`, an exact dict-key lookup (still true in 1.2.4), so asking for
-    ['pt'] cannot match a track published as 'pt-BR' and the video is reported
-    as having no captions at all. Spanish publishes bare 'es' and hid this;
-    Portuguese and English do not.
-
-    Raises NoTranscriptFound when nothing matches, which main() now treats as a
-    reason to transcribe the audio rather than as the end of the video.
+    Matched on the primary subtag: YouTube labels tracks 'es', 'pt-BR' or
+    'en-US' while `language` is a bare ISO 639-1 code. Manual tracks
+    ("subtitles") beat automatic ones; among automatic tracks only YouTube's
+    own speech recognition counts. "automatic_captions" also lists a machine
+    translation into ~150 languages, each with a tlang parameter in its URL,
+    and an English video's translated 'es' track would read as Spanish and
+    pass the language check -- so a URL with tlang is never used.
     """
-    # 1.x is instance-based; list_transcripts/get_transcript no longer exist.
-    # The upgrade off 0.6.2 was not cosmetic: that version still listed a
-    # video's caption tracks but its timedtext fetch returned an empty body
-    # against current YouTube, so every fetch died in xml.etree with ParseError.
-    # Measured on real videos: 0/7 fetched on 0.6.2, 4/7 on 1.2.4 -- the other
-    # three being genuine TranscriptsDisabled, which Whisper now picks up.
-    available = YouTubeTranscriptApi(http_client=session or caption_session()).list(video_id)
-    codes = [t.language_code for t in available]
     target = language.lower()
-    matching = [c for c in codes if c.split('-')[0].lower() == target]
-    if not matching:
-        raise NoTranscriptFound(video_id, [language], available)
-    # Exact code first, then regional variants in the order YouTube listed them.
-    # find_transcript itself prefers a manually created track over an ASR one.
-    matching.sort(key=lambda c: (c.lower() != target, codes.index(c)))
-    return available.find_transcript(matching).fetch()
+
+    def json3(formats):
+        return next((f["url"] for f in formats or []
+                     if f.get("ext") == "json3" and "m3u8" not in (f.get("protocol") or "")), None)
+
+    def ranked(tracks: dict) -> list:
+        codes = [c for c in tracks if c.split("-")[0].lower() == target]
+        # Exact code (or YouTube's '<code>-orig' ASR original) first, then
+        # regional variants in the order YouTube listed them.
+        return sorted(codes, key=lambda c: (c.lower() not in (target, f"{target}-orig"),
+                                            not c.endswith("-orig"), list(tracks).index(c)))
+
+    manual = info.get("subtitles") or {}
+    for code in ranked(manual):
+        if url := json3(manual[code]):
+            return url
+    automatic = info.get("automatic_captions") or {}
+    for code in ranked(automatic):
+        url = json3(automatic[code])
+        if url and "tlang" not in urllib.parse.parse_qs(urllib.parse.urlparse(url).query):
+            return url
+    return None
 
 
-def main(url, language: str, use_transcript_api=True):
+def json3_text(data: dict) -> str:
+    """The cue text of a json3 track, without [Música]-style sound tags."""
+    cues = []
+    for event in data.get("events") or []:
+        text = "".join(seg.get("utf8", "") for seg in event.get("segs") or []).strip()
+        if text and not (text.startswith("[") and text.endswith("]")):
+            cues.append(text)
+    return re.sub(r"\s+", " ", " ".join(cues)).strip()
+
+
+def fetch_transcript(info: dict, language: str, session: requests.Session | None = None) -> str:
+    """The caption text for `language`, in one request to the track URL.
+
+    Raises NoCaptions when the video has no usable track, which main() treats
+    as a reason to transcribe the audio, and CaptionsBlocked on HTTP 429.
+    """
+    url = caption_track(info, language)
+    if not url:
+        raise NoCaptions(f"no '{language}' track")
+    response = (session or caption_session()).get(url)
+    if response.status_code == 429:
+        raise CaptionsBlocked(info.get("id"))
+    response.raise_for_status()
+    text = json3_text(response.json())
+    if not text:
+        raise NoCaptions("empty track")
+    return text
+
+
+def main(url, language: str, use_captions=True):
     
     # Was an if/elif ending in an unguarded `else: 'de'`, so an ISO code
     # (what every client now sends) silently routed the transcript into the
@@ -441,8 +468,8 @@ def main(url, language: str, use_transcript_api=True):
     # nothing; Whisper needs the audio download plus 15-60 s of DeepInfra per
     # video. Manual tracks are punctuated, ASR tracks mostly are not, which
     # parse() doesn't need.
-    if use_transcript_api:
-        text = caption_text(video_id, language)
+    if use_captions:
+        text = caption_text(info, language)
         if text:
             with open(txt_filename, "w", encoding='utf-8') as txt_file:
                 txt_file.write(text)

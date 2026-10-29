@@ -14,7 +14,6 @@ requests==2.34.2
 scipy==1.14.1
 supabase==2.7.4
 uvicorn==0.30.6
-youtube-transcript-api==1.2.4
 # videoparsing reads video metadata and downloads Whisper audio with it.
 # YouTube now serves its player challenges as JavaScript: [default] brings the
 # yt-dlp-ejs solver and pin-deno a Deno binary to run it, which yt-dlp finds

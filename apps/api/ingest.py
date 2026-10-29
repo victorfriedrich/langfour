@@ -157,13 +157,13 @@ def prepare_cache() -> None:
     initialize_cache()
 
 
-def transcribe(video_id: str, lang: str) -> tuple[str, str | None]:
+def transcribe(video_id: str, lang: str, captions: bool = True) -> tuple[str, str | None]:
     """('done'|'failed', error). videoparsing is imported here because it drags
     in Whisper, spaCy and moviepy; the queue commands should not."""
     import videoparsing
     url = f"https://www.youtube.com/watch?v={video_id}"
     try:
-        videoparsing.main(url, lang)
+        videoparsing.main(url, lang, use_captions=captions)
     except Exception as exc:
         return "failed", f"{type(exc).__name__}: {str(exc)[:400]}"
     if processed_file(lang, video_id).exists():
@@ -185,7 +185,8 @@ def score(sb, http, video_id: str, lang: str) -> None:
         print(f"    not scored: {type(exc).__name__}: {str(exc)[:200]}", flush=True)
 
 
-def run(sb, lang: str, limit: int, dry_run: bool = False) -> dict[str, int]:
+def run(sb, lang: str, limit: int, dry_run: bool = False,
+        captions: bool = True) -> dict[str, int]:
     rows = pending(sb, lang, limit) if dry_run else claim(sb, lang, limit)
     tally = {"done": 0, "failed": 0}
     # Once per run, and only when there is something to parse: loading it costs
@@ -203,7 +204,7 @@ def run(sb, lang: str, limit: int, dry_run: bool = False) -> dict[str, int]:
         if processed_file(lang, vid).exists():
             status, error = "done", None
         else:
-            status, error = transcribe(vid, lang)
+            status, error = transcribe(vid, lang, captions)
         if status == "done":
             if http is None:
                 import video_quality
@@ -273,6 +274,8 @@ def main() -> None:
     p.add_argument("--lang", help="ISO 639-1 or English name")
     p.add_argument("--limit", type=int, default=20, help="run: videos per invocation")
     p.add_argument("--dry-run", action="store_true", help="run: list what would be claimed")
+    p.add_argument("--no-captions", action="store_true",
+                   help="run: skip captions and transcribe every video with Whisper")
     p.add_argument("--ledger", type=Path, help="seed-done: legacy yt_<lang>.json worklist")
     p.add_argument("--source", default="manual", choices=["manual", "user"])
     p.add_argument("--priority", type=int, default=None,
@@ -296,7 +299,7 @@ def main() -> None:
     lang = require_code(a.lang)
 
     if a.command == "run":
-        tally = run(sb, lang, a.limit, a.dry_run)
+        tally = run(sb, lang, a.limit, a.dry_run, captions=not a.no_captions)
         if not a.dry_run:
             print(f"done {tally['done']}, failed {tally['failed']}")
     elif a.command == "seed-done":
