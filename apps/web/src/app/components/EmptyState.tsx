@@ -39,7 +39,7 @@ export default function EmptyState({ icon: Icon, title, children, actions }: Emp
         </span>
       </div>
       <h2 className="text-lg font-bold text-gray-900">{title}</h2>
-      {children && <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-gray-500">{children}</p>}
+      {children && <div className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">{children}</div>}
       {actions && <div className="mt-6 flex flex-wrap items-center justify-center gap-3">{actions}</div>}
     </div>
   );
