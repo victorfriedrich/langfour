@@ -42,6 +42,11 @@ class FakeStore:
             (USER, 2, "forward"): 20, (USER, 2, "cloze"): 21,
         }
         self.card_ids = {10: ("c10", "r1"), 11: ("c11", "r1"), 20: ("c20", "r2"), 21: ("c21", "r2")}
+        # Langfour: (user, word_id) -> its one card; reviews it records
+        self.langfour = {(USER, 1): {"id": 30, "next_due_at": None},
+                         (USER, 2): {"id": 31, "next_due_at": (NOW + timedelta(days=5)).isoformat()}}
+        self.langfour_reviews: list[tuple[int, bool]] = []
+        self.fail_practice_after: int | None = None  # simulate a failure part-way
         self.removed_rems: set[str] = set()
         self.events: list[dict] = []
         self.outbox: dict[int, dict] = {}
@@ -54,8 +59,30 @@ class FakeStore:
     def review_provider(self, user_id):
         return self.provider
 
-    def live_cards(self, user_id, word_ids):
-        return {(w, k): c for (u, w, k), c in self.cards.items() if u == user_id and w in word_ids}
+    def live_cards(self, user_id, provider, word_ids):
+        if provider == "langfour":
+            return {(w, "forward"): c for (u, w), c in self.langfour.items()
+                    if u == user_id and w in word_ids}
+        return {(w, k): {"id": c, "next_due_at": None} for (u, w, k), c in self.cards.items()
+                if u == user_id and w in word_ids}
+
+    def langfour_practice(self, event_id, outcome):
+        """Like srs_langfour_practice: review and row together, idempotent."""
+        if event_id in self.outbox:
+            return self.outbox[event_id]
+        if self.fail_practice_after is not None and len(self.langfour_reviews) >= self.fail_practice_after:
+            raise RuntimeError("connection dropped")
+        event = next(e for e in self.events if e["id"] == event_id)
+        card = self.langfour[(event["user_id"], event["word_id"])]
+        row = {"event_id": event_id, "card_id": card["id"], "outcome": outcome}
+        due = card["next_due_at"]
+        if outcome == "good" and due and datetime.fromisoformat(due) > NOW:
+            row |= {"status": "skipped", "reason": "not_due"}
+        else:
+            self.langfour_reviews.append((event["word_id"], outcome == "good"))
+            row |= {"status": "applied", "applied_review_at": NOW.isoformat()}
+        self.outbox[event_id] = row
+        return row
 
     def cards_practiced_since(self, card_ids, since):
         events = {e["id"]: e for e in self.events}
@@ -71,7 +98,7 @@ class FakeStore:
 
     def insert_outbox(self, rows):
         for row in rows:
-            self.outbox[row["event_id"]] = {**row, "status": "pending"}
+            self.outbox[row["event_id"]] = {"status": "pending", **row}
 
     def pending(self, user_id):
         events = {e["id"]: e for e in self.events}
@@ -162,10 +189,40 @@ def test_a_card_takes_one_result_per_day():
     assert tomorrow.queued == 1
 
 
-def test_langfour_scheduled_users_get_events_only():
+def test_langfour_scheduled_users_have_results_applied_at_once():
+    # hablar's card is due (never scheduled); casa's is due in 5 days.
     store = FakeStore(provider="langfour")
-    summary = record_practice(store, USER, answers(("hablar", "recognize", False)), now=NOW)
-    assert (summary.recorded, summary.queued, store.outbox) == (1, 0, {})
+    summary = record_practice(store, USER, answers(
+        ("hablar", "produce", True), ("casa", "recognize", True), ("comer", "recognize", False),
+    ), now=NOW)
+
+    assert (summary.recorded, summary.applied, summary.queued) == (3, 1, 0)
+    assert store.langfour_reviews == [(1, True)]
+    rows = {r["card_id"]: r for r in store.outbox.values()}
+    assert (rows[30]["status"], rows[30]["applied_review_at"]) == ("applied", NOW.isoformat())
+    assert (rows[31]["status"], rows[31]["reason"]) == ("skipped", "not_due")
+    assert all(r["status"] != "pending" for r in rows.values())
+
+
+def test_a_retry_after_a_failure_part_way_applies_nothing_twice():
+    store = FakeStore(provider="langfour")
+    session = answers(("hablar", "recognize", False), ("casa", "recognize", False))
+    store.fail_practice_after = 1
+    with pytest.raises(RuntimeError):
+        record_practice(store, USER, session, now=NOW)
+    store.fail_practice_after = None
+    retry = record_practice(store, USER, session, now=NOW)
+
+    # hablar's first result was applied and recorded together, so the retry
+    # finds its card practised today; only casa is applied now.
+    assert store.langfour_reviews == [(1, False), (2, False)]
+    assert retry.applied == 1
+
+
+def test_a_wrong_answer_reaches_a_langfour_card_that_is_not_due():
+    store = FakeStore(provider="langfour")
+    summary = record_practice(store, USER, answers(("casa", "recognize", False)), now=NOW)
+    assert summary.applied == 1 and store.langfour_reviews == [(2, False)]
 
 
 def test_pending_hands_out_remnote_ids_and_skips_rows_whose_card_is_gone():

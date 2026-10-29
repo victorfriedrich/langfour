@@ -1,8 +1,9 @@
 # Learner–word data model
 
-Status as of 2026-10-29. Steps 1, 2, 2a and 4 are implemented in PR #54
-(`feat/learner-word-data-model`); none of the SQL is applied to the live database yet. **Step 3
-is next**, before ChatGPT practice goes to users. Covers how Langfour stores what a user does
+Status as of 2026-10-29. Steps 1, 2, 2a and 4 are merged (PR #54) and applied to the live
+database; the 17 dropped functions' definitions are kept in `archive.dropped_functions`. **Step 3
+is implemented** on branch `feat/langfour-provider` (`sql/langfour_provider.sql`), not applied
+yet; it has to land before ChatGPT practice goes to users. Covers how Langfour stores what a user does
 with a word: the decisions they make, the reviews from any flashcard system, and evidence from
 outside them (ChatGPT practice through the MCP server, the reader, videos). Written while
 designing the MCP server. Section 2a lists improvements to the RemNote plugin's speed and
@@ -246,9 +247,20 @@ comes with item 2.
 
 ### Step 3: Langfour as a provider
 
-**Next.** Langfour's scheduler is the default every user starts on (see the top of this plan), so
-this step is what makes ChatGPT practice, and any later feature built on cards, work for most
-users. It also gives one review table, with Langfour and any outside app as providers.
+**Implemented** (`apps/api/sql/langfour_provider.sql`, branch `feat/langfour-provider`). Langfour's
+scheduler is the default every user starts on (see the top of this plan), so this step is what
+makes ChatGPT practice, and any later feature built on cards, work for most users. It also gives
+one review table, with Langfour and any outside app as providers.
+
+**Checked before applying:** on live data, read-only, the backfill would write 5,333 notes and 899
+reviews, and the known-words rule over the new tables accepts exactly the same words as the old
+one over `userwords` (2 learned through Langfour reviews, none gained or lost). The whole
+migration was also run, twice, on a local Postgres with main's schema and seeded users.
+
+**Apply in this order:** `langfour_provider.sql`, then re-apply `known_words.sql`,
+`word_progress.sql`, `word_events.sql` and `word_status.sql`, then deploy the web app (it stops
+calling `insert_flashcard_test`) and the API. The old web app keeps working in between: its
+`insert_flashcard_test` call only adds a row to the now unread `flashcardtests`.
 
 **Bigger than first estimated.** The first version of this plan counted 654 schedules: the
 `userwords` rows that were ever reviewed. But `next_review_due_at` defaults to `now()`, so
@@ -288,19 +300,21 @@ them.
 | Function | Change | Caller on `main` |
 |---|---|---|
 | `update_spaced_repetition(_word_id, _test_result)` | write `srs_reviews` + `srs_card_sm2` + `srs_cards.next_due_at`; create the note and card on a word's first review | `updateFlashCardInfo.ts` → `FlashcardSession`, `MemoryMatchGame`, `CompactWordInfoPopup` |
-| `insert_flashcard_test(_word_id, _test_type, _test_result)` | fold into `update_spaced_repetition`, so one call records and schedules | `updateFlashCardInfo.ts` |
-| `user_known_words` (view) | the Langfour branch becomes the same per-card rule as RemNote's, over `srs_*` | recommender, Vocabulary page, `classify_words`, `my_word_statuses`, `known_words_summary`, `get_known_words_page` |
+| `insert_flashcard_test(_word_id, _test_type, _test_result)` | no longer called: `update_spaced_repetition` records the review. Dropped with `flashcardtests` | `updateFlashCardInfo.ts` |
+| `user_known_words` (view) | the Langfour branch becomes the same per-card rule as RemNote's, over `srs_*`, for learning words only (a turned-off word is neither learning nor known; no word was affected on 2026-10-29) | recommender, Vocabulary page, `classify_words`, `my_word_statuses`, `known_words_summary`, `get_known_words_page` |
 | `word_progress(word_id_param)` | reviews and due date from `srs_*` only; output shape unchanged | `backgroundScript.ts` (extension) |
 | `get_learning_words` (the overload left after step 4) | due date from `srs_cards`, review counts from `srs_reviews` | `useLearningWords.ts`, `LearningWordsTable.tsx` |
 | `get_userwords_filtered(language_filter, due_type, page_size, p_source)` | due date from `srs_cards` | `useOverdueWords.ts` → `LearningWordsTable`, `vocabulary/page.tsx` |
 | `get_user_counts_with_wordforms(_word_id)` | `reviewcount` from `srs_reviews` only (step 1 already counts both tables) | `useWordInfo.ts` |
-| `initialize_account` (2 overloads) | stop writing SM-2 defaults into `userwords` | `useInitializeAccount.ts` |
-| `merge_roots(payload)` | move `srs_notes` (both providers) and their cards instead of `flashcardtests` and SM-2 columns; mind the unique `(user_id, provider, word_id)` | `apps/api/scripts/review_flagged.py` |
+| `initialize_account` (2 overloads) | unchanged for now: it still writes `next_review_due_at`, which the trigger reads when it creates the card. Changed when the columns are dropped | `useInitializeAccount.ts` |
+| `merge_roots(payload)` | where the user has a Langfour card for both roots, the target's card takes the source's reviews, and its whole schedule (due date, ease, repetition, interval together) when the target is new to the user or the source is strictly further along; the source's Langfour note goes, so the unique `(user_id, provider, word_id)` holds | `apps/api/scripts/review_flagged.py` |
 
 **Recalls for Langfour users:** once their cards exist, `record_practice` applies each result in
-the same request: the same due and once-a-day rules, then `update_spaced_repetition` against the
-card. It still writes an outbox row, straight away as `applied` with the review's date, so the
-scoring rule (reviews + events, minus applied recalls) is the same for every provider. Recalls
+the same request, through `srs_langfour_practice`: the review, the schedule change and its outbox
+row (`applied`, or `skipped` when not due or the word is turned off) in one transaction, keyed by
+the event, so a failure part-way can't leave a review without its record for a retry to apply
+again. The once-a-day rule is unchanged, and the scoring rule (reviews + events, minus applied
+recalls) is the same for every provider. Recalls
 logged before step 3 stay as events and are not applied afterwards.
 
 **Switching schedulers:** a RemNote user's Langfour cards keep their old due dates while RemNote

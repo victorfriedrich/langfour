@@ -3,23 +3,23 @@ Practice that happens outside the flashcard systems, on its way to a card.
 
 A ChatGPT practice session (mcp_server.record_practice) reports what the user
 recalled. Every answer becomes a word_events row (sql/word_events.sql), the
-append-only log of evidence outside the review tables. For a user whose
-reviews RemNote schedules, an answer can also become an srs_outbox row
-(sql/srs_outbox.sql) naming the card it applies to; the RemNote plugin
-learns of them through the inbox, collects them under the sync lease
-(remnote_sync.py), adds the review and reports back.
+append-only log of evidence outside the review tables. An answer can also
+reach a card of whichever scheduler the user has (userdata.review_provider),
+with an srs_outbox row (sql/srs_outbox.sql) recording what became of it:
+  - Langfour: applied here and now, together with its row, in one database
+    transaction (srs_langfour_practice in sql/langfour_provider.sql).
+  - RemNote: row 'pending'; the plugin learns of it through the inbox,
+    collects it under the sync lease (remnote_sync.py), adds the review and
+    reports back.
 
 What reaches a card is deliberately conservative, because RemNote can't tell
 these reviews from its own (its SDK takes only a score) and uses review
-history for research:
+history for research, and the same rules keep Langfour's schedule honest:
   - wrong -> 'again'; right -> 'good', never 'easy';
-  - the plugin applies 'good' only to a card that is due (it sees the live card);
+  - 'good' only for a card that is due; nothing for a word the user turned off;
   - at most one result per card per day: within one call a wrong answer wins,
     and a later call the same day gets no outbox row for that card.
 Answers that don't reach a card stay as events.
-
-Langfour-scheduled users get events only until Langfour cards exist
-(docs/plans/learner-word-data-model.md, step 3).
 """
 
 from collections.abc import Iterable
@@ -30,12 +30,12 @@ from pydantic import BaseModel, Field, model_validator
 
 from supabase_client import supabase
 
-PROVIDER = "remnote"
 SOURCE = "chatgpt"
 
-# Recognising the word (target language -> meaning) is the forward card;
-# producing it (meaning -> target language) the backward one. Cloze cards
-# never take a practice result.
+# RemNote: recognising the word (target language -> meaning) is the forward
+# card, producing it (meaning -> target language) the backward one; cloze
+# cards never take a practice result. Langfour has one card per word, which
+# takes both.
 CARD_KIND = {"recognize": "forward", "produce": "backward"}
 
 _IN_CHUNK = 200
@@ -70,7 +70,8 @@ class PracticeRequest(BaseModel):
 
 class PracticeSummary(BaseModel):
     recorded: int        # answers logged as events
-    queued: int          # results on their way to a RemNote card
+    applied: int         # results already on a card (Langfour schedules the user)
+    queued: int          # results on their way to a card in a connected app (RemNote)
     not_found: list[str] # words not in the dictionary, so not recorded
 
 
@@ -144,17 +145,25 @@ class PracticeStore:
                .eq("user_id", user_id).limit(1).execute())
         return (res.data or [{}])[0].get("review_provider") or "langfour"
 
-    def live_cards(self, user_id: str, word_ids: list[int]) -> dict[tuple[int, str], int]:
-        """(word_id, kind) -> srs_cards.id for the user's live RemNote notes."""
-        cards: dict[tuple[int, str], int] = {}
+    def live_cards(self, user_id: str, provider: str,
+                   word_ids: list[int]) -> dict[tuple[int, str], dict]:
+        """(word_id, kind) -> {id} for the user's live notes there."""
+        cards: dict[tuple[int, str], dict] = {}
         for chunk in _chunks(word_ids):
             res = (self.db.table("srs_notes").select("word_id, srs_cards(id, kind)")
-                   .eq("user_id", user_id).eq("provider", PROVIDER)
+                   .eq("user_id", user_id).eq("provider", provider)
                    .is_("removed_at", "null").in_("word_id", chunk).execute())
             for note in res.data or []:
                 for card in note.get("srs_cards") or []:
-                    cards.setdefault((note["word_id"], card["kind"]), card["id"])
+                    cards.setdefault((note["word_id"], card["kind"]), card)
         return cards
+
+    def langfour_practice(self, event_id: int, outcome: str) -> dict:
+        """Apply a result to the event's Langfour card and record it in
+        srs_outbox, in one transaction (sql/langfour_provider.sql); the row."""
+        return self.db.rpc("srs_langfour_practice", {
+            "p_event_id": event_id, "p_outcome": outcome,
+        }).execute().data
 
     def cards_practiced_since(self, card_ids: list[int], since: str) -> set[int]:
         """Cards that already have an outbox row from a recall at or after `since`."""
@@ -229,19 +238,31 @@ def record_practice(store: PracticeStore, user_id: str, req: PracticeRequest,
         for a, word_id in answers
     ])
 
-    chosen: dict[int, tuple[int, str]] = {}  # card_id -> (event_id, outcome)
-    if answers and store.review_provider(user_id) == PROVIDER:
-        cards = store.live_cards(user_id, sorted({w for _, w in answers}))
+    # card id -> (event_id, outcome), one per card
+    chosen: dict[int, tuple[int, str]] = {}
+    provider = store.review_provider(user_id) if answers else None
+    if answers:
+        cards = store.live_cards(user_id, provider, sorted({w for _, w in answers}))
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        busy = store.cards_practiced_since(sorted(set(cards.values())), day_start.isoformat())
+        busy = store.cards_practiced_since(sorted({c["id"] for c in cards.values()}),
+                                           day_start.isoformat())
         for (a, word_id), event_id in zip(answers, event_ids, strict=True):
-            card_id = cards.get((word_id, CARD_KIND[a.direction]))
-            if card_id is None or card_id in busy:
+            kind = "forward" if provider == "langfour" else CARD_KIND[a.direction]
+            card = cards.get((word_id, kind))
+            if card is None or card["id"] in busy:
                 continue
             outcome = "good" if a.correct else "again"
-            previous = chosen.get(card_id)
+            previous = chosen.get(card["id"])
             if previous is None or (previous[1] == "good" and outcome == "again"):
-                chosen[card_id] = (event_id, outcome)
+                chosen[card["id"]] = (event_id, outcome)
+
+    applied = 0
+    if provider == "langfour":
+        # One transaction per result: a failure part-way leaves the earlier
+        # ones applied and recorded, so a retry finds them and skips.
+        for event_id, outcome in chosen.values():
+            applied += store.langfour_practice(event_id, outcome)["status"] == "applied"
+    else:
         store.insert_outbox([
             {"event_id": event_id, "card_id": card_id, "outcome": outcome}
             for card_id, (event_id, outcome) in chosen.items()
@@ -249,7 +270,8 @@ def record_practice(store: PracticeStore, user_id: str, req: PracticeRequest,
 
     return PracticeSummary(
         recorded=len(event_ids),
-        queued=len(chosen),
+        applied=applied,
+        queued=len(chosen) if provider != "langfour" else 0,
         not_found=[w for w in words if w not in ids],
     )
 

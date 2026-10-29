@@ -37,6 +37,7 @@ from remnote_sync import (
     pending_words,
     relink,
     review_outcome,
+    revoke_token,
     sync_router,
 )
 
@@ -203,6 +204,10 @@ class FakeStore:
 
     def revoke_tokens(self, user_id, now):
         self.token = None
+
+    def carry_over_due(self, user_id):
+        self.carried_over = True
+        return 0
 
     def insert_token(self, user_id, token_hash):
         self.token = {"created_at": "now", "last_used_at": None, "hash": token_hash}
@@ -813,3 +818,11 @@ def test_relinking_is_refused_when_it_could_lose_or_steal_data(reason, setup, re
     with pytest.raises(HTTPException) as refused:
         relink(store, USER, RelinkRequest(**req))
     assert refused.value.status_code == 409, reason
+
+
+def test_disconnecting_hands_reviews_back_with_remnotes_due_dates():
+    store = FakeStore()
+    store.token = {"created_at": "t", "last_used_at": None}
+    store.provider = "remnote"
+    revoke_token(SimpleNamespace(id=USER), store)
+    assert (store.token, store.provider, store.carried_over) == (None, "langfour", True)

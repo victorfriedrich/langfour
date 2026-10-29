@@ -1,12 +1,13 @@
--- srs_outbox: recalls from outside the flashcard systems that are on their way
--- to a flashcard.
+-- srs_outbox: recalls from outside the flashcard systems, and what became of
+-- them on a flashcard.
 --
 -- A ChatGPT practice session (the MCP tool record_practice) writes one
--- word_events row per answer. For a word RemNote schedules, it also writes a
--- row here naming the card the answer applies to. The RemNote plugin collects
--- pending rows (GET /sync/remnote/inbox), adds the review to the card, and
--- reports back (POST /sync/remnote/practice): applied, with the date of the
--- review it added, or skipped, with the reason.
+-- word_events row per answer, and a row here naming the card of the user's
+-- scheduler the answer applies to. A Langfour card takes it at once (the row
+-- is written 'applied' or 'skipped'). For a RemNote card the row starts
+-- 'pending': the plugin collects it (GET /sync/remnote/practice), adds the
+-- review to the card, and reports back (POST /sync/remnote/practice):
+-- applied, with the date of the review it added, or skipped, with the reason.
 --
 -- Separate from word_events because the log is append-only and this is not:
 -- delivery moves from pending to applied or skipped. It also only has rows for
@@ -19,10 +20,6 @@
 -- 'applied'. RemNote itself can't tell these reviews apart (its SDK call takes
 -- only a score), which is why only conservative grades are sent: 'again' for
 -- a wrong answer, 'good' (never 'easy') for a right one.
---
--- Langfour-scheduled users get no rows until Langfour cards exist
--- (docs/plans/learner-word-data-model.md, step 3); their recalls are events
--- only.
 --
 -- Requires word_events.sql and remnote_sync.sql. HOW THIS GETS APPLIED:
 -- through the Supabase connector, like the other files here. Idempotent.
