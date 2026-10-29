@@ -86,3 +86,26 @@ chapters:
 Concept ids are local to their chapter; references in `later` and `see` use full ids. Never
 rename an id once users have progress on it: their rows in `user_grammar_concepts` keep the old
 id, and the API ignores ids the files no longer have.
+
+## UI copy
+
+`<language>/ui/<level>.yaml` holds what the web app's Grammar tab shows: a short English `title`
+and a one-sentence `description` for every chapter and concept, under the same ids and in the
+same order as the curriculum. They are labels for a progress screen, not teaching material; the
+files above stay the specification. `load_ui_copy` refuses copy that misses or adds an id, so a
+new concept needs its copy before the tests pass.
+
+```yaml
+level: a1
+chapters:
+- id: es.ser_estar_1
+  title: 'Ser or estar: essentials'
+  description: Describe what someone is like versus how they are now.
+  concepts:
+  - id: characteristic_vs_state
+    title: Characteristics versus states
+    description: Ser for typical qualities; estar for current conditions.
+```
+
+A concept may also name an `image` in its curriculum entry: a file in
+`apps/web/public/grammar/<language>/`, shown beside it on the lesson page.

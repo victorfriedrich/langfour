@@ -1,0 +1,342 @@
+level: b2
+chapters:
+- id: es.subj_perfecto
+  title: 'Perfect subjunctive: haya hecho'
+  description: React to actions that have already happened.
+  concepts:
+  - id: forms
+    title: Haya plus participle
+    description: Form the perfect subjunctive with present subjunctive haber + participle.
+  - id: past_after_present
+    title: Past action after a present trigger
+    description: Use perfect subjunctive for completed actions after a present trigger.
+  - id: completed_future
+    title: Finished before a future event
+    description: Use perfect subjunctive for actions completed before a future event.
+- id: es.verbos_cambio
+  title: Verbs of becoming
+  description: Describe different ways people and things change.
+  concepts:
+  - id: ponerse
+    title: 'Ponerse: a sudden change'
+    description: Use ponerse for sudden or temporary changes in mood, state or color.
+  - id: volverse
+    title: 'Volverse: lasting change'
+    description: Use volverse for more lasting changes in character or behavior.
+  - id: hacerse
+    title: 'Hacerse: gradual change'
+    description: Use hacerse for gradual or deliberate changes, including professions.
+  - id: quedarse
+    title: 'Quedarse: resulting state'
+    description: Use quedarse for a state remaining after an event.
+  - id: convertirse
+    title: 'Convertirse en: transform into'
+    description: Use convertirse en + noun to describe a transformation.
+  - id: llegar_a_ser
+    title: 'Llegar a ser: eventually become'
+    description: Use llegar a ser to describe reaching a state after a process.
+- id: es.subj_imperfecto
+  title: 'Imperfect subjunctive: forms'
+  description: Form hablara, tuviera and other past subjunctives.
+  concepts:
+  - id: from_preterite
+    title: From the ellos preterite
+    description: Form the imperfect subjunctive from the ellos preterite stem.
+  - id: nosotros_accent
+    title: Accent in nosotros forms
+    description: Add a written accent in the nosotros imperfect subjunctive form.
+  - id: se_forms
+    title: Alternative -se forms
+    description: Recognize -se forms as alternatives to the -ra imperfect subjunctive.
+- id: es.subj_correlacion
+  title: Subjunctive tense choices
+  description: Choose subjunctive tenses for wishes and dependent clauses.
+  concepts:
+  - id: past_trigger
+    title: Quería que vinieras
+    description: Use imperfect subjunctive after a past or conditional trigger.
+  - id: present_trigger_past_event
+    title: Past actions after a present trigger
+    description: Choose perfect or imperfect subjunctive for past actions after a present trigger.
+  - id: ojala_imperfect
+    title: Ojalá tuviera
+    description: Use ojalá + imperfect subjunctive for unlikely or unreal wishes.
+  - id: como_si
+    title: 'Como si: as if'
+    description: Use como si + past subjunctive for imaginary comparisons.
+  - id: quisiera
+    title: 'Quisiera: polite wanting'
+    description: Use quisiera as a particularly polite way to make a request.
+- id: es.ser_estar_3
+  title: 'Ser or estar: advanced cases'
+  description: Handle passive meanings and less common contrasts.
+  concepts:
+  - id: ser_passive
+    title: Fue versus está construido
+    description: Use ser + participle for a passive action, estar for its resulting state.
+  - id: more_meaning_change
+    title: More meaning-changing adjectives
+    description: Some adjectives change meaning depending on ser versus estar.
+  - id: con_sin
+    title: Estar con or sin
+    description: Use estar con/sin for temporary circumstances or conditions.
+  - id: lo_attribute
+    title: Lo es, lo está
+    description: Use invariable lo to replace a description after ser or estar.
+  - id: estar_bien_que
+    title: Está bien que
+    description: Use está bien/mal que + subjunctive to evaluate an action.
+- id: es.condicionales
+  title: Conditional sentences
+  description: Describe real and unreal conditions in the present and past.
+  concepts:
+  - id: si_unlikely
+    title: Si tuviera, haría
+    description: Use si + imperfect subjunctive and conditional for unreal present conditions.
+  - id: never_after_si
+    title: Verb forms after si
+    description: Do not use present subjunctive or conditional after conditional si (if).
+  - id: perfect_forms
+    title: Hubiera and habría hecho
+    description: Form the pluperfect subjunctive and conditional perfect with haber.
+  - id: si_past_unreal
+    title: Si hubiera sabido
+    description: Use si + pluperfect subjunctive, then conditional perfect, for unreal pasts.
+  - id: mixed
+    title: Mixed past and present conditions
+    description: Combine past and present forms in mixed unreal conditions.
+  - id: other_conditions
+    title: Other conditional expressions
+    description: Use subjunctive after a menos que, en caso de que and similar phrases.
+  - id: por_si
+    title: 'Por si: in case'
+    description: Use por si + indicative to express a precaution.
+  - id: de_infinitive
+    title: De haberlo sabido
+    description: Use de + infinitive for a more formal conditional construction.
+- id: es.orden_enfasis
+  title: Word order and emphasis
+  description: Put attention on a particular person, action or idea.
+  concepts:
+  - id: subject_after_verb
+    title: Subject after the verb
+    description: Put subjects after certain verbs, including gustar and event verbs.
+  - id: pronoun_emphasis
+    title: Emphasizing who did it
+    description: Move the subject after the verb to emphasize who did something.
+  - id: cleft
+    title: Fue Ana quien lo dijo
+    description: Use ser-based focus structures to emphasize who, where or when.
+  - id: lo_que_es
+    title: Lo que necesito es
+    description: Use lo que... es... to highlight a key part of the statement.
+  - id: si_que
+    title: Sí que for emphasis
+    description: Use sí que before a verb for strong affirmation.
+- id: es.concesivas
+  title: Although and even if
+  description: Express contrasts that do not change the outcome.
+  concepts:
+  - id: aunque
+    title: 'Aunque: fact or possibility'
+    description: Use indicative for asserted facts; subjunctive for hypothetical or conceded facts.
+  - id: aunque_past
+    title: 'Aunque tuviera: unreal'
+    description: Use past subjunctive with aunque for imagined or unreal situations.
+  - id: a_pesar_de
+    title: A pesar de
+    description: Use a pesar de with nouns/infinitives; a pesar de que introduces a clause.
+  - id: por_mucho_que
+    title: Por mucho que
+    description: Use por mucho/más que + subjunctive for however much or however hard.
+  - id: reduplicative
+    title: Pase lo que pase
+    description: Use repeated subjunctive patterns to mean whatever happens or whatever you do.
+- id: es.pasiva
+  title: Passive and impersonal expressions
+  description: Describe actions without naming the person doing them.
+  concepts:
+  - id: ser_participle
+    title: Ser plus participle
+    description: Build the passive with ser + agreeing participle and optionally por + agent.
+  - id: pasiva_refleja
+    title: Passive se
+    description: Use se + a verb agreeing with its thing-subject for passive meaning.
+  - id: impersonal_people
+    title: Impersonal se with human objects
+    description: Use singular impersonal se with a human object marked by a.
+  - id: third_plural
+    title: Unnamed third-person plural
+    description: Use an unnamed third-person plural to avoid saying who acts.
+  - id: uno
+    title: Uno for people in general
+    description: Use uno as a general subject meaning people in general.
+- id: es.discurso_2
+  title: Reporting past conversations
+  description: Retell what someone previously said or asked.
+  concepts:
+  - id: tense_shift
+    title: Tense changes in reported speech
+    description: Shift tense when reporting past speech, including future to conditional.
+  - id: commands_past
+    title: Past reported commands
+    description: Use imperfect subjunctive to report past commands.
+  - id: still_true
+    title: Still-true statements
+    description: Keep the original tense if the reported statement remains true.
+  - id: deixis
+    title: Changing time and place words
+    description: Adjust time/place words and demonstratives to the reporter's viewpoint.
+  - id: reporting_verbs
+    title: Verbs for reporting
+    description: Choose reporting verbs with their appropriate clause and verb mood.
+- id: es.adjetivo_2
+  title: Advanced adjective placement
+  description: Change emphasis and meaning through adjective position.
+  concepts:
+  - id: position_meaning
+    title: Meaning changes with position
+    description: Some adjectives have different meanings before and after a noun.
+  - id: before_for_evaluation
+    title: Adjectives before nouns for effect
+    description: Place adjectives before nouns for subjective or literary emphasis.
+  - id: invariable_colours
+    title: Invariable color words
+    description: Some color words, such as rosa and naranja, remain unchanged.
+  - id: several_nouns
+    title: One adjective for several nouns
+    description: Use plural adjectives for multiple nouns, masculine if the nouns are mixed.
+- id: es.subj_otros
+  title: 'Subjunctive: other patterns'
+  description: Recognize further situations that call for the subjunctive.
+  concepts:
+  - id: sin_que
+    title: Sin que
+    description: Use sin que + subjunctive, but sin + infinitive for the same subject.
+  - id: lo_que
+    title: Haz lo que quieras
+    description: Use subjunctive after lo que, donde, etc. for undetermined referents.
+  - id: double_meaning
+    title: Meaning changes with mood
+    description: The mood can change the meaning of decir, sentir and temer.
+  - id: de_modo_que
+    title: 'De modo que: result or purpose'
+    description: Use indicative for consequences and subjunctive for intended results.
+  - id: no_es_que
+    title: No es que
+    description: Use no es que + subjunctive to reject a supposed reason.
+  - id: el_hecho_de_que
+    title: El hecho de que
+    description: El hecho de que often introduces a subjunctive clause.
+  - id: mientras_condition
+    title: 'Mientras: as long as'
+    description: Use mientras + subjunctive when it means as long as.
+- id: es.relativas_3
+  title: Advanced relative clauses
+  description: Link ideas with whose, which and formal relative forms.
+  concepts:
+  - id: lo_cual
+    title: Lo que and lo cual
+    description: Use lo que/lo cual to refer back to an entire earlier statement.
+  - id: el_cual
+    title: El cual and la cual
+    description: Use el cual and related forms in more formal relative clauses.
+  - id: cuyo
+    title: 'Cuyo: whose'
+    description: Use cuyo/cuya to show possession, agreeing with the thing possessed.
+  - id: non_restrictive
+    title: Extra information in commas
+    description: Add nonessential relative clauses between commas.
+  - id: adverbs
+    title: Donde, como and cuando
+    description: Use donde, como and cuando to relate places, ways and times.
+- id: es.probabilidad
+  title: Guesses and probability
+  description: Express how certain you are about the past or present.
+  concepts:
+  - id: conditional_past
+    title: Conditional for past guesses
+    description: Use conditional forms to guess about a situation in the past.
+  - id: conditional_perfect
+    title: Conditional perfect for past guesses
+    description: Use conditional perfect to guess about something earlier in the past.
+  - id: markers
+    title: Words for uncertainty
+    description: Choose mood with a lo mejor, probablemente and similar expressions.
+- id: es.perifrasis_3
+  title: Advanced action expressions
+  description: Express gradual change, eventual results and approximation.
+  concepts:
+  - id: acabar_gerundio
+    title: Acabar + gerund
+    description: Use acabar + gerund to express how an action eventually turned out.
+  - id: ir_gerundio
+    title: Ir + gerund
+    description: Use ir + gerund for gradual development or progress.
+  - id: llegar_a
+    title: Llegar a + infinitive
+    description: Use llegar a + infinitive for going so far as to do something.
+  - id: tener_participio
+    title: Tener + participle
+    description: Use tener + participle to indicate a plan, idea or result.
+  - id: andar_gerundio
+    title: Andar + gerund
+    description: Use andar + gerund for repeated or ongoing behavior.
+  - id: venir_a
+    title: Venir a + infinitive
+    description: Use venir a + infinitive for an approximate amount or outcome.
+- id: es.por_para_3
+  title: 'Por and para: advanced cases'
+  description: Use por and para in passive, causal and fixed expressions.
+  concepts:
+  - id: agent
+    title: Por for the doer
+    description: Use por to introduce the agent of a passive sentence.
+  - id: por_infinitive
+    title: Por + infinitive
+    description: Use por + infinitive for a cause or an action still pending.
+  - id: estar_para_por
+    title: Estar para versus estar por
+    description: Estar para means in the mood; estar por marks something pending or imminent.
+  - id: expressions
+    title: More por and para phrases
+    description: Recognize more idiomatic expressions with por and para.
+- id: es.que_de_que
+  title: Que versus de que
+  description: Know when a clause needs de before que.
+  concepts:
+  - id: dequeismo
+    title: Que after verbs without de
+    description: Use que without de after verbs like creer and decir.
+  - id: queismo
+    title: De que after verbs requiring de
+    description: Keep de before que when the governing verb or phrase requires it.
+- id: es.conectores_4
+  title: Connectors for structured writing
+  description: Organize arguments, causes, conclusions and comparisons.
+  concepts:
+  - id: formal_contrast
+    title: Formal contrasts
+    description: Use formal connectors to contrast claims or perspectives.
+  - id: formal_cause_consequence
+    title: Formal cause and consequence
+    description: Use formal expressions for reasons and conclusions.
+  - id: stance
+    title: Framing and summarizing
+    description: Use discourse markers to frame or summarize a point.
+  - id: cuanto_mas
+    title: Cuanto más, más
+    description: Use cuanto más..., más... for proportional comparisons.
+  - id: ordering
+    title: Ordering an argument
+    description: Use sequencing phrases to organize an argument.
+- id: es.voseo
+  title: Vos in Latin America
+  description: Recognize regional forms of the informal you.
+  concepts:
+  - id: present
+    title: Vos in the present
+    description: Recognize regional vos present-tense endings and irregular forms.
+  - id: imperative
+    title: Commands with vos
+    description: Recognize vos commands with final stress, such as hablá.

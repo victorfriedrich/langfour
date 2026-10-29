@@ -1,0 +1,430 @@
+level: b1
+chapters:
+- id: es.ser_estar_2
+  title: 'Ser or estar: further uses'
+  description: Handle events, changing meanings and result states.
+  concepts:
+  - id: event_location
+    title: Events use ser
+    description: Use ser, not estar, to say where or when events take place.
+  - id: meaning_change
+    title: Adjectives that change meaning
+    description: Some adjectives have different meanings with ser and estar.
+  - id: perceived_change
+    title: Estar for a current impression
+    description: Describe how someone or something seems right now.
+  - id: result_state
+    title: Estar plus past participle
+    description: Use estar + participle for a resulting state, with agreement.
+  - id: estar_de
+    title: Estar de for temporary situations
+    description: Use estar de + noun for temporary roles or situations.
+  - id: muerto
+    title: Estar muerto
+    description: Use estar to describe the state of being dead.
+  - id: valuation
+    title: General evaluations with es
+    description: Use es + adjective + infinitive to make a general evaluation.
+- id: es.indefinido_imperfecto_2
+  title: 'Preterite or imperfect: storytelling'
+  description: Combine events, background and intentions in the past.
+  concepts:
+  - id: narrative
+    title: Past narrative focus
+    description: Use the preterite for main events and imperfect for background.
+  - id: meaning_change
+    title: Meaning changes with past tense
+    description: Distinguish conocí/conocía, supe/sabía and similar pairs.
+  - id: estaba_estuve
+    title: Estaba versus estuve doing
+    description: Contrast an ongoing past action with a finished period spent doing it.
+  - id: iba_a
+    title: 'Iba a: intended but didn''t'
+    description: Use iba a + infinitive for an intended past action that did not happen.
+  - id: courtesy
+    title: Polite imperfect
+    description: Use imperfect forms such as quería to soften a present request.
+  - id: hubo_habia
+    title: Hubo versus había
+    description: Use hubo for events that occurred and había to describe a past scene.
+- id: es.perfecto_indefinido_2
+  title: 'Present perfect or preterite: nuance'
+  description: Choose past tenses according to how you view the time period.
+  concepts:
+  - id: speaker_frame
+    title: How you frame the time
+    description: In much of Spain, past-tense choice depends on whether the time feels open.
+  - id: ya_todavia
+    title: Ya and todavía no in the past
+    description: Choose past forms for already and not yet by region.
+- id: es.pluscuamperfecto
+  title: 'Pluperfect: had done'
+  description: Say what happened before another past event.
+  concepts:
+  - id: forms
+    title: Había plus participle
+    description: Form the pluperfect with imperfect haber + past participle.
+  - id: earlier_past
+    title: Earlier past events
+    description: Place one event before another in the past.
+  - id: ya_nunca_antes
+    title: Already and never before
+    description: Use the pluperfect with ya/nunca to describe an earlier past experience.
+- id: es.objeto_doblado
+  title: Repeating objects with pronouns
+  description: Highlight objects moved before the verb.
+  concepts:
+  - id: fronted_doubling
+    title: Object first, pronoun repeated
+    description: Repeat a fronted direct object with a matching object pronoun.
+  - id: todo
+    title: Lo with todo
+    description: Use lo when todo refers to the full object of an action.
+  - id: leismo
+    title: Leísmo in Spain
+    description: Recognize regional le for masculine human direct objects.
+- id: es.futuro_2
+  title: Future for guessing
+  description: Make guesses about now or completed future actions.
+  concepts:
+  - id: probability_now
+    title: Future tense for present guesses
+    description: Use the future tense to make a guess about the present.
+  - id: perfect_forms
+    title: Future perfect forms
+    description: Form habré terminado with haber and a participle.
+  - id: perfect_uses
+    title: Future perfect uses
+    description: Use future perfect for completed future actions or guesses about the past.
+- id: es.condicional
+  title: 'Conditional: would'
+  description: Make polite requests, give advice and imagine possibilities.
+  concepts:
+  - id: forms
+    title: Conditional endings
+    description: Form the conditional with infinitive/future stems and -ía endings.
+  - id: polite
+    title: Polite requests and wishes
+    description: Use conditional forms to soften requests, preferences and wishes.
+  - id: advice
+    title: Advice with debería
+    description: Suggest what someone ought to do.
+  - id: hypothetical
+    title: Imagined situations
+    description: Use the conditional to describe what you would do in imagined situations.
+  - id: future_in_past
+    title: Future from a past viewpoint
+    description: Use the conditional for a future action viewed from the past.
+- id: es.subj_formas
+  title: 'Present subjunctive: forms'
+  description: Build the subjunctive forms of regular and irregular verbs.
+  concepts:
+  - id: vowel_swap
+    title: Opposite vowel endings
+    description: Use -e for -ar verbs, -a for -er and -ir verbs.
+  - id: yo_stem
+    title: Subjunctive from the yo form
+    description: Build most present subjunctives from the present-tense yo stem.
+  - id: stem_changers
+    title: Subjunctive stem changes
+    description: Carry stem changes into the subjunctive, with some exceptions.
+  - id: ir_stem_extra
+    title: Extra changes in -ir stem-changing verbs
+    description: Keep additional stem changes in -ir verbs, even in nosotros/vosotros.
+  - id: six_irregular
+    title: Six especially irregular verbs
+    description: Learn irregular present subjunctives of ser, estar, ir, dar, saber and haber.
+  - id: spelling
+    title: Subjunctive spelling changes
+    description: Preserve pronunciation through subjunctive spelling changes.
+- id: es.subj_deseo
+  title: 'Subjunctive: wishes and requests'
+  description: Express what you want others to do.
+  concepts:
+  - id: querer_que
+    title: Quiero que + subjunctive
+    description: Use querer que + subjunctive when someone else does the desired action.
+  - id: ojala
+    title: Ojalá for wishes
+    description: Use ojalá + subjunctive for hopes and wishes.
+  - id: esperar
+    title: Espero que
+    description: Use esperar que + subjunctive for hoped-for actions by others.
+  - id: influence
+    title: Requests and recommendations
+    description: Use subjunctive in que clauses after requests or recommendations.
+  - id: permit_forbid
+    title: Allowing and forbidding
+    description: Use infinitives or que + subjunctive to allow or forbid actions.
+  - id: wishes
+    title: Wishes starting with que
+    description: Use ¡que + subjunctive! for wishes and greetings.
+- id: es.imperativo_2
+  title: Negative commands
+  description: Tell people not to do something and say let's.
+  concepts:
+  - id: negative
+    title: No plus subjunctive
+    description: Form all negative commands with no + present subjunctive.
+  - id: pronouns_before
+    title: Pronouns in negative commands
+    description: Put object and reflexive pronouns before negative commands.
+  - id: nosotros
+    title: Let's with nosotros
+    description: Use nosotros subjunctive forms for let's, including reflexives.
+- id: es.subj_emocion
+  title: 'Subjunctive: emotions and judgments'
+  description: React to other people's actions and evaluate them.
+  concepts:
+  - id: emotion
+    title: Feelings about someone's actions
+    description: Use subjunctive when reacting to someone else's action or situation.
+  - id: same_subject
+    title: 'Same person: infinitive'
+    description: Use an infinitive rather than a que clause for the same subject.
+  - id: valuation
+    title: Es importante que
+    description: Use subjunctive after es importante que and similar judgments.
+  - id: me_parece_bien
+    title: Me parece bien que
+    description: Use subjunctive for approval, indicative when stating a belief.
+  - id: siento_que
+    title: 'Siento que: I''m sorry'
+    description: Use siento que + subjunctive to express regret.
+- id: es.articulo_2
+  title: 'Articles: further uses'
+  description: Know when Spanish needs an article or omits it.
+  concepts:
+  - id: zero_article
+    title: When to omit articles
+    description: Leave out articles with many nonspecific mass or plural objects.
+  - id: generic_definite
+    title: Articles for general statements
+    description: Use definite articles with general categories as subjects or after gustar.
+  - id: el_agua
+    title: El agua, feminine noun
+    description: Use el/un before feminine singular nouns beginning with stressed a/ha.
+  - id: lo_adjective
+    title: Lo plus adjective
+    description: Use lo + adjective to refer to an abstract quality or aspect.
+  - id: countries
+    title: Articles with country names
+    description: Some geographic names take definite articles, optionally or always.
+- id: es.subj_opinion
+  title: 'Subjunctive: opinions and doubts'
+  description: Distinguish statements, uncertainty and disbelief.
+  concepts:
+  - id: creo_que
+    title: Creo que + indicative
+    description: Use indicative after affirmative expressions of belief or opinion.
+  - id: no_creo_subj
+    title: No creo que + subjunctive
+    description: Use subjunctive after negated beliefs and opinions.
+  - id: doubt
+    title: Dudo que
+    description: Use subjunctive after dudo que and similar expressions of doubt.
+  - id: possibility
+    title: Puede que, es posible que
+    description: Use subjunctive after puede que or es posible que for uncertainty.
+  - id: quizas
+    title: Quizás versus a lo mejor
+    description: Quizás/tal vez allow either mood; a lo mejor takes indicative.
+  - id: truth
+    title: Es verdad que
+    description: Use indicative when asserting a fact; subjunctive when denying it.
+- id: es.se_2
+  title: 'Se: verbs and accidents'
+  description: Describe changes, accidents and completed actions.
+  concepts:
+  - id: meaning_change
+    title: Verbs whose meaning changes with se
+    description: Some verbs change meaning when used with se.
+  - id: involuntary
+    title: 'Accidents: se me cayó'
+    description: Use se + indirect pronoun for accidental or unintentional events.
+  - id: intensive
+    title: 'Comerse: completing an action'
+    description: Use forms such as comerse to stress consuming a whole item.
+- id: es.subj_tiempo_finalidad
+  title: 'Subjunctive: time and purpose'
+  description: Talk about future events and why you do things.
+  concepts:
+  - id: cuando_future
+    title: Cuando for a future event
+    description: Use cuando + subjunctive for an event still in the future.
+  - id: cuando_contrast
+    title: 'Cuando: future versus habit'
+    description: Future time clauses use subjunctive; past/habitual clauses use indicative.
+  - id: other_conjunctions
+    title: Hasta que and en cuanto
+    description: Use subjunctive for future events after hasta que, en cuanto and similar links.
+  - id: antes_de_que
+    title: Antes de que
+    description: Use subjunctive after antes de que; infinitive for the same subject.
+  - id: despues_de_que
+    title: Después de que
+    description: Future events take subjunctive; past events allow indicative or subjunctive.
+  - id: para_que
+    title: Para que
+    description: Use para que + subjunctive for another subject's intended action.
+  - id: a_que
+    title: A que after movement
+    description: Use movement verb + a que + subjunctive to express a purpose.
+- id: es.por_para_2
+  title: 'Por and para: more meanings'
+  description: Explain motivation, viewpoint and set expressions.
+  concepts:
+  - id: por_behalf
+    title: Por someone versus para someone
+    description: Use por for acting on someone's behalf and para for the recipient.
+  - id: cause_vs_goal
+    title: Cause versus goal
+    description: Use por for a cause and para for an intended goal.
+  - id: para_opinion
+    title: 'Para mí: in my opinion'
+    description: Use para mí to introduce a personal opinion.
+  - id: para_comparison
+    title: Para su edad
+    description: Use para to judge something relative to an expected standard.
+  - id: ir_por
+    title: 'Ir por: go and get'
+    description: Use ir por or, in Spain, ir a por to mean go and get.
+  - id: expressions
+    title: Common por and para phrases
+    description: Recognize common fixed expressions with por and para.
+- id: es.relativas_2
+  title: 'Relative clauses: more uses'
+  description: Identify people and things more precisely.
+  concepts:
+  - id: preposition_article
+    title: Prepositions with el que
+    description: Combine prepositions with el/la/los/las que in relative clauses.
+  - id: quien
+    title: Quien for people
+    description: Use quien/quienes for people after prepositions or in extra clauses.
+  - id: el_que
+    title: 'El que: the one who'
+    description: Use el que and its forms to mean the one(s) who/that.
+  - id: unknown_antecedent
+    title: Unknown or desired things
+    description: Use subjunctive when the person or thing described is unknown or hypothetical.
+- id: es.perifrasis_2
+  title: Starting, stopping and continuing
+  description: Express repetition, beginning, stopping and ongoing actions.
+  concepts:
+  - id: volver_a
+    title: 'Volver a + infinitive: repetition'
+    description: Use volver a + infinitive to express repetition.
+  - id: dejar_de
+    title: 'Dejar de + infinitive: stopping'
+    description: Use dejar de + infinitive to express stopping an activity.
+  - id: empezar_ponerse
+    title: 'Starting: empezar a and ponerse a'
+    description: Use empezar a or ponerse a + infinitive to mark the start of an action.
+  - id: seguir_gerundio
+    title: 'Seguir + gerund: continuing'
+    description: Use seguir/continuar + gerund to express continued action.
+  - id: llevar_gerundio
+    title: 'Llevar + time + gerund: duration'
+    description: Use llevar + duration + gerund to say how long an action has continued.
+  - id: a_punto_de
+    title: Estar a punto de + infinitive
+    description: Use estar a punto de + infinitive for something about to happen.
+- id: es.infinitivo_gerundio
+  title: Infinitives and gerunds
+  description: Know when Spanish uses verb forms like hablar or hablando.
+  concepts:
+  - id: infinitive_noun
+    title: Infinitive as a noun
+    description: Use an infinitive to name an activity, including as a sentence subject.
+  - id: after_preposition
+    title: Infinitive after a preposition
+    description: Use an infinitive, not a gerund, after prepositions.
+  - id: al_infinitive
+    title: Al + infinitive
+    description: Use al + infinitive to express when something happens.
+  - id: gerund_manner
+    title: Gerund for manner
+    description: Use the gerund to describe how an action is performed.
+  - id: perception
+    title: Seeing or hearing an action
+    description: Contrast a perceived whole action with one seen or heard in progress.
+  - id: perfect_infinitive
+    title: Haber + participle as an infinitive
+    description: Use haber + participle as an infinitive for an earlier completed action.
+  - id: gerund_not_adjective
+    title: Gerunds don't describe nouns
+    description: Use relative clauses, not ordinary gerunds, to describe nouns.
+- id: es.verbos_preposicion
+  title: Verbs with prepositions
+  description: Learn which verbs require which preposition or none.
+  concepts:
+  - id: en
+    title: Verbs followed by en
+    description: Some verbs require en before their complement, such as pensar en.
+  - id: de
+    title: Verbs followed by de
+    description: Some verbs require de before their complement, such as depender de.
+  - id: con
+    title: Verbs followed by con
+    description: Some verbs require con before their complement, such as soñar con.
+  - id: a
+    title: Verbs followed by a
+    description: Some verbs require a before infinitive complements, such as aprender a.
+  - id: por
+    title: Verbs followed by por
+    description: Some verbs require por, such as preocuparse por.
+  - id: none
+    title: Verbs taking direct objects
+    description: Some verbs take objects directly, without an extra preposition.
+- id: es.discurso_1
+  title: 'Reporting speech: basics'
+  description: Pass on what someone says, orders or asks.
+  concepts:
+  - id: present_report
+    title: 'Dice que: present reporting'
+    description: Report speech with a present reporting verb without shifting tense.
+  - id: person_changes
+    title: Pronouns when reporting
+    description: Adjust pronouns, possessives and verb persons when reporting speech.
+  - id: commands
+    title: Reporting commands
+    description: Use que + subjunctive to report present commands or requests.
+  - id: indirect_questions
+    title: Indirect questions
+    description: Use si for yes/no reports and question words for other indirect questions.
+- id: es.conectores_3
+  title: Connectors for arguments
+  description: Contrast, explain and clarify your ideas.
+  concepts:
+  - id: pero_sino
+    title: Pero versus sino
+    description: Use sino to correct a negation and pero for ordinary contrast.
+  - id: contrast
+    title: Sin embargo and en cambio
+    description: Use sin embargo, en cambio and similar expressions for contrast.
+  - id: cause
+    title: Ya que and debido a
+    description: Use ya que, puesto que or debido a to state a cause.
+  - id: consequence
+    title: Por lo tanto and de modo que
+    description: Use por lo tanto or de modo que to introduce a consequence.
+  - id: tan_que
+    title: Tan... que and tanto... que
+    description: Use tan/tanto... que to express a result of degree or quantity.
+  - id: addition
+    title: Además and incluso
+    description: Use además and incluso to add or emphasize information.
+  - id: reformulation
+    title: Es decir and o sea
+    description: Use es decir or o sea to rephrase or clarify.
+- id: es.diminutivos
+  title: Diminutives and prefixes
+  description: Recognize endings and prefixes that change size or meaning.
+  concepts:
+  - id: ito
+    title: -ito and -cito
+    description: Use diminutive endings to suggest smallness or affection.
+  - id: prefixes
+    title: In-, des- and re-
+    description: Use in-/im-, des- and re- to express negation, reversal or repetition.

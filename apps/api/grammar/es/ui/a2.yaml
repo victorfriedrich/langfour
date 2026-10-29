@@ -1,0 +1,480 @@
+level: a2
+chapters:
+- id: es.objeto_directo
+  title: Direct object pronouns
+  description: Replace direct objects and place pronouns correctly.
+  concepts:
+  - id: forms
+    title: Direct object pronoun forms
+    description: Use me, te, lo, la, nos, os, los and las as direct objects.
+  - id: position
+    title: Where object pronouns go
+    description: Place pronouns before verbs or attach them to infinitives and gerunds.
+  - id: people_and_things
+    title: People and things
+    description: Use lo/la and their plurals for people as well as things.
+  - id: no_object_drop
+    title: Referring back with a pronoun
+    description: Keep a direct-object pronoun when referring back to a known object.
+  - id: lo_neutro
+    title: Lo for an idea
+    description: Use lo to refer back to a whole fact, idea or statement.
+  - id: personal_a
+    title: Personal a
+    description: Mark a specific person or pet as a direct object with a.
+- id: es.preterito_perfecto
+  title: 'Present perfect: he hablado'
+  description: Describe experiences and recent completed actions.
+  concepts:
+  - id: forms
+    title: Haber plus participle
+    description: Build the present perfect with present-tense haber + participle.
+  - id: irregular_participles
+    title: Irregular past participles
+    description: Use hecho, dicho, visto, escrito and other irregular forms.
+  - id: accented_participles
+    title: Participles ending in -ído
+    description: Accent -ído after a, e or o in certain past participles.
+  - id: no_split
+    title: Haber and participle stay together
+    description: Keep haber and its participle together; place other words around them.
+  - id: experience
+    title: Life experiences
+    description: Talk about what you have or haven't ever done.
+  - id: open_period
+    title: This week or today
+    description: In much of Spain, use the perfect for events within a time period still open.
+- id: es.indefinido_regular
+  title: 'Preterite: regular past forms'
+  description: Talk about completed actions at finished times.
+  concepts:
+  - id: ar
+    title: Past tense of -ar verbs
+    description: Conjugate regular -ar verbs in the preterite, including accented endings.
+  - id: er_ir
+    title: Past tense of -er and -ir verbs
+    description: Conjugate -er and -ir verbs with the same preterite endings.
+  - id: nosotros
+    title: 'Nosotros: past or present'
+    description: Recognize that some nosotros forms look identical in past and present.
+  - id: spelling_yo
+    title: 'Spelling changes: -car, -gar, -zar'
+    description: Use -qué, -gué and -cé for -car, -gar and -zar verbs in the yo preterite.
+  - id: y_spelling
+    title: Y in certain preterite forms
+    description: Use y in third-person preterite forms after certain vowel stems.
+  - id: completed
+    title: Completed past actions
+    description: Use this tense for events yesterday or at finished times.
+- id: es.comparacion
+  title: Comparisons
+  description: Say more, less, equal and the most.
+  concepts:
+  - id: mas_menos_que
+    title: Más or menos que
+    description: Compare differences using more than or less than.
+  - id: tan_tanto
+    title: Tan como and tanto como
+    description: Compare equal qualities or amounts.
+  - id: irregular
+    title: Mejor, peor, mayor, menor
+    description: Use special comparison words such as mejor and peor.
+  - id: mas_de_number
+    title: Más de with numbers
+    description: Use más de or menos de before numbers and quantities.
+  - id: superlative
+    title: The most or least
+    description: Use the definite article + más/menos to express the most or least.
+  - id: isimo
+    title: Very with -ísimo
+    description: Intensify adjectives with -ísimo and its matching forms.
+  - id: igual_mismo
+    title: Igual and mismo
+    description: Use igual que for equality and el mismo... que for sameness.
+- id: es.indefinido_irregular
+  title: Irregular preterite
+  description: Describe past events with common irregular verbs.
+  concepts:
+  - id: ser_ir
+    title: 'Fui: ser and ir'
+    description: Both ser and ir use fui, fuiste, fue and related forms.
+  - id: strong_endings
+    title: Irregular past endings
+    description: Add special, unaccented preterite endings to irregular stems.
+  - id: uv
+    title: Tener, estar and andar
+    description: Use tuv-, estuv- and anduv- in irregular preterite forms.
+  - id: hacer
+    title: 'Hacer: hice, hizo'
+    description: Use hic- and hiz- in the preterite of hacer.
+  - id: poder
+    title: 'Poder: preterite stem pud-'
+    description: Use the pud- stem in the preterite of poder.
+  - id: poner
+    title: 'Poner: preterite stem pus-'
+    description: Use the pus- stem in the preterite of poner and its compounds.
+  - id: saber
+    title: 'Saber: preterite stem sup-'
+    description: Use the sup- stem in the preterite of saber.
+  - id: querer
+    title: 'Querer: preterite stem quis-'
+    description: Use the quis- stem in the preterite of querer.
+  - id: venir
+    title: 'Venir: preterite stem vin-'
+    description: Use the vin- stem in the preterite of venir.
+  - id: j_stems
+    title: Decir and traer in the past
+    description: Use -j- stems and -eron in preterites such as dijeron and trajeron.
+  - id: dar_ver
+    title: Dar and ver in the past
+    description: Use the short preterite forms of dar and ver without written accents.
+  - id: e_i_third
+    title: Pidió and sintió
+    description: Change e to i in the third-person preterite of certain -ir verbs.
+  - id: o_u_third
+    title: Durmió and murió
+    description: Change o to u in the third-person preterite of dormir and morir.
+  - id: hubo
+    title: 'Hubo: an event happened'
+    description: Use hubo for something that took place.
+- id: es.perfecto_indefinido_1
+  title: Present perfect versus preterite
+  description: Choose past tenses for experiences and dated events by region.
+  concepts:
+  - id: time_markers
+    title: Today versus yesterday in Spain
+    description: In much of Spain, an open period favors the perfect; a finished one the preterite.
+  - id: experience_vs_event
+    title: Experience versus dated event
+    description: Contrast undated life experiences with events at a stated past time.
+  - id: latam_usage
+    title: Latin American past-tense usage
+    description: In much of Latin America, the preterite also covers events from today.
+- id: es.gustar_2
+  title: Verbs like gustar
+  description: Use verbs that follow the gustar pattern.
+  concepts:
+  - id: doler
+    title: 'Doler: something hurts'
+    description: Use doler like gustar, agreeing with the body part that hurts.
+  - id: others
+    title: Interesar, importar and similar verbs
+    description: Use interesar, importar, molestar and others in a gustar-like pattern.
+  - id: parecer
+    title: 'Parecer: giving an opinion'
+    description: Use parecer with indirect pronouns to express opinions.
+  - id: hacer_falta
+    title: 'Hacer falta: needing something'
+    description: Use hacer falta for needs, agreeing with what is needed.
+  - id: infinitives_singular
+    title: Gustar with several activities
+    description: Use singular gusta with one or several infinitive activities.
+- id: es.imperfecto
+  title: 'Imperfect past: used to'
+  description: Describe past habits, people and situations.
+  concepts:
+  - id: ar
+    title: Imperfect of -ar verbs
+    description: Conjugate regular -ar verbs with -aba, -abas and related endings.
+  - id: er_ir
+    title: Imperfect of -er and -ir verbs
+    description: Use -ía endings for both -er and -ir imperfect forms.
+  - id: irregular
+    title: Ser, ir and ver in the imperfect
+    description: Learn the imperfect forms of ser, ir and ver.
+  - id: habitual
+    title: Past habits
+    description: Use the imperfect for repeated actions and routines in the past.
+  - id: description
+    title: Past descriptions
+    description: Describe what people and places were like.
+  - id: time_age
+    title: Time and age in the past
+    description: Use the imperfect to state someone's age or the time in the past.
+  - id: habia
+    title: 'Había: there was or were'
+    description: Use singular había to describe what existed in a past scene.
+  - id: soler
+    title: 'Solía: used to'
+    description: Use soler + infinitive in the imperfect to describe former habits.
+- id: es.posesivos_2
+  title: 'Possessives: mío and tuyo'
+  description: Say mine, yours and a friend of mine.
+  concepts:
+  - id: forms
+    title: Mío, tuyo, suyo and others
+    description: Use possessive forms that agree with the thing owned.
+  - id: after_noun
+    title: Possessives after nouns
+    description: Use full possessive forms after nouns to mean a friend of mine, etc.
+  - id: pronoun
+    title: El mío and la tuya
+    description: Use an article with a possessive to replace a noun.
+  - id: after_ser
+    title: Es mío versus es el mío
+    description: Contrast ownership (es mío) with identifying one (es el mío).
+- id: es.tiempo
+  title: Time expressions
+  description: Say how long, since when and how recently.
+  concepts:
+  - id: hace_ago
+    title: 'Hace: ago'
+    description: Use hace + time period to say how long ago something happened.
+  - id: desde
+    title: Desde and desde hace
+    description: Express a starting point or how long something has lasted.
+  - id: hace_que
+    title: Hace tiempo que
+    description: Use hace + time period + que to state how long something has lasted.
+  - id: ya_todavia
+    title: Ya and todavía
+    description: Express already, still, no longer and not yet.
+  - id: durante_en
+    title: Durante versus en
+    description: Distinguish a period spent from time needed to finish.
+  - id: antes_despues_de
+    title: Antes de and después de
+    description: Use antes de and después de before nouns or infinitives.
+  - id: acabar_de
+    title: 'Acabar de: just did'
+    description: Use acabar de + infinitive for something just completed.
+- id: es.indefinido_imperfecto_1
+  title: 'Preterite or imperfect: basics'
+  description: Distinguish events from past descriptions and habits.
+  concepts:
+  - id: event_vs_background
+    title: Events versus background
+    description: Preterite moves the story; imperfect sets the scene.
+  - id: once_vs_habit
+    title: One occasion versus habits
+    description: Contrast specific completed occasions with habitual past actions.
+  - id: bounded_duration
+    title: Finished periods
+    description: Use the preterite for a bounded period, however long.
+  - id: interrupted
+    title: Interrupted actions
+    description: Imperfect for what was happening; preterite for the interruption.
+  - id: cuando_era
+    title: Cuando era versus cuando llegué
+    description: Use imperfect for a past life stage and preterite for a specific moment.
+- id: es.objeto_indirecto
+  title: Indirect object pronouns
+  description: Say who receives something and combine pronouns.
+  concepts:
+  - id: forms
+    title: Indirect object pronoun forms
+    description: Use me, te, le, nos, os and les for recipients or beneficiaries.
+  - id: doubling
+    title: Le plus a named person
+    description: Usually keep le or les when an indirect recipient is also named.
+  - id: combined_order
+    title: Two pronouns together
+    description: Put the recipient pronoun before lo, la, los or las.
+  - id: se_lo
+    title: Se lo instead of le lo
+    description: Change le/les to se before lo, la, los or las.
+  - id: combined_position
+    title: Placement of two pronouns
+    description: Keep both pronouns together before the verb or attached to an infinitive.
+- id: es.imperativo_1
+  title: Positive commands
+  description: Give instructions, requests and directions.
+  concepts:
+  - id: tu_regular
+    title: Regular tú commands
+    description: Form affirmative tú commands using third-person present forms.
+  - id: tu_irregular
+    title: Eight irregular tú commands
+    description: Learn the eight irregular affirmative tú command forms.
+  - id: usted
+    title: Usted and ustedes commands
+    description: Use subjunctive-based forms for formal usted/ustedes commands.
+  - id: vosotros
+    title: Vosotros commands
+    description: Replace infinitive -r with -d for vosotros commands; reflexives differ.
+  - id: pronouns_attached
+    title: Pronouns on commands
+    description: Attach object/reflexive pronouns to affirmative commands.
+  - id: politeness
+    title: Polite commands
+    description: Use por favor or questions to soften a request.
+- id: es.indefinidos
+  title: Someone, anyone and everything
+  description: Talk about indefinite people, things and quantities.
+  concepts:
+  - id: algo_nada
+    title: Algo and nada
+    description: Distinguish algo (something) and nada (nothing).
+  - id: alguien_nadie
+    title: Alguien and nadie
+    description: Use alguien/nadie for people, with personal a when needed.
+  - id: alguno_ninguno
+    title: Alguno and ninguno
+    description: Express some or none, including algún and ningún.
+  - id: otro
+    title: Otro without un/una
+    description: Use otro/otra without un or una before the noun.
+  - id: todo
+    title: Todo and todos
+    description: Distinguish todo el día (the whole day) from todos los días (every day).
+  - id: cada
+    title: Cada
+    description: Use cada with singular nouns for each or every.
+  - id: cualquier
+    title: Cualquier and cualquiera
+    description: Shorten cualquiera to cualquier before a singular noun.
+- id: es.futuro_1
+  title: Simple future
+  description: Talk about future events, intentions and real conditions.
+  concepts:
+  - id: regular
+    title: Regular future endings
+    description: Add -é, -ás, -á, -emos, -éis and -án to the full infinitive.
+  - id: stems_drop
+    title: Future stems with dropped vowels
+    description: Drop a vowel in future stems such as podr-, sabr- and querr-.
+  - id: stems_d
+    title: Future stems with -d-
+    description: Use d in future stems such as tendr-, saldr- and pondr-.
+  - id: stems_hacer_decir
+    title: Haré and diré
+    description: Use har- and dir- as the future stems of hacer and decir.
+  - id: uses
+    title: Future versus ir a
+    description: Use future forms for predictions/promises; ir a often marks plans or imminence.
+  - id: si_present
+    title: Si + present for real conditions
+    description: Use present tense after conditional si (if), even when referring to the future.
+- id: es.por_para_1
+  title: 'Por and para: essentials'
+  description: Express purpose, cause, recipients, routes and deadlines.
+  concepts:
+  - id: para_purpose
+    title: Para for purpose
+    description: Use para + noun/infinitive to express purpose.
+  - id: para_destination
+    title: Para for a destination
+    description: Use para for a destination or intended direction.
+  - id: para_recipient
+    title: Para for recipients
+    description: Use para for the intended recipient of something.
+  - id: para_deadline
+    title: Para for deadlines
+    description: Use para to express a deadline or due date.
+  - id: por_cause
+    title: Por for a reason
+    description: Use por for the cause or reason behind an action.
+  - id: por_through
+    title: Por for movement
+    description: Use por for movement through, across or around an area.
+  - id: por_means
+    title: Por for a means
+    description: Use por for a means of communication or transmission.
+  - id: por_time
+    title: Por for parts of the day
+    description: Use por with broad parts of the day, without a clock time.
+  - id: por_rate
+    title: Por for rates
+    description: Use por to express a rate, such as times per week.
+  - id: por_exchange
+    title: Por for prices and exchanges
+    description: Use por for a price, payment or exchange.
+- id: es.relativas_1
+  title: 'Relative clauses: que and donde'
+  description: Add information to identify a person or thing.
+  concepts:
+  - id: que
+    title: Que for people and things
+    description: Use relative que to add a clause describing a person or thing.
+  - id: donde
+    title: Donde for places
+    description: Use donde in a relative clause referring to a place.
+  - id: not_omitted
+    title: Keep relative que
+    description: Keep relative que, even where English leaves out that/which.
+  - id: lo_que
+    title: 'Lo que: what'
+    description: Use lo que for what or the thing that.
+- id: es.adverbios
+  title: Adverbs
+  description: Describe how, how often, when and where.
+  concepts:
+  - id: mente
+    title: Adverbs ending in -mente
+    description: Create -mente adverbs from feminine adjectives, keeping accents.
+  - id: bien_bueno
+    title: Bien versus bueno
+    description: Use bien/mal as adverbs and bueno/malo as adjectives.
+  - id: frequency
+    title: Frequency words
+    description: Say always, often, sometimes or never.
+  - id: place_time
+    title: Place and time words
+    description: Use aquí, allí, pronto, luego and similar adverbs.
+- id: es.se_1
+  title: 'Se: general and shared actions'
+  description: Describe what people do in general or to each other.
+  concepts:
+  - id: impersonal
+    title: Impersonal se
+    description: Use se + third-person singular to describe actions in general.
+  - id: se_agreement
+    title: Agreement with passive se
+    description: With passive se, make the verb agree with its thing-subject.
+  - id: reciprocal
+    title: Each other with nos or se
+    description: Express actions people do to each other.
+  - id: se_puede
+    title: 'Se puede: allowed or possible'
+    description: Use se puede to ask or state what is possible or allowed.
+- id: es.exclamaciones
+  title: Exclamations
+  description: React to surprising, impressive or strong things.
+  concepts:
+  - id: que
+    title: ¡Qué bonito!
+    description: Use ¡qué + adjective, adverb or noun! for exclamations.
+  - id: que_mas
+    title: ¡Qué día más bonito!
+    description: Use ¡qué + noun + más/tan + adjective! to emphasize a quality.
+  - id: cuanto_como
+    title: ¡Cuánto! and ¡Cómo!
+    description: Use cuánto for amounts and cómo for the manner or intensity of an action.
+- id: es.numeros_2
+  title: Larger numbers
+  description: Use hundreds, thousands, years and ordinal numbers.
+  concepts:
+  - id: hundreds
+    title: Hundreds
+    description: Distinguish cien/ciento and agree hundreds with feminine nouns.
+  - id: thousands
+    title: Thousands and millions
+    description: Use mil without un; treat millón/millones as nouns followed by de.
+  - id: years
+    title: Saying years
+    description: Read years as full numbers rather than digit by digit.
+  - id: ordinals
+    title: Ordinal numbers
+    description: Use ordinal forms for low ranks and often cardinal forms for higher ones.
+- id: es.conectores_2
+  title: Story connectors
+  description: Explain sequence, cause and consequence.
+  concepts:
+  - id: como_causal
+    title: Como for a reason
+    description: Use sentence-initial como to introduce a reason.
+  - id: consequence
+    title: Por eso and así que
+    description: Use por eso or así que to introduce a consequence.
+  - id: sequence
+    title: First, then and finally
+    description: Order events with primero, luego and al final.
+  - id: es_que
+    title: 'Es que: explaining yourself'
+    description: Use es que to introduce an explanation or excuse.
+  - id: aunque_fact
+    title: Aunque for a known fact
+    description: Use indicative after aunque to state a known fact.
+  - id: cuando_indicative
+    title: Cuando for habits or the past
+    description: Use cuando with the indicative for recurring or past events.

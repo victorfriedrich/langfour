@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, confloat, conint
 from auth import AuthMiddleware, get_current_user
 from database import initialize_cache
 from flashcards import router as flashcards_router
+from grammar_routes import router as grammar_router
 from languages import require_code
 from mcp_auth import router as mcp_auth_router
 from mcp_server import mcp
@@ -130,6 +131,7 @@ app.include_router(remnote_pair_router, prefix="/pair/remnote", tags=["remnote"]
 # covers it like any other path. The session manager runs for the app's life.
 app.include_router(mcp_auth_router)
 app.include_router(tts_router, tags=["tts"])
+app.include_router(grammar_router, tags=["grammar"])
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 
