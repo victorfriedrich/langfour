@@ -147,6 +147,17 @@ def test_every_answer_is_logged_and_unknown_words_are_reported():
     assert store.events[1]["context"] == {"direction": "produce"}
 
 
+def test_self_reported_answers_are_marked_in_the_event():
+    store = FakeStore()
+    req = PracticeRequest(language="es", answers=[
+        PracticeAnswer(word="hablar", direction="recognize", correct=True, self_reported=True)])
+    summary = record_practice(store, USER, req, now=NOW)
+
+    assert summary.recorded == 1
+    assert store.events[0]["kind"] == "recall_correct"
+    assert store.events[0]["context"] == {"direction": "recognize", "self_reported": True}
+
+
 def test_direction_picks_the_card_and_grades_stay_conservative():
     store = FakeStore()
     summary = record_practice(store, USER, answers(

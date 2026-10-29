@@ -49,9 +49,10 @@ mcp = FastMCP(
         "vocabulary with the user, pick words with get_vocabulary (due words first); at the end "
         "of the session, report the results with record_practice. When you write a text for "
         "the user to read in the language, check its level with score_text, and once they have "
-        "read it, log it with record_exposure. When the user says they already know words "
-        "they're learning, move them to known with set_word_status; that is a status change, "
-        "never something to fake with record_practice."
+        "read it, log it with record_exposure. Take the user at their word about what they "
+        "know: words they know outright go to known with set_word_status, and words they say "
+        "they can read but not produce get a correct 'recognize' answer, self_reported, with "
+        "record_practice. Don't quiz them first unless they ask."
     ),
     stateless_http=True,
     json_response=True,
@@ -75,14 +76,16 @@ def _user_id(ctx: Context) -> str:
 def record_practice_tool(language: Language, answers: list[PracticeAnswer], ctx: Context) -> PracticeSummary:
     """Record the results of a vocabulary practice session with the user, once, at its end.
 
-    Only report active recall: the user translated a word you showed them ('recognize'),
-    or came up with the word themselves ('produce'). Words that merely appeared in text
-    you wrote are not practice. Use each word's dictionary form in the target language
-    (e.g. 'hablar', not 'hablaba'). language is an ISO code: es, de, it or fr.
+    An answer is the user translating a word you showed them ('recognize') or coming up
+    with it themselves ('produce'), or the user telling you how they'd do: "I can read
+    these" is a correct 'recognize' answer for each word, with self_reported set. Words
+    that merely appeared in text you wrote are not practice. Use each word's dictionary
+    form in the target language (e.g. 'hablar', not 'hablaba'). language is an ISO code:
+    es, de, it or fr.
 
-    Ask the user before calling this: the results can change when their flashcards come
-    up for review. Wrong answers bring a card back sooner; right answers only count for
-    cards that are due anyway.
+    Results move flashcard reviews: wrong answers bring a card back sooner; right answers
+    only count for cards that are due anyway. Say which words you're recording before you
+    call this.
     """
     req = PracticeRequest(language=language, answers=answers)
     return record_practice(get_practice_store(), _user_id(ctx), req)
