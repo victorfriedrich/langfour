@@ -116,23 +116,28 @@ function MediaPageContent() {
 }
 
 // How articles and songs get here once the extension is installed: the
-// reader's shortcut, then its Add to Library button. Only rendered after the
-// extension has answered, so reading navigator here cannot break hydration.
+// reader's shortcut, then its Add to Library button. iPhone and iPad have no
+// shortcut (the Safari build drops it), so there the popup's button opens the
+// reader. iPads that report a Mac user agent are told apart by touch. Only
+// rendered after the extension has answered, so reading navigator here
+// cannot break hydration.
 function AddFromReader({ className = '' }: { className?: string }) {
-  const mac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+  const touch = navigator.maxTouchPoints > 1;
+  const mac = /Mac/.test(navigator.userAgent);
   const key = 'inline-grid h-6 min-w-6 place-items-center rounded-md border border-gray-200 bg-white px-1.5 font-sans text-xs font-medium text-gray-700 shadow-[0_1px_0_rgb(0_0_0/0.04)]';
   const keys = mac ? ['⌘', '⇧', 'Y'] : ['Ctrl', 'Shift', 'Y'];
+  const steps = touch
+    ? [<span key="ext">Langfour Reader</span>, <span key="read">Read this page</span>]
+    : [<span key="keys" className="inline-flex items-center gap-1" aria-label={`Press ${keys.join(' ')}`}>{keys.map((k) => <kbd key={k} className={key}>{k}</kbd>)}</span>];
   return (
     <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-2 text-sm text-gray-500 ${className}`}>
       <span>Any article or song</span>
-      <span className="inline-flex items-center gap-2.5">
-        <ChevronRight size={14} className="text-gray-300" aria-hidden/>
-        <span className="inline-flex items-center gap-1" aria-label={`Press ${keys.join(' ')}`}>{keys.map((k) => <kbd key={k} className={key}>{k}</kbd>)}</span>
-      </span>
-      <span className="inline-flex items-center gap-2.5">
-        <ChevronRight size={14} className="text-gray-300" aria-hidden/>
-        <span className="font-medium text-gray-700">Add to Library</span>
-      </span>
+      {[...steps, <span key="add" className="font-medium text-gray-700">Add to Library</span>].map((step) => (
+        <span key={step.key} className="inline-flex items-center gap-2.5">
+          <ChevronRight size={14} className="text-gray-300" aria-hidden/>
+          {step}
+        </span>
+      ))}
     </div>
   );
 }

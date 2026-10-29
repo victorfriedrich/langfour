@@ -1,5 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import MediaPage from './page';
 import { listImportedMedia, type ImportedMediaSummary } from './api';
 import type { ExtensionStatus } from '../hooks/useExtensionStatus';
@@ -21,6 +21,7 @@ vi.mock('@/context/UserContext', async () => {
 });
 
 beforeEach(() => { extension = { state: 'checking' }; });
+afterEach(() => { vi.restoreAllMocks(); });
 
 it('lists each item by its own title, with where it is from underneath', async () => {
   render(<MediaPage />);
@@ -46,4 +47,13 @@ it('explains the reader flow instead once the extension is installed', async () 
   render(<MediaPage />);
   expect(await screen.findByText('Add to Library')).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Get the extension' })).not.toBeInTheDocument();
+});
+
+it('names the reader button instead of the shortcut on a touch device', async () => {
+  extension = { state: 'installed', version: '1.0.0', signedIn: true, email: null };
+  vi.mocked(listImportedMedia).mockResolvedValueOnce([]);
+  vi.spyOn(navigator, 'maxTouchPoints', 'get').mockReturnValue(5);
+  render(<MediaPage />);
+  expect(await screen.findByText('Read this page')).toBeInTheDocument();
+  expect(screen.queryByLabelText(/Press/)).not.toBeInTheDocument();
 });
