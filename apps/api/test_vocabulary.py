@@ -43,6 +43,20 @@ class FakeStore:
         self.events.extend(rows)
         return len(rows)
 
+    # The user's list: word_id -> (root, status). 'Essen' and 'essen' are both
+    # German words; 7 and 8 share a spelling.
+    LIST = {2: ("el perro", "learning"), 4: ("la", "known"), 7: ("de", "learning"),
+            8: ("de", "learning"), 9: ("Essen", "learning")}
+
+    def user_words(self, user_id, language, roots):
+        self.calls.append(("user_words", user_id, language, roots))
+        spellings = vocabulary._spellings(roots)
+        return [{"word_id": w, "status": s, "root": root}
+                for w, (root, s) in self.LIST.items() if root in spellings]
+
+    def set_status(self, user_id, word_ids, status):
+        self.calls.append(("set_status", user_id, word_ids, status))
+
 
 def test_get_vocabulary_passes_the_user_and_parses_the_answer():
     store = FakeStore()
@@ -85,3 +99,27 @@ def test_record_exposure_logs_learning_and_new_words_once_each():
         {"user_id": USER, "word_id": 2, "kind": "exposure", "source": "chatgpt"},
         {"user_id": USER, "word_id": 5, "kind": "exposure", "source": "chatgpt"},
     ]
+
+
+def test_set_word_status_moves_only_words_not_already_there():
+    store = FakeStore()
+    change = vocabulary.set_word_status(store, USER, "es",
+                                        ["el perro", "la", " de ", "de", "casa"], "known")
+    assert ("set_status", USER, [2, 7, 8], "known") in store.calls
+    assert change.changed == ["el perro", "de"]  # both 'de' homographs move
+    assert change.unchanged == ["la"]
+    assert change.not_found == ["casa"]
+
+
+def test_set_word_status_matches_case_only_when_no_exact_root():
+    store = FakeStore()
+    change = vocabulary.set_word_status(store, USER, "de", ["essen", "EL PERRO"], "known")
+    assert ("set_status", USER, [2, 9], "known") in store.calls
+    assert change.changed == ["essen", "EL PERRO"]
+
+
+def test_set_word_status_back_to_learning():
+    store = FakeStore()
+    change = vocabulary.set_word_status(store, USER, "es", ["la", "el perro"], "learning")
+    assert ("set_status", USER, [4], "learning") in store.calls
+    assert (change.changed, change.unchanged) == (["la"], ["el perro"])

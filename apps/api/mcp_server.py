@@ -11,7 +11,7 @@ Clients discover Supabase OAuth through mcp_auth.py. See docs/mcp-oauth.md
 for project setup and connecting ChatGPT or Claude.
 
 Tools: get_vocabulary and score_text read (vocabulary.py); record_practice
-(practice.py) and record_exposure (vocabulary.py) write.
+(practice.py), record_exposure and set_word_status (vocabulary.py) write.
 """
 
 from typing import Annotated, Literal
@@ -31,12 +31,14 @@ from vocabulary import (
     MAX_TEXT,
     ExposureSummary,
     Language,
+    StatusChange,
     TextScore,
     Vocabulary,
     get_vocabulary,
     get_vocabulary_store,
     record_exposure,
     score_text,
+    set_word_status,
 )
 
 mcp = FastMCP(
@@ -47,7 +49,9 @@ mcp = FastMCP(
         "vocabulary with the user, pick words with get_vocabulary (due words first); at the end "
         "of the session, report the results with record_practice. When you write a text for "
         "the user to read in the language, check its level with score_text, and once they have "
-        "read it, log it with record_exposure."
+        "read it, log it with record_exposure. When the user says they already know words "
+        "they're learning, move them to known with set_word_status; that is a status change, "
+        "never something to fake with record_practice."
     ),
     stateless_http=True,
     json_response=True,
@@ -140,3 +144,25 @@ def record_exposure_tool(
     everything you wrote in the conversation.
     """
     return record_exposure(get_vocabulary_store(), _user_id(ctx), language, text)
+
+
+@mcp.tool(name="set_word_status", annotations=ToolAnnotations(
+    title="Mark words known or learning",
+    readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False,
+))
+def set_word_status_tool(
+    language: Language,
+    words: Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]],
+                     Field(min_length=1, max_length=200)],
+    status: Literal["known", "learning"],
+    ctx: Context,
+) -> StatusChange:
+    """Move words of the user's list to known (they stop coming up for review) or back
+    to learning (they get a flashcard again). Use it when the user says they already know
+    words they're learning, or wants a known word back.
+
+    Pass words exactly as get_vocabulary lists them (with the article, e.g. 'la casa').
+    When you pick the words yourself, show the user the list and change only the ones
+    they confirm. not_found lists words that aren't in their list in that language.
+    """
+    return set_word_status(get_vocabulary_store(), _user_id(ctx), language, words, status)

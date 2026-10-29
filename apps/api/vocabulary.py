@@ -13,6 +13,9 @@ what it reports back about texts the user read with it.
     a text the user chose to read (docs/plans/learner-word-data-model.md:
     exposure counts only what the user chose to read or hear, never every
     word an AI wrote).
+  - set_word_status: move words of the user's list between learning and
+    known, as the web app's "Move to known" does. Back to learning, the
+    userwords trigger gives the word a Langfour card again.
 
 The API runs these with the service role on behalf of the OAuth user, so every
 query names the user explicitly.
@@ -44,6 +47,10 @@ _IN_CHUNK = 200
 def _chunks(items: list, size: int) -> Iterable[list]:
     for i in range(0, len(items), size):
         yield items[i:i + size]
+
+
+def _spellings(roots: list[str]) -> set[str]:
+    return set(roots) | {r.lower() for r in roots} | {r.capitalize() for r in roots}
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +95,12 @@ class ExposureSummary(BaseModel):
     recorded: int  # distinct learning or new words logged as read
 
 
+class StatusChange(BaseModel):
+    changed: list[str]    # words now in the requested status
+    unchanged: list[str]  # already in it
+    not_found: list[str]  # not in the user's list in that language, or turned off
+
+
 # ---------------------------------------------------------------------------
 # Storage. Like practice.PracticeStore: everything that touches Supabase is
 # here, so the logic below runs against an in-memory stand-in in tests.
@@ -128,6 +141,26 @@ class VocabularyStore:
             return 0
         res = self.db.table("word_events").insert(rows).execute()
         return len(res.data or [])
+
+    def user_words(self, user_id: str, language: str, roots: list[str]) -> list[dict]:
+        """The user's learning and known words spelled as given, lowercased or
+        capitalized (German nouns): [{word_id, status, root}]."""
+        out: list[dict] = []
+        for chunk in _chunks(roots, _IN_CHUNK):
+            spellings = sorted(_spellings(chunk))
+            res = (self.db.table("userwords").select("word_id, status, words!inner(root, language)")
+                   .eq("user_id", user_id).eq("words.language", language)
+                   .in_("status", ["learning", "known"]).in_("words.root", spellings).execute())
+            out += [{"word_id": r["word_id"], "status": r["status"], "root": r["words"]["root"]}
+                    for r in res.data or []]
+        return out
+
+    def set_status(self, user_id: str, word_ids: list[int], status: str) -> None:
+        # Not set_userwords_status: it updates auth.uid()'s words, and the API
+        # runs as the service role.
+        for chunk in _chunks(word_ids, _IN_CHUNK):
+            (self.db.table("userwords").update({"status": status})
+             .eq("user_id", user_id).in_("word_id", chunk).execute())
 
 
 def get_vocabulary_store() -> VocabularyStore:
@@ -187,3 +220,25 @@ def record_exposure(store: VocabularyStore, user_id: str, language: str,
         for w in word_ids
     ])
     return ExposureSummary(recorded=recorded)
+
+
+def set_word_status(store: VocabularyStore, user_id: str, language: str, words: list[str],
+                    status: Literal["known", "learning"]) -> StatusChange:
+    asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
+    rows = store.user_words(user_id, language, asked)
+    # A spelling can be several of the user's words (homographs); all of them move.
+    exact: dict[str, list[dict]] = {}
+    loose: dict[str, list[dict]] = {}
+    for r in rows:
+        exact.setdefault(r["root"], []).append(r)
+        loose.setdefault(r["root"].lower(), []).append(r)
+    matched = {w: exact.get(w) or loose.get(w.lower(), []) for w in asked}
+
+    to_change = {r["word_id"] for rs in matched.values() for r in rs if r["status"] != status}
+    store.set_status(user_id, sorted(to_change), status)
+    return StatusChange(
+        changed=[w for w, rs in matched.items() if any(r["word_id"] in to_change for r in rs)],
+        unchanged=[w for w, rs in matched.items()
+                   if rs and not any(r["word_id"] in to_change for r in rs)],
+        not_found=[w for w, rs in matched.items() if not rs],
+    )
