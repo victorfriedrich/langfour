@@ -12,6 +12,8 @@ for project setup and connecting ChatGPT or Claude.
 
 Tools: get_vocabulary and score_text read (vocabulary.py); record_practice
 (practice.py), record_exposure and set_word_status (vocabulary.py) write.
+get_grammar_overview and get_grammar_details read the grammar curriculum and
+the user's place in it; record_grammar writes (grammar.py).
 """
 
 from typing import Annotated, Literal
@@ -20,6 +22,17 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+import grammar
+from grammar import (
+    MAX_DETAIL_CHAPTERS,
+    MAX_DETAIL_CONCEPTS,
+    ChapterUpdate,
+    GrammarDetails,
+    GrammarOverview,
+    GrammarRecord,
+    GrammarResult,
+    get_grammar_store,
+)
 from practice import (
     PracticeAnswer,
     PracticeRequest,
@@ -52,7 +65,12 @@ mcp = FastMCP(
         "read it, log it with record_exposure. Take the user at their word about what they "
         "know: words they know outright go to known with set_word_status, and words they say "
         "they can read but not produce get a correct 'recognize' answer, self_reported, with "
-        "record_practice. Don't quiz them first unless they ask."
+        "record_practice. Don't quiz them first unless they ask. "
+        "Langfour also knows where the user is in their grammar book. Before you write a text "
+        "for them or teach grammar, read get_grammar_overview once and follow the guide it "
+        "returns; fetch get_grammar_details only for the chapters the conversation is about. "
+        "At the end, report what they produced, and the concepts you deliberately used in "
+        "texts they read, with record_grammar."
     ),
     stateless_http=True,
     json_response=True,
@@ -172,3 +190,63 @@ def set_word_status_tool(
     they confirm. not_found lists words that aren't in their list in that language.
     """
     return set_word_status(get_vocabulary_store(), _user_id(ctx), language, words, status)
+
+
+@mcp.tool(name="get_grammar_overview", annotations=ToolAnnotations(
+    title="See grammar progress", readOnlyHint=True, openWorldHint=False,
+))
+def get_grammar_overview_tool(ctx: Context, language: Language | None = None) -> GrammarOverview:
+    """Where the user is in their grammar book: every chapter in teaching order, which
+    ones they started or finished, how many concepts they've practised and how many are
+    fading (due to be worked back in), plus a guide for teaching from it.
+
+    Call it once at the start of a session in which you'll write in the language for the
+    user or teach them grammar, and follow the guide. language is an ISO code; leave it
+    out for the language the user is studying.
+    """
+    return grammar.get_overview(get_grammar_store(), _user_id(ctx), language)
+
+
+@mcp.tool(name="get_grammar_details", annotations=ToolAnnotations(
+    title="See grammar chapters and concepts", readOnlyHint=True, openWorldHint=False,
+))
+def get_grammar_details_tool(
+    ctx: Context,
+    chapters: Annotated[list[str], Field(max_length=MAX_DETAIL_CHAPTERS)] = [],  # noqa: B006
+    concepts: Annotated[list[str], Field(max_length=MAX_DETAIL_CONCEPTS)] = [],  # noqa: B006
+    language: Language | None = None,
+) -> GrammarDetails:
+    """The concepts of a few chapters with the user's state of each (chapter ids from
+    get_grammar_overview), or a few concepts in full: pitfall, the refinements that come
+    later, related concepts.
+
+    A concept's scope says exactly what it covers; teach that and nothing from a later
+    concept. Fetch only the chapters the conversation is about: a text practising por and
+    para needs that chapter, not the subjunctive. not_found lists unknown ids.
+    """
+    return grammar.get_details(get_grammar_store(), _user_id(ctx), language, chapters, concepts)
+
+
+@mcp.tool(name="record_grammar", annotations=ToolAnnotations(
+    title="Record grammar practice",
+    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False,
+))
+def record_grammar_tool(
+    language: Language,
+    results: Annotated[list[GrammarResult], Field(max_length=100)],
+    ctx: Context,
+    chapters: Annotated[list[ChapterUpdate], Field(max_length=20)] = [],  # noqa: B006
+) -> GrammarRecord:
+    """Record a session's grammar, once, at its end: one result per concept and kind.
+
+    'produced': the user wrote or said something that needed the concept; correct is
+    false if they got it wrong anywhere in the session. Errors in other concepts don't
+    count against it. When the user says they know a concept, record it as produced and
+    correct with self_reported set. 'seen': a concept you used on purpose in a text the
+    user read (the one you taught, or a fading one you worked in), not every rule a text
+    happens to contain.
+
+    chapters marks a chapter 'started' when you begin teaching it and 'done' when the
+    user says they've finished it. Producing a concept starts its chapter anyway.
+    """
+    return grammar.record(get_grammar_store(), _user_id(ctx), language, results, chapters)
