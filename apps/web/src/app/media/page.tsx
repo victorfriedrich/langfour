@@ -2,7 +2,8 @@
 
 import { useCallback, useContext, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Clock3, FileJson, Loader2, Plus } from 'lucide-react';
+import { ChevronRight, Clapperboard, Clock3, Loader2, Plus } from 'lucide-react';
+import EmptyState from '../components/EmptyState';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { UserContext } from '@/context/UserContext';
 import { ImportedMediaSummary, listImportedMedia } from './api';
@@ -74,7 +75,10 @@ function MediaPageContent() {
       <main className="mx-auto max-w-6xl px-5 py-8">
         {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {loading ? <div className="flex h-64 items-center justify-center"><Loader2 className="animate-spin text-indigo-600"/></div> : media.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><FileJson size={28}/></div><h2 className="text-xl font-bold text-slate-900">Nothing in your library yet</h2><p className="mx-auto mt-2 max-w-md text-slate-500">Import an episode transcript here, or send an article or song from the Langfour reader with Add to Library.</p><button onClick={() => setShowImport(true)} className="mt-6 rounded-lg bg-slate-900 px-4 py-2.5 font-semibold text-white">Import episode</button></div>
+          <EmptyState icon={Clapperboard} title="Nothing in your library yet" actions={<>
+            <Link href="/extension" className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 font-semibold text-slate-800 shadow-sm hover:bg-slate-50">Get the extension</Link>
+            <button onClick={() => setShowImport(true)} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-slate-800"><Plus size={18}/>Import episode</button>
+          </>}>Import an episode transcript here, or add an article or song from the extension&apos;s reader with Add to Library.</EmptyState>
         ) : (
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{media.map((item) => <MediaCard key={item.id} item={item}/>)}</div>
         )}

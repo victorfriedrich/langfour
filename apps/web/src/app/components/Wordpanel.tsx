@@ -4,6 +4,7 @@ import { useMissingWords } from '../hooks/useMissingWords';
 import { useUpdateUserwords } from '../hooks/useUpdateUserwords';
 import { useSeenVideos } from '../hooks/useSeenVideos';
 import type { TranscriptChunk } from '../media/api';
+import EmptyState from './EmptyState';
 
 interface WordpanelProps {
   videoId: string;
@@ -113,7 +114,7 @@ function Header({ videoTitle, eyebrow, wordCount, fullPage, onClose }: { videoTi
 
 // Every word is already in the learner's vocabulary (or there were none).
 function NothingNew({ fullPage, onClose }: { fullPage: boolean; onClose: (count: number) => void }) {
-  return <div className={fullPage ? 'mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center shadow-sm' : 'px-6 py-12 text-center'}><div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check size={24} strokeWidth={2.5}/></div><h2 className="text-lg font-bold text-slate-900">Nothing new to learn here</h2><p className="mt-2 text-sm text-slate-500">You already know every word in it.</p>{fullPage && <button onClick={() => onClose(0)} className="mt-6 rounded-lg bg-slate-900 px-4 py-2.5 font-semibold text-white">Back to library</button>}</div>;
+  return <EmptyState icon={Check} title="Nothing new to learn here" framed={fullPage} actions={fullPage && <button onClick={() => onClose(0)} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-slate-800"><ArrowLeft size={18}/>Back to library</button>}>You already know every word in it.</EmptyState>;
 }
 
 function WordGroup({ label, words, startIndex, selectedWords, fullPage, transcript, collapsible = false, toggleGroup, handleWordClick, toggleWordSelection }: { label: string; words: MissingWord[]; startIndex: number; selectedWords: number[]; fullPage: boolean; transcript: TranscriptChunk[]; collapsible?: boolean; toggleGroup: () => void; handleWordClick: (event: React.MouseEvent, word: MissingWord, index: number) => void; toggleWordSelection: (id: number) => void }) {
