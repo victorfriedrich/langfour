@@ -280,7 +280,7 @@ async function getAccount(): Promise<AccountResponse> {
   const [languages, language, userdata] = await Promise.all([
     supabase.rpc('get_available_languages'),
     supabase.rpc('get_user_default_language'),
-    supabase.from('userdata').select('review_provider, remnote_root_rem_id').eq('user_id', session.user.id).maybeSingle(),
+    supabase.from('userdata').select('review_provider, remnote_root_rem_id, remnote_language_rem_ids').eq('user_id', session.user.id).maybeSingle(),
   ]);
   for (const { error } of [languages, language, userdata]) {
     if (error) console.error('Could not load account details:', error);
@@ -288,11 +288,12 @@ async function getAccount(): Promise<AccountResponse> {
   const available = Array.isArray(languages.data)
     ? [...new Set(languages.data.map((lang: string) => toLanguage(lang)).filter((lang): lang is Language => lang !== null))]
     : [];
+  const current = toLanguage(typeof language.data === 'string' ? language.data : null);
   const account: Account = {
     email: session.user.email ?? '',
     languages: available,
-    language: toLanguage(typeof language.data === 'string' ? language.data : null),
-    review: reviewLink(userdata.data),
+    language: current,
+    review: reviewLink(userdata.data, current),
   };
   return { account };
 }

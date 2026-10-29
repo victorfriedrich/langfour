@@ -31,11 +31,11 @@ import os
 import secrets
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from auth import get_current_user, hash_access_token
 from practice import (
@@ -109,6 +109,10 @@ class NoteIn(BaseModel):
     practiced: bool | None = None
 
 
+RemId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
+LanguageCode = Annotated[str, StringConstraints(pattern=r"^[a-z]{2,3}$")]
+
+
 class PushRequest(BaseModel):
     notes: list[NoteIn] = Field(default_factory=list, max_length=500)
     # Every Rem the plugin still sees, sent once at the end of a sync. A note
@@ -117,9 +121,11 @@ class PushRequest(BaseModel):
     # Of those, the Rems whose flashcards are turned off; every other present
     # Rem has them on. Null means the plugin did not report it.
     disabled_rem_ids: list[str] | None = Field(None, max_length=100_000)
-    # The top-level "Langfour" document, so the apps can link to its review
-    # queue. Sent with the full sweep; null leaves the stored id alone.
-    root_rem_id: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    # The top-level "Langfour" document and each language's document under it
+    # (language code -> Rem id), so the apps can open the notes of the language
+    # being learned. Sent with the full sweep; null leaves the stored ids alone.
+    root_rem_id: RemId | None = None
+    language_rem_ids: dict[LanguageCode, RemId] | None = Field(None, max_length=50)
 
 
 class PushResponse(BaseModel):
@@ -457,6 +463,10 @@ class SyncStore:
         (self.db.table("userdata").update({"remnote_root_rem_id": rem_id})
          .eq("user_id", user_id).execute())
 
+    def set_language_rems(self, user_id: str, rem_ids: dict[str, str]) -> None:
+        (self.db.table("userdata").update({"remnote_language_rem_ids": rem_ids})
+         .eq("user_id", user_id).execute())
+
     def set_last_sync(self, user_id: str, at: str) -> None:
         (self.db.table("userdata").update({"remnote_last_sync_at": at})
          .eq("user_id", user_id).execute())
@@ -639,6 +649,8 @@ def apply_push(store: SyncStore, user_id: str, req: PushRequest,
 
     if req.root_rem_id:
         store.set_root_rem(user_id, req.root_rem_id)
+    if req.language_rem_ids is not None:
+        store.set_language_rems(user_id, req.language_rem_ids)
     # The sweep is the last push of every sync run, so it marks one as completed.
     if req.present_rem_ids is not None:
         store.set_last_sync(user_id, now_iso)

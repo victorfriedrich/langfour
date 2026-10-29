@@ -143,6 +143,16 @@ class Layout {
   }
 }
 
+/** The Langfour/<Language> documents that exist, by language code. */
+async function languageDocuments(plugin: RNPlugin, root: RemObject) {
+  const ids: Record<string, string> = {};
+  for (const [code, name] of Object.entries(LANGUAGE_NAMES)) {
+    const doc = await plugin.rem.findByName([name], root._id);
+    if (doc) ids[code] = doc._id;
+  }
+  return ids;
+}
+
 /** Flashcards the user made themselves: every Rem with cards that is not a
  *  Langfour Rem, indexed by the words on its sides. */
 async function existingFlashcards(plugin: RNPlugin, cards: Card[], langfourRemIds: Set<string>) {
@@ -321,13 +331,15 @@ async function run(plugin: RNPlugin, { api, direction, linkExisting }: Settings,
   //    word is not offered again. Reversible: the Rem coming back restores it.
   //    A Rem whose flashcards are turned off disables its word in Langfour;
   //    turning them on again makes it a learning word again.
-  //    It also reports the top-level Langfour document, which the web app and
-  //    the extension link to for reviews. Looked up, never created here.
+  //    It also reports the top-level Langfour document and each language's
+  //    document under it, which the web app and the extension open. Looked up,
+  //    never created here.
   const root = await plugin.rem.findByName([ROOT_DOC], null);
   const sweep = await api.push({
     present_rem_ids: linked.map((w) => w.rem._id),
     disabled_rem_ids: linked.filter((w) => !w.practiced).map((w) => w.rem._id),
     root_rem_id: root?._id,
+    language_rem_ids: root ? await languageDocuments(plugin, root) : undefined,
   });
   summary.removed = sweep.removed;
   summary.disabled = sweep.disabled;

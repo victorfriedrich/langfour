@@ -1,11 +1,11 @@
 'use client';
 
-import { ArrowUpRight, FileText, Play } from 'lucide-react';
+import { ArrowUpRight, Play } from 'lucide-react';
 import type { ReviewProvider } from '../hooks/useReviewProvider';
 
 interface TodayCardProps {
   provider: ReviewProvider;
-  remnoteDocumentUrl: string | null;
+  remnoteUrl: string | null;
   due: number;
   onStartReview: () => void;
   onContextReview: () => void;
@@ -19,28 +19,14 @@ const secondary =
 /** Today's reviews, as the buttons beside the page title. The same whoever
  *  schedules: only the action changes, from a review here to a hand-off to
  *  RemNote. The due count lives on the primary button. */
-export default function TodayCard({ provider, remnoteDocumentUrl, due, onStartReview, onContextReview }: TodayCardProps) {
+export default function TodayCard({ provider, remnoteUrl, due, onStartReview, onContextReview }: TodayCardProps) {
   const reviewLabel = due > 0 ? `Review ${due.toLocaleString()} due` : 'All caught up';
 
   if (provider === 'remnote') {
     return (
-      <div className="flex gap-2">
-        {remnoteDocumentUrl && (
-          <a
-            className={`${secondary} px-2.5`}
-            href={remnoteDocumentUrl}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Langfour document"
-            title="Langfour document in RemNote"
-          >
-            <FileText size={16} />
-          </a>
-        )}
-        <a className={primary} href="https://www.remnote.com/flashcards" target="_blank" rel="noreferrer" title="All RemNote cards">
-          {due > 0 ? reviewLabel : 'Open RemNote'} <ArrowUpRight size={16} />
-        </a>
-      </div>
+      <a className={primary} href={remnoteUrl ?? 'https://www.remnote.com/'} target="_blank" rel="noreferrer" title="Your notes in RemNote">
+        {due > 0 ? reviewLabel : 'Open RemNote'} <ArrowUpRight size={16} />
+      </a>
     );
   }
 

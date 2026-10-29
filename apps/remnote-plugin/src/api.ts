@@ -128,7 +128,7 @@ export class LangfourApi {
     return (await this.request(`/sync/remnote/pending?limit=${limit}`)).json();
   }
 
-  async push(body: { notes?: NotePayload[]; present_rem_ids?: string[]; disabled_rem_ids?: string[]; root_rem_id?: string }): Promise<PushResult> {
+  async push(body: { notes?: NotePayload[]; present_rem_ids?: string[]; disabled_rem_ids?: string[]; root_rem_id?: string; language_rem_ids?: Record<string, string> }): Promise<PushResult> {
     return (await this.request('/sync/remnote/push', { method: 'POST', body: JSON.stringify(body) })).json();
   }
 
