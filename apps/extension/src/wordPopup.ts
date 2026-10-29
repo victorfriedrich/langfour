@@ -48,12 +48,12 @@ export function createWordPopup(
   popup.className = 'word-popup';
   popup.innerHTML = '<div class="sheet-handle" aria-hidden="true"></div>';
 
-  // The dictionary form ("la fechoría", "creer"), not the form tapped: that
-  // is what a flashcard would hold.
+  // The form tapped, then the dictionary form a flashcard would hold:
+  // "charlan (charlar)".
   const header = document.createElement('div');
   header.className = 'popup-header';
   const headword = translation.root || wordText;
-  header.textContent = headword;
+  header.textContent = headword === wordText ? headword : `${wordText} (${headword})`;
   // Pronounces the word on the line above, right after it.
   if (language) {
     const speakButton = document.createElement('button');

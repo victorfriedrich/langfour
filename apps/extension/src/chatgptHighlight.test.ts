@@ -131,7 +131,7 @@ it('opens the reader’s word popup on a click on a word, and saving makes it a 
     .map((host) => host.shadowRoot?.querySelector<HTMLElement>('.word-popup'))
     .find(Boolean);
   await vi.waitFor(() => expect(popup()?.querySelector('.translations-container')?.textContent).toBe('dog'));
-  expect(popup()!.querySelector('.popup-header')!.textContent).toBe('el perro');
+  expect(popup()!.querySelector('.popup-header')!.textContent).toBe('perro (el perro)');
 
   const save = popup()!.querySelector<HTMLButtonElement>('.flashcard-btn')!;
   expect(save.textContent).toBe('Add to flashcards');
