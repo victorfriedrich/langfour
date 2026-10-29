@@ -18,6 +18,7 @@ export const STORAGE_LAYOUT_VERSION = 'layout-version';
 export const STORAGE_PRACTICE_DECISIONS = 'practice-decisions'; // event id -> decision, until reported
 // Local to the device: Rems whose live push failed, resent on the next try.
 export const STORAGE_UNSENT_REMS = 'unsent-rems';
+export const STORAGE_PAUSED_REMS = 'paused-rems'; // Rems this plugin turned off because their word is known
 
 export const LANGUAGE_NAMES: Record<string, string> = {
   es: 'Spanish',

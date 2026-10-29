@@ -53,10 +53,12 @@ T0 = 1_780_000_000_000  # an arbitrary review time, in RemNote's unix ms
 class FakeStore:
     """In-memory SyncStore with the database's uniqueness rules."""
 
-    def __init__(self, userwords=(), translations=None):
-        # userwords: (word_id, status, root, language, translation)
+    def __init__(self, userwords=(), translations=None, invalid=()):
+        # userwords: (word_id, status, root, language, translation);
+        # invalid: word ids the dictionary audit marked invalid
         self.userwords = list(userwords)
         self.translations = translations or {}
+        self.invalid = set(invalid)
         self.notes: list[dict] = []
         self.cards: list[dict] = []
         self.reviews: dict[tuple, dict] = {}
@@ -72,12 +74,14 @@ class FakeStore:
 
     def learning_words(self, user_id):
         return [{"word_id": w, "created_at": f"2026-0{1 + w % 9}-01T00:00:00+00:00",
-                 "words": {"root": r, "language": lang, "translation": t}}
+                 "words": {"root": r, "language": lang, "translation": t,
+                           "status": "invalid" if w in self.invalid else "valid"}}
                 for w, status, r, lang, t in self.userwords if status == "learning"]
 
     def word_details(self, user_id):
-        return {w: {"language": lang, "added_at": f"2026-0{1 + w % 9}-01T00:00:00+00:00"}
-                for w, _, _, lang, _ in self.userwords}
+        return {w: {"language": lang, "added_at": f"2026-0{1 + w % 9}-01T00:00:00+00:00",
+                    "invalid": w in self.invalid, "known": status == "known"}
+                for w, status, _, lang, _ in self.userwords}
 
     def relink_note(self, note_id, rem_id):
         note = next(n for n in self.notes if n["id"] == note_id)
@@ -148,10 +152,11 @@ class FakeStore:
         return moved
 
     def count_learning_words(self, user_id):
-        return sum(1 for w in self.userwords if w[1] == "learning")
+        return sum(1 for w in self.userwords if w[1] == "learning" and w[0] not in self.invalid)
 
     def count_notes(self, user_id, *, active_only=False, learning_only=False):
-        learning = {w[0] for w in self.userwords if w[1] == "learning"}
+        learning = {w[0] for w in self.userwords
+                    if w[1] == "learning" and w[0] not in self.invalid}
         return sum(1 for n in self.notes
                    if (not active_only or n["removed_at"] is None)
                    and (not learning_only or n["word_id"] in learning))
@@ -567,6 +572,12 @@ def test_a_removed_rem_is_not_offered_again():
     assert pending_words(store, USER, limit=10).words == []
 
 
+def test_words_marked_invalid_are_not_offered():
+    store = FakeStore(spanish(1, 2, 3), invalid={2})
+
+    assert [w.word_id for w in pending_words(store, USER, limit=10).words] == [1, 3]
+
+
 def test_pending_reports_what_the_limit_held_back():
     store = FakeStore(spanish(1, 2, 3))
 
@@ -656,6 +667,18 @@ def test_status_counts_match_what_pending_would_hand_out():
     pending = pending_words(store, USER, limit=100)
     assert status.pending_words == len(pending.words) == 2
     assert status.linked_words == 1
+
+
+def test_status_counts_leave_out_invalid_words_with_or_without_a_rem():
+    store = FakeStore(spanish(1, 2, 3, 4), invalid={2, 3})
+    store.token = {"created_at": "t", "last_used_at": None}
+    # 3 got a Rem before the audit marked it invalid.
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-a"),
+                                               NoteIn(word_id=3, rem_id="rem-c")]), now=NOW)
+
+    status = connection_status(SimpleNamespace(id=USER), store)
+
+    assert status.pending_words == len(pending_words(store, USER, limit=100).words) == 1
 
 
 def test_only_the_sweep_marks_a_sync_completed():
@@ -784,6 +807,31 @@ def test_linked_words_carry_language_and_save_date_for_live_notes_only():
 
     assert [(w.word_id, w.language) for w in words] == [(1, "es")]
     assert words[0].added_at.startswith("2026-")
+
+
+def test_linked_words_say_which_are_invalid():
+    store = FakeStore(spanish(1, 2), invalid={2})
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-a"),
+                                               NoteIn(word_id=2, rem_id="rem-b")]), now=NOW)
+
+    assert [(w.word_id, w.invalid) for w in linked_words(store, USER).words] == [(1, False), (2, True)]
+
+
+def test_linked_words_say_which_are_known():
+    store = FakeStore(spanish(1) + spanish(2, status="known"))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-a"),
+                                               NoteIn(word_id=2, rem_id="rem-b")]), now=NOW)
+
+    assert [(w.word_id, w.known) for w in linked_words(store, USER).words] == [(1, False), (2, True)]
+
+
+def test_turning_off_a_known_words_rem_keeps_it_known():
+    store = FakeStore(spanish(1, status="known"))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-a")]), now=NOW)
+
+    apply_push(store, USER, PushRequest(present_rem_ids=["rem-a"], disabled_rem_ids=["rem-a"]), now=NOW)
+
+    assert store.userwords[0][1] == "known"
 
 
 def test_pending_words_carry_their_save_date():
