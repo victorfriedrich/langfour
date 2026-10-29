@@ -1,6 +1,6 @@
 """Transcript selection.
 
-videoparsing imports moviepy, pytubefix and the Whisper client at module scope,
+videoparsing imports moviepy and the Whisper client at module scope,
 so these tests skip wherever those are not installed rather than failing the
 suite. The rule under test is pure enough that the real library objects are
 used directly -- no network, and no mock of the thing being verified.
@@ -233,13 +233,13 @@ def test_a_proxy_that_refuses_pauses_captions(captions):
 
 def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(vp.pytube, "YouTube", lambda url, client: type("YT", (), {
-        "title": "t", "author": "a", "keywords": [], "views": 1, "length": 60})())
+    monkeypatch.setattr(vp, "video_info", lambda url: {
+        "url": url, "title": "t", "channel": "a", "view_count": 1, "duration": 60})
     processed = []
     monkeypatch.setattr(vp, "process_transcription",
                         lambda f, vid, *a: processed.append(Path(f).read_text()))
     download = []
-    monkeypatch.setattr(vp, "download_video", lambda url: download.append(url))
+    monkeypatch.setattr(vp, "download_video", lambda info: download.append(info["url"]))
 
     monkeypatch.setattr(vp, "caption_text", lambda vid, lang: "hola mundo")
     vp.main("https://www.youtube.com/watch?v=abc", "es")
@@ -248,3 +248,20 @@ def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp
     monkeypatch.setattr(vp, "caption_text", lambda vid, lang: None)
     vp.main("https://www.youtube.com/watch?v=def", "es")
     assert download == ["https://www.youtube.com/watch?v=def"]
+
+
+def test_ytdlp_calls_are_spaced(monkeypatch):
+    now, slept = [0.0], []
+
+    def sleep(s):
+        slept.append(s)
+        now[0] += s
+
+    monkeypatch.setattr(vp.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(vp.time, "sleep", sleep)
+    monkeypatch.setattr(vp, "_ytdlp_next_at", 0.0)
+    monkeypatch.setattr(vp, "YTDLP_MIN_INTERVAL_S", 10.0)
+    vp._space_ytdlp()
+    now[0] += 3
+    vp._space_ytdlp()
+    assert slept == [7.0]

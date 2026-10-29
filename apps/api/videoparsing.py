@@ -6,7 +6,6 @@ import traceback
 import uuid
 from datetime import datetime
 
-import pytubefix as pytube
 import requests
 from dotenv import load_dotenv
 from moviepy.editor import VideoFileClip
@@ -29,17 +28,53 @@ load_dotenv()
 # endpoint. The client is built lazily inside the function, so importing
 # this module does not require a DeepInfra key.
 
-def download_video(url):
-    """The audio track only, as the file yt-dlp wrote. pytubefix's ANDROID
-    client started failing every download with HTTP 400; its metadata calls
-    in main() still work, so only the download moved."""
+# Every YouTube request from here goes through yt-dlp, once per video: the
+# metadata read in main() also selects the audio format, so a Whisper fallback
+# downloads from that same info without loading the page again. (pytubefix
+# used to read the metadata, which cost a second page load for the same
+# fields.)
+#
+# The smallest audio track, in the video's original language: Whisper hears
+# 16 kHz mono, so opus at ~50 kbps (format 249) is 40% of the bytes of the
+# ~130 kbps m4a that "bestaudio" picks. On a 6-minute Spanish video the two
+# transcripts shared 98.8% of their words (two runs on the m4a: 99.9%), with
+# the same word count. "+abr" makes the lowest bitrate the best; "lang" first
+# keeps a dubbed track from winning on size.
+YDL_OPTS = {"format": "ba[acodec=opus]/ba", "format_sort": ["lang", "+abr"],
+            "outtmpl": "%(id)s.%(ext)s", "quiet": True, "no_warnings": True,
+            "noprogress": True}
+# yt-dlp's wiki asks for 5-10 s between videos. A caption run is spaced by the
+# caption throttle as well; this covers videos that go straight to Whisper.
+YTDLP_MIN_INTERVAL_S = float(os.getenv("YTDLP_MIN_INTERVAL_S", "10"))
+_ytdlp_lock = threading.Lock()
+_ytdlp_next_at = 0.0
+
+
+def _space_ytdlp() -> None:
+    global _ytdlp_next_at
+    with _ytdlp_lock:
+        wait = _ytdlp_next_at - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _ytdlp_next_at = time.monotonic() + YTDLP_MIN_INTERVAL_S
+
+
+def video_info(url) -> dict:
+    """Metadata and the selected audio format, from one page load."""
+    import yt_dlp
+    _space_ytdlp()
+    with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+        return ydl.extract_info(url, download=False)
+
+
+def download_video(info):
+    """The audio track video_info() selected, as the file yt-dlp wrote."""
     import yt_dlp
     try:
         start_time = time.time()
-        with yt_dlp.YoutubeDL({"format": "bestaudio[ext=m4a]/bestaudio",
-                               "outtmpl": "%(id)s.%(ext)s", "quiet": True,
-                               "no_warnings": True, "noprogress": True}) as ydl:
-            audio_file = ydl.prepare_filename(ydl.extract_info(url, download=True))
+        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+            ydl.process_info(info)
+            audio_file = ydl.prepare_filename(info)
         print(f"Audio downloaded in {time.time() - start_time:.2f} seconds")
         return audio_file
     except Exception as e:
@@ -384,14 +419,13 @@ def main(url, language: str, use_transcript_api=True):
     
     txt_filename = os.path.join("transcripts", f"{video_id}.txt")
     
-    # Initialize YouTube object to extract metadata
     try:
-        yt = pytube.YouTube(url, 'WEB')
-        title = yt.title
-        creator = yt.author
-        tags = yt.keywords
-        views = yt.views
-        length = yt.length  # Duration in seconds
+        info = video_info(url)
+        title = info.get("title")
+        creator = info.get("channel") or info.get("uploader")
+        tags = info.get("tags") or []
+        views = info.get("view_count")
+        length = info.get("duration")  # Duration in seconds
         date_added = datetime.utcnow().isoformat()  # UTC timestamp
     except Exception as e:
         print(f"Error extracting metadata for video {video_id}: {e}")
@@ -415,7 +449,7 @@ def main(url, language: str, use_transcript_api=True):
             process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
             return
 
-    audio_file = download_video(url)
+    audio_file = download_video(info)
     if not audio_file:
         print(f"Audio download failed for {video_id}")
         return
