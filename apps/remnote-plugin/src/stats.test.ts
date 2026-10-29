@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DAY_MS } from './constants';
-import { cardStageAt, recentLapses, summarize, wordStageAt, type CardLike, type WordCards } from './stats';
+import { cardStageAt, overdueSince, recentLapses, summarize, wordStageAt, type CardLike, type WordCards } from './stats';
 
 const NOW = new Date(2026, 8, 26, 15, 0).getTime();
 const daysAgo = (n: number) => NOW - n * DAY_MS;
@@ -71,6 +71,20 @@ it('a word is as far along as its weakest card', () => {
   expect(wordStageAt([], NOW)).toBe('new');
 });
 
+describe('overdueSince', () => {
+  it('is when the first card ran out of grace, if lateness alone keeps the word from learned', () => {
+    // Due 30 days ago on a 30-day gap: grace ran out 15 days ago.
+    expect(overdueSince([card([[60, 1]], 30), card([[2, 1]], 30)], NOW)).toBe(daysAgo(15));
+  });
+
+  it('is undefined while learned, or when a card is still learning or was failed', () => {
+    expect(overdueSince([card([[40, 1]], 30)], NOW)).toBeUndefined();
+    expect(overdueSince([card([[60, 1]], 30), card([[2, 1]], 3)], NOW)).toBeUndefined();
+    expect(overdueSince([card([[60, 0]], 30)], NOW)).toBeUndefined();
+    expect(overdueSince([], NOW)).toBeUndefined();
+  });
+});
+
 it('counts only recent lapses', () => {
   expect(recentLapses([card([[60, 0], [10, 0], [5, 1], [2, 0]], 1)], NOW)).toBe(2);
 });
@@ -81,11 +95,12 @@ describe('summarize', () => {
     word(2, [card([[20, 1], [3, 1]], 30)]), // learned 3 days ago
     word(3, [card([[10, 0], [4, 1]], 3)]), // slipping
     word(4, [card([], 0)]), // new
+    word(5, [card([[50, 1]], 25)]), // learned until 12.5 days ago, review late
   ];
   const s = summarize(words, NOW);
 
   it('counts stages now', () => {
-    expect(s.stages).toEqual({ new: 1, learning: 1, learned: 2 });
+    expect(s.stages).toEqual({ new: 1, learning: 2, learned: 2 });
   });
 
   it('builds a daily trend that ends at today', () => {
@@ -99,5 +114,9 @@ describe('summarize', () => {
   it('lists words learned this week and words slipping', () => {
     expect(s.newlyLearned.map((w) => w.root)).toEqual(['w2']);
     expect(s.slipping).toEqual([{ remId: 'rem-3', root: 'w3', lapses: 1, lastLapse: daysAgo(10) }]);
+  });
+
+  it('lists words learned but for a late review', () => {
+    expect(s.overdue).toEqual([{ remId: 'rem-5', root: 'w5', since: daysAgo(12.5) }]);
   });
 });
