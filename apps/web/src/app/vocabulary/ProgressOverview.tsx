@@ -11,7 +11,9 @@ const STAGES = [
   { key: 'learning', label: 'learning', color: '#a5b4fc' },
   { key: 'new', label: 'not started', color: '#d1d5db' },
 ] as const;
-const MAX_SLIPPING = 6;
+const FORGOTTEN_SHOWN = 5;
+// Ticks drawn per forgotten word; the count beside them says the rest.
+const LAPSE_TICKS = 5;
 const DAY_MS = 86_400_000;
 
 const dayLabel = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -139,8 +141,69 @@ function DayRow({ label, words }: { label: string; words: ProgressWord[] }) {
   );
 }
 
-/** Learned / learning / not started, the 90-day trend and the words saved
- *  this week, for whichever system schedules the reviews. */
+function forgottenLabel(ms: number, now: number) {
+  const days = Math.round((startOfDay(now) - startOfDay(ms)) / DAY_MS);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  return dayLabel(ms);
+}
+
+/** The words forgotten in the last 30 days that aren't learned yet: most
+ *  often forgotten first, each with its meaning and when it last slipped. */
+function Forgotten({ slipping, words, now }: { slipping: Summary['slipping']; words: ProgressWord[]; now: number }) {
+  const [all, setAll] = useState(false);
+  const translations = useMemo(() => new Map(words.map((w) => [w.remId, w.translation])), [words]);
+  if (slipping.length === 0) return null;
+  const shown = all ? slipping : slipping.slice(0, FORGOTTEN_SHOWN);
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="font-semibold text-gray-900">
+          Forgotten recently
+          <span className="ml-2 font-normal tabular-nums text-gray-400">{slipping.length.toLocaleString()}</span>
+        </h2>
+        <span className="text-sm text-gray-500">last 30 days</span>
+      </div>
+      <ul className="mt-2 divide-y divide-gray-100">
+        {shown.map((w) => {
+          const translation = translations.get(w.remId);
+          const times = `Forgotten ${w.lapses === 1 ? 'once' : `${w.lapses} times`}`;
+          return (
+            <li key={w.remId} className="flex items-baseline gap-3 py-2 text-sm">
+              <span className="min-w-0 flex-1 truncate">
+                <span className="text-gray-900">{w.root}</span>
+                {translation && <span className="ml-2 text-gray-500">{translation}</span>}
+              </span>
+              <span className="flex shrink-0 items-center gap-2 self-center" title={times}>
+                <span className="flex gap-0.5" aria-hidden>
+                  {Array.from({ length: LAPSE_TICKS }, (_, i) => (
+                    <i key={i} className={`block h-2.5 w-1 ${i < w.lapses ? 'bg-rose-400' : 'bg-gray-200'}`} />
+                  ))}
+                </span>
+                <span className="w-6 tabular-nums text-gray-500">
+                  <span className="sr-only">{times}</span>
+                  <span aria-hidden>{w.lapses}×</span>
+                </span>
+              </span>
+              <span className="w-20 shrink-0 text-right tabular-nums text-gray-400">{forgottenLabel(w.lastLapse, now)}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {slipping.length > FORGOTTEN_SHOWN && (
+        <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 py-1 text-sm text-gray-500 hover:text-gray-900">
+          {all ? 'Show fewer' : `Show all ${slipping.length}`}
+        </button>
+      )}
+    </section>
+  );
+}
+
+/** Learned / learning / not started, the 90-day trend, the words saved this
+ *  week and the words forgotten recently, for whichever system schedules
+ *  the reviews. */
 export default function ProgressOverview({ words }: { words: ProgressWord[] }) {
   const [now] = useState(() => Date.now());
   const summary = useMemo(() => summarize(words, now), [words, now]);
@@ -152,7 +215,6 @@ export default function ProgressOverview({ words }: { words: ProgressWord[] }) {
   }
 
   const change = summary.learnedLastWeek;
-  const slipping = summary.slipping.slice(0, MAX_SLIPPING);
 
   return (
     <div>
@@ -188,18 +250,6 @@ export default function ProgressOverview({ words }: { words: ProgressWord[] }) {
           </span>
         ))}
       </div>
-      {slipping.length > 0 && (
-        <p className="mt-3 text-sm text-gray-500">
-          Forgotten recently:{' '}
-          {slipping.map((w, i) => (
-            <span key={w.remId}>
-              {i > 0 && ', '}
-              <span className="text-gray-800">{w.root}</span>
-              {w.lapses > 1 && <span className="tabular-nums"> {w.lapses}×</span>}
-            </span>
-          ))}
-        </p>
-      )}
 
       <section className="mt-10">
         <h2 className="font-semibold text-gray-900">
@@ -216,6 +266,8 @@ export default function ProgressOverview({ words }: { words: ProgressWord[] }) {
           </ul>
         )}
       </section>
+
+      <Forgotten slipping={summary.slipping} words={words} now={now} />
     </div>
   );
 }

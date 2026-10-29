@@ -284,7 +284,7 @@ function Progress() {
       {summary.slipping.length > 0 && (
         <section>
           <h2>Keeps slipping</h2>
-          <Chips words={summary.slipping} badge />
+          <Chips words={summary.slipping.slice(0, 12)} badge />
         </section>
       )}
 
