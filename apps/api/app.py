@@ -37,6 +37,7 @@ from remnote_sync import pair_router as remnote_pair_router
 from remnote_sync import sync_router as remnote_sync_router
 from remnote_sync import web_router as remnote_web_router
 from text_article_parsing import parse_article
+from tts import router as tts_router
 from utils import get_video_words
 from videoparsing import main as process_video
 
@@ -128,6 +129,7 @@ app.include_router(remnote_pair_router, prefix="/pair/remnote", tags=["remnote"]
 # than as a mounted sub-app, so /mcp needs no trailing slash and AuthMiddleware
 # covers it like any other path. The session manager runs for the app's life.
 app.include_router(mcp_auth_router)
+app.include_router(tts_router, tags=["tts"])
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 

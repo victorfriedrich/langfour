@@ -406,6 +406,20 @@ body.highlight-off .learning-word { border-bottom-color: transparent; }
   font-size: 22px;
   font-weight: 700;
 }
+/* Small, right after the word at the top. */
+.speak-btn {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 4px;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.speak-btn:hover { background: rgba(127, 127, 127, 0.15); color: inherit; }
+.speak-btn.speaking { opacity: 0.5; }
 /* Translations are reading text too, so they follow the font chosen under Aa. */
 .popup-header, .translations-container, .dismissable-translation { font-family: var(--serif); }
 body.font-sans .popup-header,

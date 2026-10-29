@@ -6,6 +6,7 @@
 // page places it and styles it (reader.css, chatgptPopup.css).
 
 import { askBackground, WordProgressResponse } from './messages';
+import { attachSpeakButton, SPEAKER_ICON } from './speak';
 import type { Translation } from './translate';
 
 export type PopupTranslation = Pick<Translation, 'id' | 'root' | 'translation'>;
@@ -37,7 +38,12 @@ export function createMessagePopup(wordText: string, message: string): HTMLDivEl
 }
 
 // Create a word popup element with translations.
-export function createWordPopup(wordText: string, translation: PopupTranslation, action?: HTMLElement): HTMLDivElement {
+export function createWordPopup(
+  wordText: string,
+  translation: PopupTranslation,
+  language: string | null,
+  action?: HTMLElement,
+): HTMLDivElement {
   const popup = document.createElement('div');
   popup.className = 'word-popup';
   popup.innerHTML = '<div class="sheet-handle" aria-hidden="true"></div>';
@@ -46,7 +52,18 @@ export function createWordPopup(wordText: string, translation: PopupTranslation,
   // is what a flashcard would hold.
   const header = document.createElement('div');
   header.className = 'popup-header';
-  header.textContent = translation.root || wordText;
+  const headword = translation.root || wordText;
+  header.textContent = headword;
+  // Pronounces the word on the line above, right after it.
+  if (language) {
+    const speakButton = document.createElement('button');
+    speakButton.className = 'speak-btn';
+    speakButton.setAttribute('aria-label', `Pronounce ${headword}`);
+    speakButton.title = 'Pronounce';
+    speakButton.innerHTML = SPEAKER_ICON;
+    attachSpeakButton(speakButton, headword, language);
+    header.appendChild(speakButton);
+  }
   popup.appendChild(header);
 
   // The translations are alternatives of equal standing, not a best guess

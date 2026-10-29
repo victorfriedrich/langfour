@@ -51,6 +51,20 @@
   font-weight: 600;
   line-height: 1.35;
 }
+/* Small, right after the word at the top. */
+.speak-btn {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 2px;
+  padding: 3px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.speak-btn:hover { background: rgba(127, 127, 127, 0.15); color: inherit; }
+.speak-btn.speaking { opacity: 0.5; }
 .translations-container {
   padding: 0 14px 12px;
   font-size: 15px;

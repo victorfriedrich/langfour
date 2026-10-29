@@ -331,7 +331,7 @@ function openPopup(range: Range, token: string, word: ClassifiedWord, lang: Lang
       const save = translation.id && word.status === 'new'
         ? popupButton('Add to flashcards', () => saveWord(word, translation.id))
         : undefined;
-      showInPopup(withProgress(createWordPopup(token, translation, save)));
+      showInPopup(withProgress(createWordPopup(token, translation, lang, save)));
     }
   });
 }

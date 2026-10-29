@@ -479,6 +479,7 @@ function handleWordClick(wordElement: HTMLElement): void {
     const popup = createWordPopup(
       wordText,
       translation,
+      readerLanguage,
       translation.id && isNewWord(wordElement) ? createFlashcardButton(wordText, translation.id) : undefined,
     );
     appendProgress(popup, wordElement);
