@@ -161,7 +161,8 @@ def set_word_status_tool(
     to learning (they get a flashcard again). Use it when the user says they already know
     words they're learning, or wants a known word back.
 
-    Pass words exactly as get_vocabulary lists them (with the article, e.g. 'la casa').
+    Pass words as get_vocabulary lists them (with the article, e.g. 'la casa'), or as the
+    user saw them ('encontré' finds encontrar).
     When you pick the words yourself, show the user the list and change only the ones
     they confirm. not_found lists words that aren't in their list in that language.
     """

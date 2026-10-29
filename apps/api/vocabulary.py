@@ -28,6 +28,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from practice import PracticeStore
 from supabase_client import supabase
 
 Language = Literal["es", "de", "it", "fr"]
@@ -144,6 +145,16 @@ class VocabularyStore:
                .in_("status", ["learning", "known"]).in_("words.root", roots).execute())
         return [{"word_id": r["word_id"], "root": r["words"]["root"]} for r in res.data or []]
 
+    def resolve_words(self, language: str, words: list[str]) -> dict[str, int]:
+        """word as given -> word_id, conjugated or inflected forms included."""
+        return PracticeStore(self.db).resolve_words(language, words)
+
+    def owned(self, user_id: str, word_ids: list[int]) -> set[int]:
+        """Which of these words are in the user's list as learning or known."""
+        res = (self.db.table("userwords").select("word_id").eq("user_id", user_id)
+               .in_("status", ["learning", "known"]).in_("word_id", word_ids).execute())
+        return {r["word_id"] for r in res.data or []}
+
     def set_status(self, user_id: str, word_ids: list[int], status: str) -> None:
         # Not set_userwords_status: it updates auth.uid()'s words, and the API
         # runs as the service role. Rows already in the status are left alone,
@@ -214,10 +225,16 @@ def record_exposure(store: VocabularyStore, user_id: str, language: str,
 def set_word_status(store: VocabularyStore, user_id: str, language: str, words: list[str],
                     status: Literal["known", "learning"]) -> StatusChange:
     asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
-    # Every word with a given root moves: homographs are listed under one spelling.
+    # By root first, so every homograph listed under one spelling moves; then
+    # forms ('encontré' -> encontrar) for the rest.
     rows = store.user_words(user_id, language, asked)
-    if rows:
-        store.set_status(user_id, sorted({r["word_id"] for r in rows}), status)
     found = {r["root"] for r in rows}
+    ids = {r["word_id"] for r in rows}
+    forms = store.resolve_words(language, [w for w in asked if w not in found])
+    owned = store.owned(user_id, sorted(set(forms.values()))) if forms else set()
+    found |= {w for w, word_id in forms.items() if word_id in owned}
+    ids |= owned
+    if ids:
+        store.set_status(user_id, sorted(ids), status)
     return StatusChange(changed=[w for w in asked if w in found],
                         not_found=[w for w in asked if w not in found])
