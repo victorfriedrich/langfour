@@ -3,10 +3,11 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
-import { ChevronRight, Clapperboard, FileText, Film, Music, Newspaper, Plus, Tv } from 'lucide-react';
+import { ChevronRight, Clapperboard, FileText, Film, Music, Newspaper, Plus, Puzzle, Tv } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { UserContext } from '@/context/UserContext';
+import { useExtensionStatus } from '../hooks/useExtensionStatus';
 import { ImportedMediaSummary, listImportedMedia } from './api';
 import ImportDialog from './ImportDialog';
 
@@ -54,6 +55,7 @@ function MediaPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showImport, setShowImport] = useState(false);
+  const extension = useExtensionStatus().state;
 
   const refresh = useCallback(async () => {
     setLoading(true); setError('');
@@ -67,12 +69,17 @@ function MediaPageContent() {
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-3xl px-4 py-10 sm:px-8">
-        <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-          <div>
+        <header className="mb-8 flex flex-wrap items-end justify-between gap-4 sm:flex-nowrap">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold text-gray-900">Media</h1>
             <p className="mt-1 text-sm text-gray-500">Learn the words of an episode, article or song before you start.</p>
           </div>
-          {media.length > 0 && <button onClick={() => setShowImport(true)} className={secondary}><Plus size={16}/>Import episode</button>}
+          {media.length > 0 && (
+            <div className="flex shrink-0 flex-wrap gap-3">
+              <button onClick={() => setShowImport(true)} className={secondary}><Plus size={16}/>Import episode</button>
+              {extension === 'missing' && <Link href="/extension" className={primary}><Puzzle size={16}/>Get the extension</Link>}
+            </div>
+          )}
         </header>
 
         {error && <p className="mb-6 text-sm text-red-600">{error}</p>}
@@ -86,16 +93,46 @@ function MediaPageContent() {
             ))}
           </div>
         ) : media.length === 0 ? (
-          !error && <EmptyState icon={Clapperboard} title="Nothing in your library yet" actions={<>
-            <Link href="/extension" className={secondary}>Get the extension</Link>
-            <button onClick={() => setShowImport(true)} className={primary}><Plus size={16}/>Import episode</button>
-          </>}>Import an episode transcript here, or add an article or song from the extension&apos;s reader with Add to Library.</EmptyState>
+          !error && (
+            <EmptyState icon={Clapperboard} title="Nothing in your library yet" actions={extension === 'checking' ? null : <>
+              <button onClick={() => setShowImport(true)} className={extension === 'missing' ? secondary : primary}><Plus size={16}/>Import episode</button>
+              {extension === 'missing' && <Link href="/extension" className={primary}><Puzzle size={16}/>Get the extension</Link>}
+            </>}>
+              {extension === 'missing' ? 'Add articles and songs as you browse with the Chrome extension, or import an episode transcript.'
+                : extension === 'installed' ? <AddFromReader className="mt-1 justify-center"/> : null}
+            </EmptyState>
+          )
         ) : (
-          <ul className="divide-y divide-gray-100 border-t border-gray-100">{media.map((item) => <MediaRow key={item.id} item={item}/>)}</ul>
+          <>
+            <ul className="divide-y divide-gray-100 border-t border-gray-100">{media.map((item) => <MediaRow key={item.id} item={item}/>)}</ul>
+            {extension === 'installed' && <AddFromReader className="mt-6 pl-1"/>}
+          </>
         )}
       </div>
 
       {showImport && <ImportDialog language={languageCode} existing={media} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); refresh(); }}/>}
+    </div>
+  );
+}
+
+// How articles and songs get here once the extension is installed: the
+// reader's shortcut, then its Add to Library button. Only rendered after the
+// extension has answered, so reading navigator here cannot break hydration.
+function AddFromReader({ className = '' }: { className?: string }) {
+  const mac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+  const key = 'inline-grid h-6 min-w-6 place-items-center rounded-md border border-gray-200 bg-white px-1.5 font-sans text-xs font-medium text-gray-700 shadow-[0_1px_0_rgb(0_0_0/0.04)]';
+  const keys = mac ? ['⌘', '⇧', 'Y'] : ['Ctrl', 'Shift', 'Y'];
+  return (
+    <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-2 text-sm text-gray-500 ${className}`}>
+      <span>Any article or song</span>
+      <span className="inline-flex items-center gap-2.5">
+        <ChevronRight size={14} className="text-gray-300" aria-hidden/>
+        <span className="inline-flex items-center gap-1" aria-label={`Press ${keys.join(' ')}`}>{keys.map((k) => <kbd key={k} className={key}>{k}</kbd>)}</span>
+      </span>
+      <span className="inline-flex items-center gap-2.5">
+        <ChevronRight size={14} className="text-gray-300" aria-hidden/>
+        <span className="font-medium text-gray-700">Add to Library</span>
+      </span>
     </div>
   );
 }

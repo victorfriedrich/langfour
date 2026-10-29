@@ -1,7 +1,8 @@
 import { render, screen, within } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import MediaPage from './page';
-import type { ImportedMediaSummary } from './api';
+import { listImportedMedia, type ImportedMediaSummary } from './api';
+import type { ExtensionStatus } from '../hooks/useExtensionStatus';
 
 const base = { series: null, season: null, episode: null, language: 'es', duration: null, transcriptionModel: null, timebase: null, importedAt: '2026-10-18T10:00:00Z' };
 const library: ImportedMediaSummary[] = [
@@ -12,10 +13,14 @@ const library: ImportedMediaSummary[] = [
 
 vi.mock('../components/ProtectedRoute', () => ({ default: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock('./api', () => ({ listImportedMedia: vi.fn(async () => library) }));
+let extension: ExtensionStatus = { state: 'checking' };
+vi.mock('../hooks/useExtensionStatus', () => ({ useExtensionStatus: () => extension }));
 vi.mock('@/context/UserContext', async () => {
   const { createContext } = await import('react');
   return { UserContext: createContext({ language: { code: 'es' }, fetchWithAuth: () => {} }) };
 });
+
+beforeEach(() => { extension = { state: 'checking' }; });
 
 it('lists each item by its own title, with where it is from underneath', async () => {
   render(<MediaPage />);
@@ -25,4 +30,20 @@ it('lists each item by its own title, with where it is from underneath', async (
   expect(within(song).getByText('Prueba · 1 min read')).toBeInTheDocument();
   expect(within(await row('Prueba')).getByText('Netling Test · S01 E03 · 54 min')).toBeInTheDocument();
   expect(within(await row('El tranvía vuelve')).getByText('Diario de prueba · 1 min read')).toBeInTheDocument();
+});
+
+it('makes getting the extension the main action when it is missing', async () => {
+  extension = { state: 'missing' };
+  vi.mocked(listImportedMedia).mockResolvedValueOnce([]);
+  render(<MediaPage />);
+  expect(await screen.findByRole('link', { name: 'Get the extension' })).toHaveAttribute('href', '/extension');
+  expect(screen.queryByText('Add to Library')).not.toBeInTheDocument();
+});
+
+it('explains the reader flow instead once the extension is installed', async () => {
+  extension = { state: 'installed', version: '1.0.0', signedIn: true, email: null };
+  vi.mocked(listImportedMedia).mockResolvedValueOnce([]);
+  render(<MediaPage />);
+  expect(await screen.findByText('Add to Library')).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Get the extension' })).not.toBeInTheDocument();
 });
