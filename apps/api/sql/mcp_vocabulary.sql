@@ -75,7 +75,7 @@ as $$
               end
         order by case when p_status = 'due' then r.due_at end,
                  r.created_at desc, r.root
-        limit greatest(least(p_limit, 200), 1)
+        limit greatest(p_limit, 1)
     )
     select jsonb_build_object(
         'language', (select language from settings),

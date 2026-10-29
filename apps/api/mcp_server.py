@@ -98,7 +98,7 @@ def get_vocabulary_tool(
     ctx: Context,
     status: Literal["due", "learning", "known"] = "due",
     language: Language | None = None,
-    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    limit: Annotated[int, Field(ge=1)] = 50,
 ) -> Vocabulary:
     """The user's vocabulary in a language: how many words they know, are learning and
     have due for review, and a list of words with translations.
@@ -107,7 +107,8 @@ def get_vocabulary_tool(
     first, and the best words to practise; 'learning' are all words being learned, newest
     first; 'known' are words the user knows, newest first. language is an ISO code (es, de,
     it or fr); leave it out for the language the user is studying. Pass words to
-    record_practice exactly as listed here (with the article, e.g. 'la casa').
+    record_practice exactly as listed here (with the article, e.g. 'la casa'). limit has
+    no maximum; counts says how many words there are, at about 90 bytes per word listed.
     """
     return get_vocabulary(get_vocabulary_store(), _user_id(ctx), language, status, limit)
 
@@ -125,7 +126,8 @@ def score_text_tool(
     contains. Names and other words that aren't vocabulary are left out.
 
     Use it to pitch a text at the user's level: around 95% known reads comfortably, and a
-    few learning words make good practice. Reading-only; nothing is recorded.
+    few learning words make good practice. Reading-only and cheap, so scoring a draft
+    several times while writing it is fine; nothing is recorded.
     """
     return score_text(get_vocabulary_store(), _user_id(ctx), language, text)
 
