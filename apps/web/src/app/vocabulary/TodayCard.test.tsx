@@ -26,7 +26,7 @@ function PracticeActions() {
 it('keeps all cards reachable alongside the document without a second settings request', async () => {
   db.maybeSingle.mockResolvedValue({ data: { review_provider: 'remnote', remnote_root_rem_id: 'doc_123' } });
   render(<PracticeActions />);
-  expect(await screen.findByRole('link', { name: 'All RemNote cards' })).toHaveAttribute('href', 'https://www.remnote.com/flashcards');
+  expect(await screen.findByRole('link', { name: /Review 2 due/ })).toHaveAttribute('href', 'https://www.remnote.com/flashcards');
   expect(screen.getByRole('link', { name: 'Langfour document' })).toHaveAttribute('href', 'https://www.remnote.com/flashcards/doc_123');
   expect(db.from).toHaveBeenCalledTimes(1);
   expect(db.select).toHaveBeenCalledWith('review_provider, remnote_root_rem_id');
@@ -35,14 +35,14 @@ it('keeps all cards reachable alongside the document without a second settings r
 it.each([null, '../../invalid'])('keeps all reviews reachable without a valid document (%s)', async (root) => {
   db.maybeSingle.mockResolvedValue({ data: { review_provider: 'remnote', remnote_root_rem_id: root } });
   render(<PracticeActions />);
-  expect(await screen.findByRole('link', { name: 'All RemNote cards' })).toHaveAttribute('href', 'https://www.remnote.com/flashcards');
+  expect(await screen.findByRole('link', { name: /Review 2 due/ })).toHaveAttribute('href', 'https://www.remnote.com/flashcards');
   expect(screen.queryByRole('link', { name: 'Langfour document' })).not.toBeInTheDocument();
 });
 
 it('uses Langfour reviews without loading separate document settings', async () => {
   db.maybeSingle.mockResolvedValue({ data: { review_provider: 'langfour', remnote_root_rem_id: 'old_doc' } });
   render(<PracticeActions />);
-  expect(await screen.findByRole('button', { name: 'Start review' })).toBeEnabled();
+  expect(await screen.findByRole('button', { name: /Review 2 due/ })).toBeEnabled();
   expect(screen.queryByRole('link')).not.toBeInTheDocument();
   expect(db.from).toHaveBeenCalledTimes(1);
 });

@@ -68,7 +68,7 @@ export default function SchedulerLabel({ provider, remnote, onDisconnect }: Sche
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="-mr-2 inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+        className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800"
         aria-expanded={open}
       >
         {dot}
