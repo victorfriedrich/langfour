@@ -25,7 +25,12 @@
 -- HOW THIS GETS APPLIED: through the Supabase connector, like the other
 -- files here. Idempotent.
 
-create or replace function public.classify_words(language_filter text, tokens text[])
+-- classify_words_for takes the user explicitly, for the API's MCP tools
+-- (mcp_server.py), which run with the service role on behalf of an OAuth user
+-- and so have no auth.uid(). Signed-in clients call classify_words, which
+-- passes their own id. Under RLS (security invoker) another user's id finds
+-- none of that user's rows, so every token comes back 'new'.
+create or replace function public.classify_words_for(p_user_id uuid, language_filter text, tokens text[])
 returns table (token text, word_id integer, status text)
 language sql
 stable
@@ -60,13 +65,13 @@ as $$
     known as (
         select k.word_id
         from public.user_known_words k
-        where k.user_id = (select auth.uid())
+        where k.user_id = p_user_id
           and k.word_id in (select word_id from candidates)
     ),
     mine as (
         select uw.word_id, uw.status
         from public.userwords uw
-        where uw.user_id = (select auth.uid())
+        where uw.user_id = p_user_id
           and uw.word_id in (select word_id from candidates)
     ),
     rated as (
@@ -89,6 +94,19 @@ as $$
              case r.status when 'known' then 1 when 'ignored' then 2 when 'learning' then 3 else 4 end,
              r.priority,
              r.word_id;
+$$;
+
+revoke execute on function public.classify_words_for(uuid, text, text[]) from public, anon;
+grant execute on function public.classify_words_for(uuid, text, text[]) to authenticated, service_role;
+
+create or replace function public.classify_words(language_filter text, tokens text[])
+returns table (token text, word_id integer, status text)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+    select * from public.classify_words_for((select auth.uid()), language_filter, tokens);
 $$;
 
 grant execute on function public.classify_words(text, text[]) to authenticated;

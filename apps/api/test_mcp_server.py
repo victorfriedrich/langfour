@@ -17,6 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 import mcp_server
+import test_vocabulary
 from test_practice import USER, FakeStore
 
 HEADERS = {"accept": "application/json, text/event-stream", "content-type": "application/json"}
@@ -26,7 +27,9 @@ def test_record_practice_over_http_as_the_signed_in_user(monkeypatch):
     # Wired the way app.py wires it: the MCP route joins the app, and a
     # middleware in front sets request.state.user (auth.AuthMiddleware in prod).
     store = FakeStore()
+    vocab_store = test_vocabulary.FakeStore()
     monkeypatch.setattr(mcp_server, "get_practice_store", lambda: store)
+    monkeypatch.setattr(mcp_server, "get_vocabulary_store", lambda: vocab_store)
 
     @asynccontextmanager
     async def lifespan(_):
@@ -45,9 +48,23 @@ def test_record_practice_over_http_as_the_signed_in_user(monkeypatch):
     with TestClient(app) as client:
         tools = client.post("/mcp", headers=HEADERS,
                             json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).json()
-        [tool] = tools["result"]["tools"]
-        assert tool["name"] == "record_practice"
-        assert tool["annotations"]["readOnlyHint"] is False
+        read_only = {t["name"]: t["annotations"]["readOnlyHint"] for t in tools["result"]["tools"]}
+        assert read_only == {"record_practice": False, "record_exposure": False,
+                             "get_vocabulary": True, "score_text": True}
+
+        vocab = client.post("/mcp", headers=HEADERS, json={
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "get_vocabulary", "arguments": {}},
+        }).json()["result"]
+        assert not vocab.get("isError"), vocab
+        assert vocab_store.calls == [("vocabulary", USER, None, "due", 50)]
+
+        too_long = client.post("/mcp", headers=HEADERS, json={
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "score_text",
+                       "arguments": {"language": "es", "text": "a" * 20_001}},
+        }).json()["result"]
+        assert too_long.get("isError")
 
         res = client.post("/mcp", headers=HEADERS, json={
             "jsonrpc": "2.0", "id": 2, "method": "tools/call",

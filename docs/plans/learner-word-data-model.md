@@ -1,9 +1,8 @@
 # Learner–word data model
 
 Status as of 2026-10-29. Steps 1, 2, 2a and 4 are merged (PR #54) and applied to the live
-database; the 17 dropped functions' definitions are kept in `archive.dropped_functions`. **Step 3
-is implemented** on branch `feat/langfour-provider` (`sql/langfour_provider.sql`), not applied
-yet; it has to land before ChatGPT practice goes to users. Covers how Langfour stores what a user does
+database; the 17 dropped functions' definitions are kept in `archive.dropped_functions`. Step 3
+is merged (PR #55, `sql/langfour_provider.sql`) and applied. Covers how Langfour stores what a user does
 with a word: the decisions they make, the reviews from any flashcard system, and evidence from
 outside them (ChatGPT practice through the MCP server, the reader, videos). Written while
 designing the MCP server. Section 2a lists improvements to the RemNote plugin's speed and
