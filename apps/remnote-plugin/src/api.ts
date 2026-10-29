@@ -12,6 +12,7 @@ export interface LinkedWordDetails {
   word_id: number;
   language: string;
   added_at: string;
+  invalid?: boolean; // the dictionary audit says it is not a word (a name, English, a typo)
 }
 
 export interface ReviewPayload {

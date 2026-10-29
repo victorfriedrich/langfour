@@ -10,7 +10,8 @@ Three routers, three kinds of caller (auth.py enforces the split):
                          Approves pairings, shows the connection, disconnects.
   /sync/remnote          the RemNote plugin, with its access token.
                          `pending` hands out learning words that have no Rem
-                         yet; `push` records which Rem and cards the plugin
+                         yet, leaving out words the dictionary audit marked
+                         invalid (sql/word_status.sql); `push` records which Rem and cards the plugin
                          made and the reviews RemNote graded. `inbox` says
                          whether there is anything to do (new words, practice
                          results from ChatGPT, see practice.py) and `practice`
@@ -145,6 +146,9 @@ class LinkedWord(BaseModel):
     word_id: int
     language: str
     added_at: str
+    # The dictionary audit says it is not a word (a name, English, a typo).
+    # The plugin deletes the Rem it made for one if it was never reviewed.
+    invalid: bool = False
 
 
 class LinkedResponse(BaseModel):
@@ -235,18 +239,19 @@ class SyncStore:
         """Oldest first, with the dictionary entry embedded."""
         return _select_all(lambda: (
             self.db.table("userwords")
-            .select("word_id, created_at, words(root, language, translation)")
+            .select("word_id, created_at, words(root, language, translation, status)")
             .eq("user_id", user_id).eq("status", "learning")
             .order("created_at").order("word_id")
         ))
 
     def word_details(self, user_id: str) -> dict[int, dict]:
-        """word_id -> {language, added_at} for every word the user has."""
+        """word_id -> {language, added_at, invalid} for every word the user has."""
         rows = _select_all(lambda: (
-            self.db.table("userwords").select("word_id, created_at, words(language)")
+            self.db.table("userwords").select("word_id, created_at, words(language, status)")
             .eq("user_id", user_id).order("word_id")
         ))
-        return {r["word_id"]: {"language": r["words"]["language"], "added_at": r["created_at"]}
+        return {r["word_id"]: {"language": r["words"]["language"], "added_at": r["created_at"],
+                               "invalid": r["words"].get("status") == "invalid"}
                 for r in rows if r.get("words")}
 
     def custom_translations(self, user_id: str) -> dict[int, str]:
@@ -271,8 +276,10 @@ class SyncStore:
         return moved
 
     def count_learning_words(self, user_id: str) -> int:
-        res = (self.db.table("userwords").select("word_id", count="exact")
-               .eq("user_id", user_id).eq("status", "learning").limit(1).execute())
+        """Learning words RemNote may get: not those marked invalid."""
+        res = (self.db.table("userwords").select("word_id, words!inner(status)", count="exact")
+               .eq("user_id", user_id).eq("status", "learning")
+               .neq("words.status", "invalid").limit(1).execute())
         return res.count or 0
 
     # -- notes ------------------------------------------------------------
@@ -285,14 +292,16 @@ class SyncStore:
     def count_notes(self, user_id: str, *, active_only: bool = False,
                     learning_only: bool = False) -> int:
         # The inner embed filters notes by their word's status through the
-        # composite FK to userwords.
-        columns = "id, userwords!inner(status)" if learning_only else "id"
+        # composite FK to userwords. learning_only counts the same words as
+        # count_learning_words, invalid ones left out, so the two subtract.
+        columns = "id, userwords!inner(status, words!inner(status))" if learning_only else "id"
         query = (self.db.table("srs_notes").select(columns, count="exact")
                  .eq("user_id", user_id).eq("provider", PROVIDER))
         if active_only:
             query = query.is_("removed_at", "null")
         if learning_only:
-            query = query.eq("userwords.status", "learning")
+            query = (query.eq("userwords.status", "learning")
+                     .neq("userwords.words.status", "invalid"))
         return query.limit(1).execute().count or 0
 
     def linked_rems(self, user_id: str, word_ids: list[int]) -> dict[int, str]:
@@ -477,10 +486,13 @@ def get_store() -> SyncStore:
 
 def pending_words(store: SyncStore, user_id: str, limit: int) -> PendingResponse:
     """Learning words that have never had a Rem. A word whose Rem was deleted
-    keeps its (removed) note, so it is not offered again."""
+    keeps its (removed) note, so it is not offered again. Nor is a word the
+    dictionary audit marked invalid: it would be a flashcard for a name or an
+    English word."""
     linked = {n["word_id"] for n in store.notes_for_user(user_id)}
     todo = [r for r in store.learning_words(user_id)
-            if r["word_id"] not in linked and r.get("words")]
+            if r["word_id"] not in linked and r.get("words")
+            and r["words"].get("status") != "invalid"]
     custom = store.custom_translations(user_id) if todo else {}
 
     words = [
@@ -497,8 +509,8 @@ def pending_words(store: SyncStore, user_id: str, limit: int) -> PendingResponse
 
 
 def linked_words(store: SyncStore, user_id: str) -> LinkedResponse:
-    """Language and save date of every word that has a Rem. The plugin keeps
-    neither on the Rem itself, so it asks here."""
+    """Language, save date and validity of every word that has a Rem. The
+    plugin keeps none of them on the Rem itself, so it asks here."""
     details = store.word_details(user_id)
     return LinkedResponse(words=[
         LinkedWord(word_id=n["word_id"], **details[n["word_id"]])

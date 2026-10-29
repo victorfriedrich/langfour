@@ -19,7 +19,7 @@ async function syncAndReport(plugin: ReactRNPlugin, { quiet }: { quiet: boolean 
   try {
     const summary = await syncNow(plugin);
     // Background runs stay silent unless something happened or went wrong.
-    if (!quiet || summary.error || summary.created || summary.removed || summary.disabled || summary.enabled) {
+    if (!quiet || summary.error || summary.created || summary.invalid || summary.removed || summary.disabled || summary.enabled) {
       await plugin.app.toast(describeSync(summary));
     }
   } catch (error) {

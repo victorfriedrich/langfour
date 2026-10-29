@@ -29,6 +29,7 @@ export interface SyncSummary {
   notes: number;
   reviews: number;
   removed: number;
+  invalid: number;  // cards deleted because their word is not a word
   disabled: number; // words stopped because their cards were turned off, or
   enabled: number;  // resumed because they were turned back on
   rejected: number;
@@ -216,6 +217,26 @@ async function migrateLayout(plugin: RNPlugin, layout: Layout, words: LinkedWord
   await plugin.storage.setSynced(STORAGE_LAYOUT_VERSION, LAYOUT_VERSION);
 }
 
+/** Delete the Rems this plugin made for words the dictionary audit marked
+ *  invalid (names, English words, typos), as long as they were never
+ *  reviewed. The sweep then marks their notes removed, so Langfour stops the
+ *  words and does not offer them again. A flashcard the user made, or one
+ *  with reviews, is kept. Returns the words that are left. */
+async function removeInvalid(plugin: RNPlugin, words: LinkedWord[], details: Map<number, { invalid?: boolean }>) {
+  const junk = words.filter((w) => details.get(w.wordId)?.invalid && !w.cards.some((c) => gradedReviews(c).length));
+  if (junk.length === 0) return { words, removed: 0 };
+  const root = await plugin.rem.findByName([ROOT_DOC], null);
+  if (!root) return { words, removed: 0 };
+  const insideLangfour = new Set((await root.getDescendants()).map((r) => r._id));
+  const gone = new Set<string>();
+  for (const word of junk) {
+    if (!insideLangfour.has(word.remId)) continue;
+    await word.rem.remove();
+    gone.add(word.remId);
+  }
+  return { words: words.filter((w) => !gone.has(w.remId)), removed: gone.size };
+}
+
 async function readSettings(plugin: RNPlugin, runId: string) {
   const token = await readToken(plugin);
   if (!token) throw new NotConnectedError();
@@ -235,7 +256,7 @@ async function run(plugin: RNPlugin, { api, direction, linkExisting }: Settings,
   const since = full ? 0 : lastSuccess - OVERLAP_MS;
   const summary: SyncSummary = {
     at: startedAt, lastSuccessAt: startedAt, lastFullAt: full ? startedAt : lastFull,
-    created: 0, linked: 0, notes: 0, reviews: 0, removed: 0, disabled: 0, enabled: 0, rejected: 0,
+    created: 0, linked: 0, notes: 0, reviews: 0, removed: 0, invalid: 0, disabled: 0, enabled: 0, rejected: 0,
   };
 
   const layout = new Layout(plugin);
@@ -244,7 +265,9 @@ async function run(plugin: RNPlugin, { api, direction, linkExisting }: Settings,
   for (const [id, d] of details) languages[id] = d.language;
 
   const allCards = await plugin.card.getAll();
-  const existingWords = await loadLinkedWords(plugin, allCards);
+  const cleaned = await removeInvalid(plugin, await loadLinkedWords(plugin, allCards), details);
+  const existingWords = cleaned.words;
+  summary.invalid = cleaned.removed;
   // Tidying up existing Rems must never block syncing: on failure it is
   // retried next run, and the reason is shown on the progress page.
   await migrateLayout(plugin, layout, existingWords, details).catch((error) => {
@@ -409,7 +432,7 @@ export async function syncNow(plugin: RNPlugin): Promise<SyncSummary> {
       at: Date.now(),
       lastSuccessAt: previous?.lastSuccessAt ?? null,
       lastFullAt: previous?.lastFullAt ?? null,
-      created: 0, linked: 0, notes: 0, reviews: 0, removed: 0, disabled: 0, enabled: 0, rejected: 0,
+      created: 0, linked: 0, notes: 0, reviews: 0, removed: 0, invalid: 0, disabled: 0, enabled: 0, rejected: 0,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -470,6 +493,7 @@ export function describeSync(summary: SyncSummary): string {
   if (summary.created) parts.push(`${plural(summary.created, 'new card')}`);
   if (summary.linked) parts.push(`${plural(summary.linked, 'existing flashcard')} linked`);
   if (summary.reviews) parts.push(`${plural(summary.reviews, 'review')} reported`);
+  if (summary.invalid) parts.push(`${plural(summary.invalid, 'card')} for non-words deleted`);
   if (summary.removed) parts.push(`${plural(summary.removed, 'deleted Rem')} noted`);
   if (summary.disabled) parts.push(`${plural(summary.disabled, 'word')} with cards turned off stopped`);
   if (summary.enabled) parts.push(`${plural(summary.enabled, 'word')} with cards turned back on resumed`);
