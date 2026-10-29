@@ -5,6 +5,7 @@ export interface RemnoteConnection {
   connected: boolean;
   token_created_at: string | null;
   token_last_used_at: string | null;
+  last_sync_at: string | null; // when a sync run last completed
   linked_words: number;
   pending_words: number;
 }

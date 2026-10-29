@@ -31,7 +31,7 @@ Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 | `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known, disabled` (`disabled`: flashcards turned off in RemNote, set by the sync; see `remnote_sync.sql`); SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
 | `flashcardtests` | `id`, `user_id`, `word_id`, `test_type`, `test_result`, `tested_at` | PK `id`; `test_type` in `flashcard, typing`; index `(user_id, word_id, test_result)` |
 | `usertranslations` | `id`, `user_id`, `word_id`, `custom_translation`, `created_at` | PK `id`; index `(user_id, word_id)` |
-| `userwordinteraction` | `id`, `user_id`, `word_id`, `location`, `seen_at` | PK `id`. Never written to; read only by `get_user_counts_with_wordforms` |
+| `userwordinteraction` | `id`, `user_id`, `word_id`, `location`, `seen_at` | PK `id`. Never written to; read only by `get_user_counts_with_wordforms`. Dropped by `word_events.sql` (not applied yet) |
 | `videos_seen` | `id`, `user_id`, `video_id`, `seen_at` | PK `id` (identity); unique `(user_id, video_id)` |
 | `user_roles` | `user_id`, `role`, `created_at` | PK `user_id`; `role` in `user, admin` |
 
@@ -54,6 +54,16 @@ Policies: `srs_*_select_own` on the three `srs_` data tables (cards and
 reviews check ownership through `srs_notes`). `api_tokens`,
 `api_token_pairings` and `srs_sync_leases` have none: only the API reads or
 writes them.
+
+### Word events and the practice outbox (`word_events.sql`, `srs_outbox.sql`, not applied yet)
+
+| Table | Columns | Keys and constraints |
+|---|---|---|
+| `word_events` | `id`, `user_id`, `word_id`, `kind`, `source`, `occurred_at`, `context jsonb` | PK `id` (identity); FK `user_id → auth.users` on delete cascade, `word_id → words`; `kind` in `saved, lookup, exposure, recall_correct, recall_wrong`; `source` in `chatgpt, reader, video, extension, web`; indexes `(user_id, word_id)`, `(user_id, occurred_at)`. Append-only: policies `select_own`, `insert_own`, no update/delete for clients |
+| `srs_outbox` | `event_id`, `card_id`, `outcome`, `status`, `decided_at`, `reason`, `applied_review_at` | PK `event_id` → `word_events` on delete cascade; FK `card_id → srs_cards` on delete set null; `outcome` in `again, good`; `status` in `pending, applied, skipped`; partial index `(card_id) where status = 'pending'`. Policy `select_own` through `word_events`; written only by the API |
+
+Also `userdata.remnote_last_sync_at` (end of `remnote_sync.sql`): when the
+plugin last completed a sync run. See `docs/plans/learner-word-data-model.md`.
 
 ### Known words (`known_words.sql`, applied 2026-10-01)
 
@@ -102,7 +112,7 @@ name in each app; `none` means nothing in the repo calls it today.
 | `get_streak_data()` | table(revision_date, revision_count) | none |
 | `get_top_words_by_due_date()` | table(word_id, word_root, translation, next_review_due_at) | none |
 | `get_translation_for_word(_word_id)` | text | web |
-| `get_user_counts_with_wordforms(_word_id)` | table(reviewcount, seencount, alternative_wordforms) | web |
+| `get_user_counts_with_wordforms(_word_id)` | table(reviewcount, seencount, alternative_wordforms) | web. `word_events.sql` (not applied yet) counts both review systems and reads exposures from `word_events` |
 | `get_user_default_language()` | text | web, extension |
 | `get_user_words(language_filter)` | table(word_id, word_root, translation, next_review_due_at) | web |
 | `get_user_words_with_cursor(last_fetched_id, fetch_limit)` | table(word, translation, status) | none |
@@ -128,7 +138,7 @@ name in each app; `none` means nothing in the repo calls it today.
 | `move_words_to_userwords(_word_ids int[], _status, _source)` | void | none |
 | `my_word_statuses()` | jsonb [[word_id, status]] | extension. Reads `userwords`, `user_known_words` (lexicon.sql) |
 | `rebuild_lexicon_pages(language_filter, page_words)` | integer | run by hand after dictionary changes; not granted to clients (lexicon.sql) |
-| `recall_efficiency_last_7_days()` | numeric | web |
+| `recall_efficiency_last_7_days()` | numeric | none (its hook was never imported); dropped by `drop_uncalled_functions.sql`, not applied yet |
 | `set_user_default_language(_language)` | void | web, extension |
 | `srs_acquire_sync_lease(p_user_id uuid, p_holder text, p_seconds int)` | boolean | api. Execute granted to `service_role` only; takes a user id for that reason |
 | `set_userwords_status(_word_ids int[], _status)` | void | web |

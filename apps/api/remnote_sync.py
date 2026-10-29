@@ -11,7 +11,10 @@ Three routers, three kinds of caller (auth.py enforces the split):
   /sync/remnote          the RemNote plugin, with its access token.
                          `pending` hands out learning words that have no Rem
                          yet; `push` records which Rem and cards the plugin
-                         made and the reviews RemNote graded.
+                         made and the reviews RemNote graded. `inbox` says
+                         whether there is anything to do (new words, practice
+                         results from ChatGPT, see practice.py) and `practice`
+                         takes the plugin's report on those results.
 
 Pairing is the OAuth device flow (RFC 8628) in miniature: the plugin shows a
 short code and opens Langfour, the signed-in user approves that code, and the
@@ -35,6 +38,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from auth import get_current_user, hash_access_token
+from practice import (
+    PracticeItem,
+    PracticeReport,
+    PracticeStore,
+    get_practice_store,
+    pending_practice,
+    report_practice,
+)
 from supabase_client import supabase
 
 logger = logging.getLogger(__name__)
@@ -155,8 +166,16 @@ class ConnectionStatus(BaseModel):
     connected: bool
     token_created_at: str | None
     token_last_used_at: str | None
+    # When a sync run last completed. token_last_used_at moves on every plugin
+    # request, inbox checks included, so it can't tell whether syncs finish.
+    last_sync_at: str | None
     linked_words: int
     pending_words: int
+
+
+class InboxResponse(BaseModel):
+    pending_words: int  # learning words waiting for a Rem
+    practice: int       # practice results waiting to be added to cards
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +450,15 @@ class SyncStore:
         (self.db.table("userdata").update({"remnote_root_rem_id": rem_id})
          .eq("user_id", user_id).execute())
 
+    def set_last_sync(self, user_id: str, at: str) -> None:
+        (self.db.table("userdata").update({"remnote_last_sync_at": at})
+         .eq("user_id", user_id).execute())
+
+    def last_sync(self, user_id: str) -> str | None:
+        res = (self.db.table("userdata").select("remnote_last_sync_at")
+               .eq("user_id", user_id).limit(1).execute())
+        return (res.data or [{}])[0].get("remnote_last_sync_at")
+
 
 def get_store() -> SyncStore:
     return SyncStore(supabase)
@@ -604,6 +632,9 @@ def apply_push(store: SyncStore, user_id: str, req: PushRequest,
 
     if req.root_rem_id:
         store.set_root_rem(user_id, req.root_rem_id)
+    # The sweep is the last push of every sync run, so it marks one as completed.
+    if req.present_rem_ids is not None:
+        store.set_last_sync(user_id, now_iso)
 
     return PushResponse(
         notes=len(saved),
@@ -678,6 +709,48 @@ def sync_relink(
     relink(store, str(user.id), req)
 
 
+def count_pending_words(store: SyncStore, user_id: str) -> int:
+    """Learning words minus those that already have a note (a removed note
+    included, since that word is not offered again). Counts only, no rows."""
+    return max(0, store.count_learning_words(user_id)
+               - store.count_notes(user_id, learning_only=True))
+
+
+@sync_router.get("/inbox", response_model=InboxResponse)
+def sync_inbox(
+    user=Depends(get_current_user),
+    store: SyncStore = Depends(get_store),
+    practice: PracticeStore = Depends(get_practice_store),
+):
+    """Whether there is anything to do. Cheap enough to call often (the plugin
+    checks when a review session starts and every few minutes), and unleased:
+    it only counts. The work itself goes through leased requests."""
+    user_id = str(user.id)
+    return InboxResponse(pending_words=count_pending_words(store, user_id),
+                         practice=practice.count_pending(user_id))
+
+
+@sync_router.get("/practice", response_model=list[PracticeItem])
+def sync_practice_pending(
+    _run: str = Depends(hold_sync_lease),
+    user=Depends(get_current_user),
+    practice: PracticeStore = Depends(get_practice_store),
+):
+    """Leased like the rest of a run: two devices applying the same results
+    would add each review twice."""
+    return pending_practice(practice, str(user.id))
+
+
+@sync_router.post("/practice")
+def sync_practice_report(
+    report: PracticeReport,
+    _run: str = Depends(hold_sync_lease),
+    user=Depends(get_current_user),
+    practice: PracticeStore = Depends(get_practice_store),
+):
+    return {"decided": report_practice(practice, str(user.id), report)}
+
+
 @sync_router.post("/release", status_code=204)
 def sync_release(
     x_sync_run: str = Header(..., min_length=8, max_length=64),
@@ -695,17 +768,14 @@ def sync_release(
 def connection_status(user=Depends(get_current_user), store: SyncStore = Depends(get_store)):
     user_id = str(user.id)
     token = store.active_token(user_id)
-    # Counts only, no rows: learning words minus those that already have a
-    # note (a removed note included, since that word is not offered again).
     # Nothing syncs without a token, so the pending count is skipped then.
-    pending = (store.count_learning_words(user_id) - store.count_notes(user_id, learning_only=True)
-               if token else 0)
     return ConnectionStatus(
         connected=token is not None,
         token_created_at=token and token["created_at"],
         token_last_used_at=token and token["last_used_at"],
+        last_sync_at=store.last_sync(user_id) if token else None,
         linked_words=store.count_notes(user_id, active_only=True),
-        pending_words=max(0, pending),
+        pending_words=count_pending_words(store, user_id) if token else 0,
     )
 
 

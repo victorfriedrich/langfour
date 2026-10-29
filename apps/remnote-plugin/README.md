@@ -28,13 +28,20 @@ go back to Langfour so it knows how well each word is learned.
   Click a word to open its Rem.
 - **Respects deletions.** If you delete a card's Rem, Langfour records that and
   does not create the card again.
+- **Adds practice from Langfour.** When you practise vocabulary in an AI chat
+  connected to Langfour, the results are added to the matching cards: a wrong
+  answer as Again, a right one as Good, and a right one only if the card is
+  due. At most one result per card per day.
 - **Stops words you turn off.** Turning a word's flashcards off in RemNote, or
   deleting its Rem, stops the word in Langfour too; turning them back on, or
   restoring the Rem, resumes it. Its review history is kept either way.
 
 Syncing is automatic: when RemNote starts (desktop or mobile), every hour
 while it is open, and when you open the progress page. Answers and turned-off
-cards are sent as they happen in between. **Langfour: Sync now** exists in the command
+cards are sent as they happen in between; if sending fails, the plugin tries
+again, also after a restart. When a review session starts, and every 10
+minutes, the plugin asks Langfour whether new words or practice results are
+waiting, so they arrive without waiting for the hourly sync. **Langfour: Sync now** exists in the command
 palette for troubleshooting. Disconnecting in Langfour revokes the token; the
 plugin notices on its next sync and asks to connect again.
 
@@ -45,6 +52,12 @@ plugin notices on its next sync and asks to connect again.
    and a link to Langfour; approve the code there. Nothing needs copying:
    the plugin collects its token itself, and the token can only sync words
    and reviews.
+
+**What leaves RemNote.** The plugin sends Langfour, and nothing else: the
+Langfour words it holds, each card's review history (date and grade) and next
+due date, whether a word's flashcards are turned on, and the id of the
+Langfour document. Note text outside the Langfour document is read only to
+find matching flashcards and is never sent.
 
 **Permissions.** To find flashcards you already have, the plugin reads your
 whole knowledge base and may tag a matching card with its powerup. It only
@@ -86,13 +99,17 @@ Uploading the plugin as unlisted also needs `repoUrl` in
 |---|---|
 | `src/widgets/index.tsx` | Registers settings, the `langfour_word` powerup, the commands and the progress page, then syncs on start and on a timer |
 | `src/sync.ts` | One sync: link or create Rems for pending words, push cards and reviews, then send the list of Rems that still exist |
+| `src/live.ts` | Between syncs: sends answers and turned-off cards as they happen, retries failed sends, and checks the inbox when a review session starts and every 10 minutes |
+| `src/inbox.ts` | The inbox: adds practice results to their cards under the sync lease, and starts a sync when new words are waiting |
+| `src/practice.ts` | When a practice result may be added to a card |
 | `src/match.ts` | Matching a word to a flashcard the user already has |
 | `src/stats.ts` | The progress calculations |
 | `src/widgets/progress.tsx` | The progress page |
 | `src/api.ts` | Client for the API's `/pair/remnote` and `/sync/remnote` endpoints |
 | `src/connection.ts` | The stored token and waiting for a pairing to be approved |
 
-The server side is `apps/api/remnote_sync.py` and `apps/api/sql/remnote_sync.sql`.
+The server side is `apps/api/remnote_sync.py` and `apps/api/practice.py`, with
+`apps/api/sql/remnote_sync.sql` and `apps/api/sql/srs_outbox.sql`.
 Each Rem stores its Langfour word id in a hidden powerup slot, and nothing
 else: the language and save date come from the API. That id is how a sync
 that stopped half-way recovers without creating duplicates.
