@@ -7,68 +7,85 @@ used directly -- no network, and no mock of the thing being verified.
 """
 
 import itertools
+import re
 from pathlib import Path
 
 import pytest
 
-pytest.importorskip("youtube_transcript_api")
 pytest.importorskip("moviepy")
-
-from youtube_transcript_api import NoTranscriptFound
-from youtube_transcript_api._transcripts import Transcript, TranscriptList
 
 import videoparsing as vp
 
-
-def track_list(manual=(), generated=(), video_id="v1"):
-    def build(code, gen):
-        return Transcript(None, video_id, "url", code, code, gen, [])
-    return TranscriptList(video_id,
-                          {c: build(c, False) for c in manual},
-                          {c: build(c, True) for c in generated}, {})
+TRACK = "https://www.youtube.com/api/timedtext?v=v1&lang={code}&fmt=json3"
 
 
-def chosen(language, manual=(), generated=()):
-    """The track fetch_transcript would pick, without fetching it."""
-    tracks = track_list(manual, generated)
-    original = vp.YouTubeTranscriptApi.list
-    try:
-        vp.YouTubeTranscriptApi.list = lambda _self, _vid: tracks
-        picked = {}
-        for transcript in tracks:
-            transcript.fetch = lambda t=transcript: picked.setdefault("code", t.language_code)
-        vp.fetch_transcript("v1", language)
-        return picked.get("code")
-    finally:
-        vp.YouTubeTranscriptApi.list = original
+def video(manual=(), asr=(), translated=(), video_id="v1"):
+    """yt-dlp's info dict, reduced to what caption_track() reads."""
+    def formats(code, tlang=None):
+        url = TRACK.format(code=code) + (f"&tlang={tlang}" if tlang else "")
+        return [{"ext": "vtt", "url": url + "&vtt"}, {"ext": "json3", "url": url}]
+    automatic = {c: formats(c) for c in asr}
+    automatic.update({c: formats("en", tlang=c) for c in translated})
+    return {"id": video_id, "subtitles": {c: formats(c) for c in manual},
+            "automatic_captions": automatic}
 
 
-@pytest.mark.parametrize("language,manual,generated,expected", [
-    ("pt", (), ("pt-BR",), "pt-BR"),          # the bug: bare code, regional track
-    ("en", (), ("en-US",), "en-US"),
-    ("de", (), ("de-DE", "en"), "de-DE"),     # the right regional, not the other language
-    ("es", (), ("es-419",), "es-419"),
-    ("es", ("es",), ("es-419", "en"), "es"),  # exact code beats a regional variant
-    ("es", ("es",), ("es",), "es"),           # manual beats ASR
+def chosen(language, **tracks):
+    url = vp.caption_track(video(**tracks), language)
+    return url and re.search(r"lang=([\w-]+)", url).group(1)
+
+
+@pytest.mark.parametrize("language,tracks,expected", [
+    ("pt", {"asr": ("pt-BR",)}, "pt-BR"),                    # bare code, regional track
+    ("en", {"asr": ("en-US",)}, "en-US"),
+    ("de", {"asr": ("de-DE", "en")}, "de-DE"),               # the right regional, not the other language
+    ("es", {"asr": ("es-419",)}, "es-419"),
+    ("es", {"manual": ("es",), "asr": ("es-419", "en")}, "es"),
+    ("es", {"manual": ("es-419",), "asr": ("es",)}, "es-419"),  # manual beats ASR
+    ("es", {"asr": ("es", "es-orig")}, "es-orig"),           # YouTube's ASR original first
 ])
-def test_regional_caption_tracks_are_matched_on_the_primary_subtag(
-        language, manual, generated, expected):
+def test_tracks_are_matched_on_the_primary_subtag(language, tracks, expected):
     """require_code() always yields a bare ISO 639-1 code, but YouTube publishes
-    'pt-BR' and 'en-US' as readily as 'es'. The library compares the two with an
-    exact dict lookup -- still true in 1.2.4 -- so every regional track was
-    invisible and the video looked as though it had no captions."""
-    assert chosen(language, manual, generated) == expected
+    'pt-BR' and 'en-US' as readily as 'es'."""
+    assert chosen(language, **tracks) == expected
 
 
-def test_no_matching_track_raises_so_main_can_fall_back_to_whisper():
-    with pytest.raises(NoTranscriptFound):
-        chosen("es", generated=("ja", "ko"))
+def test_a_machine_translated_track_is_never_used():
+    """automatic_captions offers an English video translated into every
+    language. The Spanish one reads as Spanish, so only its tlang gives it away."""
+    assert vp.caption_track(video(asr=("en",), translated=("es",)), "es") is None
 
 
-def test_the_old_exact_match_really_did_miss_regional_tracks():
-    """Pins the bug itself, so a future revert cannot pass silently."""
-    with pytest.raises(NoTranscriptFound):
-        track_list(generated=("pt-BR",)).find_transcript(["pt"])
+def test_no_matching_track_means_whisper():
+    assert vp.caption_track(video(asr=("ja", "ko")), "es") is None
+    with pytest.raises(vp.NoCaptions):
+        vp.fetch_transcript(video(asr=("ja",)), "es", session=object())
+
+
+def test_json3_cues_become_text_without_sound_tags():
+    data = {"events": [{"segs": [{"utf8": "[Música]"}]},
+                       {"segs": [{"utf8": "hola"}, {"utf8": " a"}, {"utf8": " todos"}]},
+                       {"segs": [{"utf8": "\n"}]},
+                       {"tStartMs": 5},
+                       {"segs": [{"utf8": "qué  tal"}]}]}
+    assert vp.json3_text(data) == "hola a todos qué tal"
+
+
+def test_one_request_fetches_the_track_and_429_is_a_block():
+    class Session:
+        def __init__(self, status):
+            self.status, self.urls = status, []
+
+        def get(self, url):
+            self.urls.append(url)
+            return type("R", (), {"status_code": self.status, "raise_for_status": lambda _: None,
+                                  "json": lambda _: {"events": [{"segs": [{"utf8": "hola"}]}]}})()
+
+    ok = Session(200)
+    assert vp.fetch_transcript(video(asr=("es",)), "es", ok) == "hola"
+    assert ok.urls == [TRACK.format(code="es")]
+    with pytest.raises(vp.CaptionsBlocked):
+        vp.fetch_transcript(video(asr=("es",)), "es", Session(429))
 
 
 # ═════════════════════════════════ a track's label is a claim, not a guarantee ══
@@ -167,11 +184,11 @@ def test_caption_requests_are_spaced_and_time_out(monkeypatch):
 
 
 def blocking(calls, failures=99):
-    def fetch(video_id, language, session):
-        calls.append((video_id, session.proxies.get("https")))
+    def fetch(info, language, session):
+        calls.append((info["id"], session.proxies.get("https")))
         if len(calls) <= failures:
-            raise vp.RequestBlocked(video_id)
-        return [type("S", (), {"text": SPANISH})()]
+            raise vp.CaptionsBlocked(info["id"])
+        return SPANISH
     return fetch
 
 
@@ -187,8 +204,8 @@ def test_without_a_proxy_a_block_pauses_captions_instead_of_retrying(captions):
     calls = []
     captions.setattr(vp, "CAPTION_PROXY_URL", None)
     captions.setattr(vp, "fetch_transcript", blocking(calls))
-    assert vp.caption_text("v1", "es") is None
-    assert vp.caption_text("v2", "es") is None
+    assert vp.caption_text({"id": "v1"}, "es") is None
+    assert vp.caption_text({"id": "v2"}, "es") is None
     assert [v for v, _ in calls] == ["v1"]          # v2 never asked YouTube
 
 
@@ -204,7 +221,7 @@ def test_with_a_proxy_a_blocked_video_is_retried_once_on_a_new_ip(captions):
     calls = []
     captions.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
     captions.setattr(vp, "fetch_transcript", blocking(calls, failures=1))
-    assert vp.caption_text("v1", "es") == SPANISH
+    assert vp.caption_text({"id": "v1"}, "es") == SPANISH
     assert len(calls) == 2 and calls[0][1] != calls[1][1]
 
 
@@ -213,7 +230,7 @@ def test_with_a_proxy_captions_pause_after_repeated_blocked_videos(captions):
     captions.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
     captions.setattr(vp, "fetch_transcript", blocking(calls))
     for vid in ("v1", "v2", "v3", "v4"):
-        assert vp.caption_text(vid, "es") is None
+        assert vp.caption_text({"id": vid}, "es") is None
     assert [v for v, _ in calls] == ["v1", "v1", "v2", "v2", "v3", "v3"]   # v4 skipped
 
 
@@ -221,13 +238,13 @@ def test_a_proxy_that_refuses_pauses_captions(captions):
     calls = []
     captions.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
 
-    def refused(video_id, language, session):
-        calls.append(video_id)
+    def refused(info, language, session):
+        calls.append(info["id"])
         raise vp.requests.exceptions.ProxyError("Tunnel connection failed: 407")
 
     captions.setattr(vp, "fetch_transcript", refused)
-    assert vp.caption_text("v1", "es") is None
-    assert vp.caption_text("v2", "es") is None
+    assert vp.caption_text({"id": "v1"}, "es") is None
+    assert vp.caption_text({"id": "v2"}, "es") is None
     assert calls == ["v1"]
 
 

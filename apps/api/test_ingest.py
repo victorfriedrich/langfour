@@ -26,7 +26,7 @@ def scored(monkeypatch):
 def test_run_scores_finished_transcripts_only(corpus, monkeypatch, scored):
     (corpus / "a_processed.json").write_text("{}")
     monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
-    monkeypatch.setattr(ingest, "transcribe", lambda vid, lang: ("failed", "boom"))
+    monkeypatch.setattr(ingest, "transcribe", lambda vid, lang, captions: ("failed", "boom"))
     sb = FakeSupabase([pending("a"), pending("b")])
     ingest.run(sb, "es", limit=5)
     assert scored == [("a", "es")]
@@ -70,7 +70,7 @@ def test_run_treats_existing_transcript_as_done(corpus, monkeypatch):
 
 def test_run_records_failure_and_leaves_row_retryable(corpus, monkeypatch):
     monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
-    monkeypatch.setattr(ingest, "transcribe", lambda vid, lang: ("failed", "boom"))
+    monkeypatch.setattr(ingest, "transcribe", lambda vid, lang, captions: ("failed", "boom"))
     sb = FakeSupabase([pending("a")])
     assert ingest.run(sb, "es", limit=5) == {"done": 0, "failed": 1}
     row = sb.row("a")
@@ -148,7 +148,7 @@ def test_run_loads_the_word_cache_before_the_first_transcript(corpus, monkeypatc
     order = []
     monkeypatch.setattr(ingest, "prepare_cache", lambda: order.append("cache"))
     monkeypatch.setattr(ingest, "transcribe",
-                        lambda vid, lang: (order.append(vid), ("done", None))[1])
+                        lambda vid, lang, captions: (order.append(vid), ("done", None))[1])
     ingest.run(FakeSupabase([pending("a"), pending("b")]), "es", limit=5)
     assert order == ["cache", "a", "b"]          # once, and before any parsing
 
@@ -180,7 +180,7 @@ def test_dry_run_lists_exactly_what_run_would_claim(corpus, monkeypatch):
     claimed = []
     monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
     monkeypatch.setattr(ingest, "transcribe",
-                        lambda vid, lang: (claimed.append(vid), ("done", None))[1])
+                        lambda vid, lang, captions: (claimed.append(vid), ("done", None))[1])
     ingest.run(FakeSupabase(rows), "es", limit=3)
     # priority outranks score; the attempt-capped and other-language rows are
     # invisible to both. Same query, so the same answer, in the same order.
