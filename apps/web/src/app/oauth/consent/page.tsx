@@ -78,7 +78,8 @@ function ConsentRequest({ authorizationId }: { authorizationId: string }) {
             <p className="text-sm text-gray-700"><strong>{details.client.name || 'An AI app'}</strong> wants to connect to your Langfour account.</p>
             <p className="text-sm text-gray-600">Signed in as {details.user.email}</p>
             <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
-              <li>Record vocabulary practice results.</li>
+              <li>See which words you know and are learning.</li>
+              <li>Record vocabulary practice results and texts you read.</li>
               <li>Update your learning progress and schedule flashcard reviews, including in RemNote when connected.</li>
               {details.scope.split(/\s+/).filter(Boolean).map(scope => (
                 <li key={scope}>Account permission: {scope}</li>

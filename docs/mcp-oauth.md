@@ -10,7 +10,11 @@ Use **OAuth** in ChatGPT's developer-mode custom app or a Claude remote
 connector. Supabase handles client registration, authorization codes, PKCE,
 refresh tokens and consent grants. Langfour supplies the consent page and
 protected-resource metadata. RemNote does not need to be published to test MCP.
-The only tool currently exposed is `record_practice`.
+The tools: `get_vocabulary` (known, learning and due words) and `score_text`
+(how much of a text the user knows) read; `record_practice` (practice results)
+and `record_exposure` (a text the user read) write. The two read tools run the
+`mcp_vocabulary` and `classify_words_for` functions in
+`apps/api/sql/mcp_vocabulary.sql` and `classify_words.sql`.
 
 ## Deployment order
 
@@ -67,7 +71,9 @@ Auth, so it works with either existing HS256 or asymmetric signing keys.
 2. `POST /mcp` without a token must return 401 with a metadata challenge.
 3. Connect through an OAuth client. Verify both Deny and Allow paths, and that
    a signed-out user returns to consent after following the login email.
-4. List tools; expect `record_practice`. Ask the AI to report a short practice
+4. List tools; expect `get_vocabulary`, `score_text`, `record_practice` and
+   `record_exposure`. Ask for your due words and a short text at your level.
+   Ask the AI to report a short practice
    session with one **existing learning word** and check that Langfour records
    the result. This changes real learning progress; choose the example yourself.
 5. A token refresh must retain the MCP audiences and role. The OAuth token must
