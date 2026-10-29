@@ -17,7 +17,10 @@ supabase==2.7.4
 uvicorn==0.30.6
 youtube-transcript-api==1.2.4
 # videoparsing downloads audio for Whisper with it; pytubefix only reads metadata.
-yt-dlp==2026.8.19
+# YouTube now serves its player challenges as JavaScript: [default] brings the
+# yt-dlp-ejs solver and pin-deno a Deno binary to run it, which yt-dlp finds
+# in the venv's bin without PATH. Without both, formats go missing.
+yt-dlp[default,pin-deno]==2026.10.26
 # flashcards.py decompresses collection.anki21b, the format recent Anki
 # writes. Nothing else pulls zstandard in, so without it every modern
 # .apkg import fails with a 500 that only appears in the container.
