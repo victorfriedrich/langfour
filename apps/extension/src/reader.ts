@@ -9,8 +9,7 @@ import { WEB_URL } from './config';
 import { AccountResponse, askBackground, ClassifyWordsResponse, sendToBackground, WordProgressResponse, WordStatus } from './messages';
 import { loadArticle, StoredArticle } from './readerArticles';
 import { hostOf } from './pageTitle';
-
-type TranslationResult = Awaited<ReturnType<typeof fetchTranslation>>;
+import { appendWordProgress, createLoadingPopup, createMessagePopup, createWordPopup } from './wordPopup';
 
 let readerLanguage: Language | null = null;
 let signedIn = false;
@@ -90,6 +89,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Don’t let this bubble up and trigger the document listener below
     e.stopPropagation();
+  });
+
+  // A double click on a new word saves it without the popup.
+  container.addEventListener('dblclick', (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target.classList?.contains('word')) return;
+    closeWordPopups();
+    if (!signedIn || !readerLanguage || !isNewWord(target)) return;
+    window.getSelection()?.removeAllRanges();
+    quickSave(target, readerLanguage);
   });
 
   // Escape dismisses any open word popup.
@@ -466,7 +475,12 @@ function handleWordClick(wordElement: HTMLElement): void {
       return;
     }
 
-    const popup = createWordPopup(wordElement.textContent || '', translation, isNewWord(wordElement));
+    const wordText = wordElement.textContent || '';
+    const popup = createWordPopup(
+      wordText,
+      translation,
+      translation.id && isNewWord(wordElement) ? createFlashcardButton(wordText, translation.id) : undefined,
+    );
     appendProgress(popup, wordElement);
     showPopup(popup, wordElement);
   });
@@ -477,68 +491,6 @@ function showPopup(popup: HTMLElement, wordElement: HTMLElement): void {
   positionPopup(popup, wordElement);
   // Next frame, so the transition runs from the hidden state.
   requestAnimationFrame(() => popup.classList.add('show'));
-}
-
-// Create a loading popup element.
-function createLoadingPopup(wordText: string): HTMLDivElement {
-  const popup = document.createElement('div');
-  popup.className = 'word-popup loading-popup';
-  popup.innerHTML = `
-    <div class="sheet-handle" aria-hidden="true"></div>
-    <div class="popup-header"></div>
-    <div class="loading-content"><div class="spinner small"></div></div>
-  `;
-  (popup.querySelector('.popup-header') as HTMLElement).textContent = wordText;
-  return popup;
-}
-
-function createMessagePopup(wordText: string, message: string): HTMLDivElement {
-  const popup = document.createElement('div');
-  popup.className = 'word-popup';
-  popup.innerHTML = `
-    <div class="sheet-handle" aria-hidden="true"></div>
-    <div class="popup-header"></div>
-    <div class="popup-message"></div>
-  `;
-  (popup.querySelector('.popup-header') as HTMLElement).textContent = wordText;
-  (popup.querySelector('.popup-message') as HTMLElement).textContent = message;
-  return popup;
-}
-
-// Create a word popup element with translations.
-function createWordPopup(wordText: string, translation: NonNullable<TranslationResult>, offerSaving: boolean): HTMLDivElement {
-  const popup = document.createElement('div');
-  popup.className = 'word-popup';
-  popup.innerHTML = '<div class="sheet-handle" aria-hidden="true"></div>';
-
-  // The dictionary form ("la fechoría", "creer"), not the form tapped: that
-  // is what a flashcard would hold.
-  const header = document.createElement('div');
-  header.className = 'popup-header';
-  header.textContent = translation.root || wordText;
-  popup.appendChild(header);
-
-  // The translations are alternatives of equal standing, not a best guess
-  // followed by lesser ones.
-  const translationsContainer = document.createElement('div');
-  translationsContainer.className = 'translations-container';
-  const options = (translation.translation ?? '').split(',').map((t: string) => t.trim()).filter(Boolean);
-  if (options.length) {
-    for (const text of options) {
-      const translationEl = document.createElement('span');
-      translationEl.className = 'translation';
-      translationEl.textContent = text;
-      translationsContainer.appendChild(translationEl);
-    }
-  } else {
-    translationsContainer.innerHTML = '<span class="translation">No translation available</span>';
-  }
-  popup.appendChild(translationsContainer);
-
-  if (translation.id && offerSaving) {
-    popup.appendChild(createFlashcardButton(wordText, translation.id));
-  }
-  return popup;
 }
 
 /**
@@ -556,70 +508,10 @@ function isInUserWords(wordElement: HTMLElement): boolean {
   return status === 'learning' || status === 'known';
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-// English, like the rest of the extension's interface.
-const dateFormat = new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short' });
-const dateFormatWithYear = new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric' });
-const relativeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-
-function formatDate(iso: string): string {
-  const date = new Date(iso);
-  return (date.getFullYear() === new Date().getFullYear() ? dateFormat : dateFormatWithYear).format(date);
-}
-
-/** "today", "3 days ago", "in 2 weeks": whole days, then weeks, months and years. */
-function formatRelative(iso: string): string {
-  const days = Math.round((new Date(iso).getTime() - Date.now()) / DAY_MS);
-  const abs = Math.abs(days);
-  if (abs < 7) return relativeFormat.format(days, 'day');
-  if (abs < 31) return relativeFormat.format(Math.round(days / 7), 'week');
-  if (abs < 365) return relativeFormat.format(Math.round(days / 30), 'month');
-  return relativeFormat.format(Math.round(days / 365), 'year');
-}
-
-function nextReviewText(iso: string): string {
-  const due = new Date(iso).getTime();
-  if (due > Date.now()) return `next review ${formatRelative(iso)}`;
-  return Date.now() - due < DAY_MS ? 'due now' : `due since ${formatDate(iso)}`;
-}
-
-/**
- * For a word the user is learning or knows: one line on when it was added
- * and how its reviews went, filled in once word_progress answers.
- */
+/** For a word the user is learning or knows: how its reviews went. */
 function appendProgress(popup: HTMLElement, wordElement: HTMLElement): void {
   const wordId = Number(wordElement.dataset.wordId);
-  if (!isInUserWords(wordElement) || !wordId) return;
-
-  // Under the word, like the byline under an article's title.
-  const section = document.createElement('div');
-  section.className = 'word-progress';
-  const header = popup.querySelector('.popup-header');
-  if (header) header.after(section);
-  else popup.appendChild(section);
-
-  void askBackground<WordProgressResponse>({ type: 'WORD_PROGRESS', wordId }).then((response) => {
-    if (!response?.ok || !response.progress) {
-      section.remove();
-      return;
-    }
-    const progress = response.progress;
-    // The status carries the word's own mark from the text, so the sheet
-    // reads as being about the highlight that was tapped.
-    const mark = document.createElement('span');
-    mark.className = `progress-mark progress-${progress.status}`;
-    mark.textContent = progress.status === 'known' ? 'Known' : 'Learning';
-
-    const parts: string[] = [];
-    if (progress.added_at) parts.push(`added ${formatDate(progress.added_at)}`);
-    if (progress.review_count === 0) {
-      if (progress.status === 'learning') parts.push('not reviewed yet');
-    } else {
-      parts.push(`${progress.review_count} ${progress.review_count === 1 ? 'review' : 'reviews'}`);
-      if (progress.status === 'learning' && progress.next_review_at) parts.push(nextReviewText(progress.next_review_at));
-    }
-    section.append(mark, ...parts.map((part) => ` · ${part}`));
-  });
+  if (isInUserWords(wordElement) && wordId) appendWordProgress(popup, wordId);
 }
 
 /**
@@ -637,29 +529,47 @@ function createFlashcardButton(wordText: string, wordId: number): HTMLButtonElem
     // The marks switching to "learning" are the confirmation; the sheet has
     // nothing left to say. Only a failure is worth interrupting for.
     closeWordPopups();
-    const undo = markSaved(wordText, wordId);
-    sendToBackground<{ success: boolean; error?: string }>(
-      { type: 'ADD_WORD_TO_USERWORDS', wordId },
-      (response) => {
-        if (response?.success) return;
-        if (response) {
-          console.error('Could not save word:', response.error);
-          saveFailed(wordText, undo);
-          return;
-        }
-        // No answer at all: Safari can drop the reply of a save that went
-        // through, so ask whether the word is now among the user's.
-        void askBackground<WordProgressResponse>({ type: 'WORD_PROGRESS', wordId }).then((progress) => {
-          // word_progress also returns a row for unsaved words (status
-          // 'new'); only an active saved word confirms the write succeeded.
-          if (progress?.ok && (progress.progress?.status === 'learning' || progress.progress?.status === 'known')) return;
-          console.error('Could not save word: no answer from the background');
-          saveFailed(wordText, undo);
-        });
-      },
-    );
+    saveToFlashcards(wordText, wordId);
   });
   return btn;
+}
+
+function saveToFlashcards(wordText: string, wordId: number): void {
+  const undo = markSaved(wordText, wordId);
+  sendToBackground<{ success: boolean; error?: string }>(
+    { type: 'ADD_WORD_TO_USERWORDS', wordId },
+    (response) => {
+      if (response?.success) return;
+      if (response) {
+        console.error('Could not save word:', response.error);
+        saveFailed(wordText, undo);
+        return;
+      }
+      // No answer at all: Safari can drop the reply of a save that went
+      // through, so ask whether the word is now among the user's.
+      void askBackground<WordProgressResponse>({ type: 'WORD_PROGRESS', wordId }).then((progress) => {
+        // word_progress also returns a row for unsaved words (status
+        // 'new'); only an active saved word confirms the write succeeded.
+        if (progress?.ok && (progress.progress?.status === 'learning' || progress.progress?.status === 'known')) return;
+        console.error('Could not save word: no answer from the background');
+        saveFailed(wordText, undo);
+      });
+    },
+  );
+}
+
+/**
+ * The double-click save. The marks turn "learning" at once; the save waits
+ * for the translation, whose id is the base form the button would save.
+ */
+function quickSave(wordElement: HTMLElement, language: string): void {
+  const wordText = wordElement.textContent || '';
+  const undo = markSaved(wordText, Number(wordElement.dataset.wordId) || 0);
+  void fetchTranslation(wordText, language).then((translation) => {
+    undo();
+    if (translation?.id) saveToFlashcards(wordText, translation.id);
+    else saveFailed(wordText, () => undefined);
+  });
 }
 
 function saveFailed(wordText: string, undo: () => void): void {

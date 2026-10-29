@@ -44,6 +44,14 @@
     },
     {
       "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "src/chatgptHighlight.ts"
+      ]
+    },
+    {
+      "matches": [
         "https://app.langfour.com/*",
         "http://localhost:3000/*"
       ],

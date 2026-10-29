@@ -412,7 +412,7 @@ body.font-sans .popup-header,
 body.font-sans .translations-container,
 body.font-sans .dismissable-translation { font-family: var(--sans); }
 .translations-container { padding: 2px 16px 14px; font-size: 18px; line-height: 1.4; color: var(--text-2); }
-.translation + .translation::before { content: " · "; }
+.translation { display: block; }
 .popup-message { padding: 4px 16px 14px; font-size: 15px; line-height: 1.45; color: var(--text-2); }
 .loading-content { display: flex; justify-content: center; padding: 14px 16px 18px; }
 
