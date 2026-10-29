@@ -43,6 +43,7 @@ class Recommender:
         self.supabase: Client = _shared_supabase
         
         self.blacklisted_files = blacklisted_files
+        self.hidden_videos = self._load_hidden_videos()
 
         # Load every language at startup so the first user request for any
         # language does not pay the matrix load/build cost. _ensure_language_loaded
@@ -220,6 +221,22 @@ class Recommender:
             "top30_avg": float(np.mean(percentages[-count:])),
             "bottom30_avg": float(np.mean(percentages[:count])),
         }
+
+    def _load_hidden_videos(self) -> set[str]:
+        """Videos video_quality.hidden() rejects: garbled captions, lessons for
+        another language, songs, and low-content videos.
+
+        Unlike the blacklist they stay in the matrix -- they only never get
+        recommended -- so re-tuning a threshold needs a restart, not a rebuild.
+        A failed read recommends everything rather than nothing."""
+        import video_quality
+        try:
+            hidden = video_quality.hidden_ids(self.supabase)
+        except Exception:
+            logger.warning("Could not load video scores; not filtering", exc_info=True)
+            return set()
+        logger.info("Hiding %d videos by quality score", len(hidden))
+        return hidden
 
     def _load_blacklist(self) -> set:
         """Load blacklisted filenames from blacklist.txt"""
@@ -540,6 +557,10 @@ class Recommender:
             # Skip if already seen
             if video_id in seen_video_ids:
                 continue
+
+            # Skip if the quality scores reject it
+            if video_id in self.hidden_videos:
+                continue
                 
             # Skip if wrong category
             if filter_category and cats[i] != filter_category:
@@ -677,6 +698,8 @@ class Recommender:
         valid_indices = []
         for doc_index in range(min(D.shape[0], len(files))):
             if filter_category and cats[doc_index] != filter_category:
+                continue
+            if files[doc_index].replace("_processed.json", "") in self.hidden_videos:
                 continue
             valid_indices.append(doc_index)
 

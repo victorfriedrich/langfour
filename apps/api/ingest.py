@@ -15,6 +15,8 @@ discovery found it, a person typed it in, or a user submitted it from the app.
 The primary key is the dedup, so a submission that overlaps the corpus is free.
 
 Claims are compare-and-set on status, so several workers can share one queue.
+Every finished transcript is also rated with Jev (video_quality.py), which is
+what lets the recommender skip garbled and low-content videos.
 
     python ingest.py seed-done --lang es --ledger data/yt_es.json
     python ingest.py run --lang es --limit 40
@@ -169,6 +171,20 @@ def transcribe(video_id: str, lang: str) -> tuple[str, str | None]:
     return "failed", "no transcript written"
 
 
+def score(sb, http, video_id: str, lang: str) -> None:
+    """Rate a finished transcript for the recommender (video_quality.py).
+
+    Never fails the video: an unscored video is simply not filtered, and
+    scripts/score_videos.py picks it up on its next run."""
+    import video_quality
+    try:
+        processed = json.loads(processed_file(lang, video_id).read_text("utf-8"))
+        video_quality.score_and_store(sb, http, video_id, lang, processed.get("title") or "",
+                                      video_quality.transcript_words(processed))
+    except Exception as exc:
+        print(f"    not scored: {type(exc).__name__}: {str(exc)[:200]}", flush=True)
+
+
 def run(sb, lang: str, limit: int, dry_run: bool = False) -> dict[str, int]:
     rows = pending(sb, lang, limit) if dry_run else claim(sb, lang, limit)
     tally = {"done": 0, "failed": 0}
@@ -176,6 +192,7 @@ def run(sb, lang: str, limit: int, dry_run: bool = False) -> dict[str, int]:
     # a full pass over words/wordforms, and a dry run parses nothing.
     if rows and not dry_run:
         prepare_cache()
+    http = None
     for n, row in enumerate(rows, 1):
         vid = row["video_id"]
         print(f"[{n}/{len(rows)}] {vid}  {(row.get('title') or '')[:60]}", flush=True)
@@ -187,10 +204,17 @@ def run(sb, lang: str, limit: int, dry_run: bool = False) -> dict[str, int]:
             status, error = "done", None
         else:
             status, error = transcribe(vid, lang)
+        if status == "done":
+            if http is None:
+                import video_quality
+                http = video_quality.client()
+            score(sb, http, vid, lang)
         finish(sb, vid, status, error)
         tally[status] += 1
         if error:
             print(f"    failed: {error}", flush=True)
+    if http is not None:
+        http.close()
     return tally
 
 

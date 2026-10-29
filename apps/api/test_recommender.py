@@ -27,7 +27,38 @@ def make_recommender(rows, categories=None, titles=None):
     recommender.total_words_per_doc = {
         "es": np.asarray(matrix.sum(axis=1)).ravel()
     }
+    recommender.hidden_videos = set()
     return recommender
+
+
+def test_hidden_videos_are_never_recommended():
+    recommender = make_recommender([np.ones(150, dtype=np.int8)] * 3)
+    recommender.hidden_videos = {"video-1"}
+
+    async def get_known_words(_user_id):
+        return [0]
+
+    async def get_seen_videos(_user_id):
+        return []
+
+    recommender.get_known_words = get_known_words
+    recommender.get_seen_videos = get_seen_videos
+
+    by_words = [v["id"] for v in recommender.recommend_videos_by_words([0], "es")]
+    for_user = [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es"))]
+    assert sorted(by_words) == sorted(for_user) == ["video-0", "video-2"]
+
+
+def test_unreadable_scores_hide_nothing(monkeypatch):
+    import video_quality
+
+    def boom(_sb):
+        raise RuntimeError("supabase down")
+
+    monkeypatch.setattr(video_quality, "hidden_ids", boom)
+    recommender = Recommender.__new__(Recommender)
+    recommender.supabase = None
+    assert recommender._load_hidden_videos() == set()
 
 
 def test_categories_come_from_loaded_manifest_data():

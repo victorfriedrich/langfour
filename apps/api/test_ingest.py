@@ -2,12 +2,46 @@
 
 import json
 from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock
 
 import pytest
 
 import ingest
 from conftest import FakeSupabase
 from conftest import queued as pending
+
+real_score = ingest.score     # the autouse fixture below replaces ingest.score
+
+
+@pytest.fixture(autouse=True)
+def scored(monkeypatch):
+    """Record what run() hands to the scorer instead of calling Jev."""
+    import video_quality
+    calls = []
+    monkeypatch.setattr(video_quality, "client", lambda: Mock())
+    monkeypatch.setattr(ingest, "score", lambda sb, http, vid, lang: calls.append((vid, lang)))
+    return calls
+
+
+def test_run_scores_finished_transcripts_only(corpus, monkeypatch, scored):
+    (corpus / "a_processed.json").write_text("{}")
+    monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
+    monkeypatch.setattr(ingest, "transcribe", lambda vid, lang: ("failed", "boom"))
+    sb = FakeSupabase([pending("a"), pending("b")])
+    ingest.run(sb, "es", limit=5)
+    assert scored == [("a", "es")]
+
+
+def test_a_scoring_failure_never_fails_the_video(corpus, monkeypatch, capsys):
+    import video_quality
+    (corpus / "a_processed.json").write_text(json.dumps({"title": "t", "content": [{"content": "hola"}]}))
+
+    def boom(*_args):
+        raise RuntimeError("jev down")
+
+    monkeypatch.setattr(video_quality, "score_and_store", boom)
+    real_score(FakeSupabase([]), Mock(), "a", "es")
+    assert "not scored: RuntimeError: jev down" in capsys.readouterr().out
 
 
 def test_claim_is_compare_and_set():
