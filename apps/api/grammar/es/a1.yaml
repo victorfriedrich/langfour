@@ -1,0 +1,641 @@
+level: a1
+chapters:
+  - id: es.pronombres_sujeto
+    title: "Pronombres personales y tratamiento"
+    goal: "Know who is who: I, you, she, we, and when to say tú or usted."
+    concepts:
+      - id: forms
+        title: "Subject pronouns"
+        scope: "yo, tú, él, ella, usted, nosotros/nosotras, vosotros/vosotras, ellos, ellas, ustedes. Feminine plural forms only for all-female groups; a mixed group is masculine."
+        difficulty: easy
+      - id: usted
+        title: "usted and ustedes take third-person verbs"
+        scope: "usted (formal you) and ustedes take the él/ellos verb form (usted es, ustedes tienen). When to use usted: strangers in formal settings, older people, customers. Usage differs by country; tú is the default among peers."
+        pitfall: "usted eres → usted es"
+      - id: plural_you
+        title: "Plural you: vosotros or ustedes"
+        scope: "Spain: vosotros for informal plural you, ustedes formal. Latin America (and the Canaries, western Andalusia): ustedes for every plural you, vosotros not used. Teach the learner's variety; make the other recognisable."
+        difficulty: easy
+
+  - id: es.ser
+    title: "Ser"
+    goal: "Introduce yourself and others: name, origin, job, what someone is like."
+    concepts:
+      - id: forms
+        title: "Forms of ser"
+        scope: "soy, eres, es, somos, sois, son."
+        difficulty: easy
+        lemmas: [ser]
+      - id: identity
+        title: "ser for identity and definitions"
+        scope: "Who or what someone or something is: names (Soy Ana; Me llamo Ana as a fixed phrase), relationships (Es mi hermano), definitions (Es una mesa)."
+        difficulty: easy
+        see: [es.ser_estar_1.nouns_ser]
+      - id: origin
+        title: "ser de for origin, ser + nationality"
+        scope: "ser de + place for origin (Soy de Hamburgo, ¿De dónde eres?), ser + nationality adjective (Es mexicana)."
+        difficulty: easy
+      - id: profession
+        title: "ser + profession, no article"
+        scope: "Soy profesora, Es médico, Soy alemán: no article before a bare profession, nationality or religion. With an adjective the article comes back (Es una médica muy buena)."
+        pitfall: "Soy un profesor → Soy profesor"
+      - id: characteristics
+        title: "ser for what someone or something is like"
+        scope: "Describing inherent qualities: appearance, personality, size, price level (Es alto, Es simpática, La casa es grande, Es caro)."
+        later: [es.ser_estar_1.characteristic_vs_state, es.ser_estar_2.perceived_change]
+      - id: possession_material
+        title: "ser de for owner and material"
+        scope: "Es de María (it's María's), La mesa es de madera (made of wood)."
+        difficulty: easy
+
+  - id: es.presente_regular
+    title: "Presente: verbos regulares"
+    goal: "Talk about your everyday life, work and habits."
+    concepts:
+      - id: ar
+        title: "-ar verbs"
+        scope: "-o, -as, -a, -amos, -áis, -an (hablo, hablas, habla, hablamos, habláis, hablan)."
+        difficulty: easy
+      - id: er
+        title: "-er verbs"
+        scope: "-o, -es, -e, -emos, -éis, -en (como, comes, come, comemos, coméis, comen)."
+        difficulty: easy
+      - id: ir
+        title: "-ir verbs"
+        scope: "Like -er except nosotros -imos and vosotros -ís (vivo, vives, vive, vivimos, vivís, viven)."
+        difficulty: easy
+      - id: pro_drop
+        title: "Leave out the subject pronoun"
+        scope: "The verb ending shows the person, so subject pronouns are normally dropped (Vivo en Berlín. Trabajo en un banco). Use them for contrast (Yo trabajo, él no), emphasis, or to resolve ambiguity in third person and usted."
+        difficulty: hard
+        pitfall: "Yo soy Ana. Yo vivo en Berlín. Yo tengo… → drop the repeated yo"
+        later: [es.orden_enfasis.pronoun_emphasis]
+      - id: no_it
+        title: "No pronoun for it"
+        scope: "There is no subject pronoun for it, nor for weather and time: Es importante. Llueve. Es tarde. Está en la mesa (it is on the table). él and ella only refer to people (and animals)."
+        pitfall: "Él es importante (meaning it) → Es importante"
+      - id: uses
+        title: "One present for now and for habits"
+        scope: "The simple present covers habits (Trabajo en un banco), what's true now (Vivo en Madrid), general truths, and what is happening at the moment of speaking (¿Qué haces? — Leo)."
+        later: [es.gerundio_1.use_now]
+      - id: future_scheduled
+        title: "Present for the planned future"
+        scope: "With a time expression, the present refers to plans and timetables (Mañana trabajo, El tren sale a las cinco, El sábado vamos al cine)."
+        see: [es.perifrasis_1.ir_a]
+      - id: offers
+        title: "Present questions for offers and permission"
+        scope: "¿Abro la ventana? ¿Te ayudo? ¿Pago yo? — the present asks shall I…? where English and German use a modal."
+
+  - id: es.sustantivo
+    title: "El sustantivo: género y número"
+    goal: "Use nouns with the right gender and plural."
+    concepts:
+      - id: gender_o_a
+        title: "-o masculine, -a feminine"
+        scope: "Most nouns in -o are masculine (el libro), most in -a feminine (la casa)."
+        difficulty: easy
+        later: [es.sustantivo.gender_ma, es.sustantivo.gender_exceptions]
+      - id: gender_endings
+        title: "Endings that tell the gender"
+        scope: "Feminine: -ción, -sión, -dad, -tad, -tud, -umbre (la canción, la ciudad, la costumbre). Masculine: -aje, -or (el viaje, el color; la flor is an exception)."
+      - id: gender_learn
+        title: "-e and consonant nouns: learn the gender"
+        scope: "Nouns in -e or a consonant can be either gender (la clase, la noche, la leche, el coche, el árbol, la sal). Always learn the noun with its article."
+      - id: gender_ma
+        title: "Masculine nouns in -ma"
+        scope: "Nouns of Greek origin in -ma are masculine: el problema, el tema, el sistema, el programa, el idioma, el clima."
+        pitfall: "la problema → el problema"
+      - id: gender_exceptions
+        title: "Common exceptions"
+        scope: "el día, el mapa, el planeta, el sofá; la mano; shortened words keep the gender of the full word: la foto(grafía), la moto(cicleta), la radio."
+      - id: people
+        title: "Gender for people"
+        scope: "-o/-a pairs (el amigo, la amiga), -or/-ora (profesor, profesora), same form with article showing gender for -ista and -nte (el/la turista, el/la estudiante), different words (padre/madre, hombre/mujer)."
+        difficulty: easy
+      - id: mixed_plural
+        title: "Masculine plural for mixed groups"
+        scope: "los padres (parents), los hermanos (siblings), los hijos (children), los reyes."
+        difficulty: easy
+      - id: plural
+        title: "Plural -s, -es"
+        scope: "Vowel + -s (casas); consonant + -es (ciudades); -z → -ces (lápiz, lápices); unstressed -s doesn't change (el/los lunes, la/las crisis)."
+
+  - id: es.articulo_1
+    title: "Artículos I"
+    goal: "Use el, la, un, una where a native speaker would."
+    concepts:
+      - id: forms
+        title: "Definite and indefinite articles"
+        scope: "el, la, los, las; un, una, unos, unas."
+        difficulty: easy
+      - id: contractions
+        title: "al and del"
+        scope: "a + el = al, de + el = del (Voy al cine, la casa del profesor). Not with él (de él) or a name that includes El (de El Salvador)."
+        difficulty: easy
+      - id: def_vs_indef
+        title: "el or un"
+        scope: "un/una introduces something new or one of many (Tengo un perro); el/la for something known, unique or already mentioned (El perro se llama Max)."
+        later: [es.articulo_2.zero_article, es.articulo_2.generic_definite]
+      - id: unos
+        title: "unos, unas"
+        scope: "Some (Tengo unos amigos en Lima) and approximately (unos veinte euros)."
+        difficulty: easy
+      - id: days
+        title: "el lunes, los lunes"
+        scope: "el lunes = on Monday (this one), los lunes = on Mondays. No preposition (not en el lunes)."
+        pitfall: "en lunes → el lunes"
+      - id: titles
+        title: "Article with señor, doctora…"
+        scope: "Talking about someone: la señora García, el doctor Ruiz. Addressing them: no article (Buenos días, señora García)."
+
+  - id: es.adjetivo_1
+    title: "El adjetivo I"
+    goal: "Describe people, things and places."
+    concepts:
+      - id: agreement
+        title: "Adjective agreement"
+        scope: "Adjectives agree with the noun. -o adjectives have four forms (alto, alta, altos, altas); -e and most consonant-final adjectives two (grande/grandes, azul/azules, feliz/felices)."
+        difficulty: easy
+      - id: consonant_feminine
+        title: "Consonant adjectives with a feminine form"
+        scope: "Unlike other consonant-final adjectives, two groups take -a for feminine: nationalities (español/española, alemán/alemana, inglés/inglesa; the accent drops) and -or, -ón (trabajador/trabajadora, dormilón/dormilona)."
+      - id: position
+        title: "Adjective after the noun"
+        scope: "Descriptive adjectives normally follow the noun (un coche rojo, una ciudad bonita). Quantity words come before (mucho, poco, otro)."
+        later: [es.adjetivo_2.position_meaning]
+      - id: apocope
+        title: "buen, mal, gran, primer, tercer"
+        scope: "bueno, malo, primero, tercero drop -o before a masculine singular noun (un buen día, el primer piso). grande becomes gran before any singular noun and then means great (una gran ciudad)."
+        pitfall: "un bueno libro → un buen libro"
+
+  - id: es.gustar_1
+    title: "Gustar I"
+    goal: "Say what you and others like and don't like, agree and disagree."
+    concepts:
+      - id: structure
+        title: "me gusta, me gustan"
+        scope: "What is liked is the subject: me gusta + singular noun or infinitive (Me gusta el café, Me gusta leer), me gustan + plural noun (Me gustan los gatos)."
+        difficulty: hard
+        pitfall: "Yo gusto el café → Me gusta el café; Me gusta los perros → Me gustan"
+      - id: pronouns
+        title: "me, te, le, nos, os, les"
+        scope: "The person who likes is an indirect object pronoun: me, te, le, nos, os, les (Le gusta bailar, Nos gustan las películas)."
+        later: [es.objeto_indirecto.forms]
+      - id: a_mi
+        title: "a mí, a ti, a Juan"
+        scope: "a mí, a ti, a él… add emphasis or contrast (A mí me gusta, a ti no). With a name or noun, le/les stays: A Juan le gusta el fútbol."
+        pitfall: "A Juan gusta → A Juan le gusta"
+      - id: reactions
+        title: "A mí también, a mí tampoco, a mí sí, a mí no"
+        scope: "Agreeing with a positive (A mí también) or negative (A mí tampoco), disagreeing (A mí sí / A mí no)."
+      - id: encantar
+        title: "me encanta"
+        scope: "encantar works like gustar and means love it. It's already strong, so it isn't normally used with mucho."
+        difficulty: easy
+      - id: me_gustaria
+        title: "me gustaría"
+        scope: "Me gustaría + infinitive (I'd like to…), the polite way to say what you want."
+        difficulty: easy
+        chunk: true
+        later: [es.condicional.polite]
+
+  - id: es.estar_hay
+    title: "Estar y hay"
+    goal: "Say where things are, how people are, and what there is in a place."
+    concepts:
+      - id: forms
+        title: "Forms of estar"
+        scope: "estoy, estás, está, estamos, estáis, están (accents on all but estoy and estamos)."
+        difficulty: easy
+        lemmas: [estar]
+      - id: location
+        title: "estar for where something is"
+        scope: "Where specific people and things are (Madrid está en España, ¿Dónde está el baño?, Estoy en casa)."
+        difficulty: easy
+        later: [es.ser_estar_2.event_location]
+      - id: states
+        title: "estar for how someone is"
+        scope: "Temporary states and feelings (Estoy cansado, Está enferma, La tienda está cerrada) and ¿Cómo estás?"
+        later: [es.ser_estar_1.characteristic_vs_state]
+      - id: bien_mal
+        title: "estar bien, estar mal"
+        scope: "bien and mal are adverbs and go with estar (Estoy bien, Está mal), never with ser."
+        pitfall: "Es bien → Está bien"
+      - id: hay
+        title: "hay"
+        scope: "hay = there is / there are, one form for singular and plural (Hay un banco, Hay tres bancos). It states that something exists."
+        difficulty: easy
+      - id: hay_vs_esta
+        title: "hay or está"
+        scope: "hay + something unspecified (un, una, a number, mucho, no article): Hay un supermercado cerca. está/están + something specific (el, la, mi, a name): El supermercado está cerca."
+        difficulty: hard
+        pitfall: "Hay el banco en la plaza → El banco está en la plaza"
+      - id: location_prepositions
+        title: "Saying where: cerca de, al lado de…"
+        scope: "cerca de, lejos de, al lado de, delante de, detrás de, enfrente de, encima de, debajo de, a la derecha/izquierda de, entre, en. de + el = del (al lado del hotel)."
+        difficulty: easy
+
+  - id: es.ser_estar_1
+    title: "Ser o estar I"
+    goal: "Choose between ser and estar in everyday descriptions."
+    continues: es.estar_hay
+    teach: "These are the core cases. Ser o estar II and III add the exceptions; present the rules here as what usually holds."
+    concepts:
+      - id: characteristic_vs_state
+        title: "What it is like vs how it is now"
+        scope: "ser for qualities seen as part of someone or something (Es alto, Es tranquilo), estar for a condition or state at the moment (Está cansado, Está nervioso)."
+        difficulty: hard
+        later: [es.ser_estar_2.meaning_change, es.ser_estar_2.perceived_change]
+      - id: state_adjectives
+        title: "Adjectives that go with estar"
+        scope: "Adjectives that only describe states take estar: contento, cansado, enfermo, preocupado, lleno, vacío, roto, abierto, cerrado, listo (ready), solo (alone)."
+        later: [es.ser_estar_2.meaning_change]
+      - id: nouns_ser
+        title: "Noun after the verb: ser"
+        scope: "estar is never followed directly by a noun: Es mi profesora, Es un problema, Es médico."
+        pitfall: "Está profesor → Es profesor"
+        later: [es.ser_estar_2.estar_de]
+      - id: ser_de_estar_en
+        title: "ser de, estar en"
+        scope: "ser de for where someone or something comes from (Soy de Colonia), estar en for where they are now (Estoy en Madrid)."
+
+  - id: es.preguntas_1
+    title: "Preguntas"
+    goal: "Ask for information and answer questions."
+    concepts:
+      - id: question_words
+        title: "Question words"
+        scope: "qué, quién/quiénes, dónde, cuándo, cómo, cuánto/cuánta/cuántos/cuántas (agrees with the noun), por qué."
+        difficulty: easy
+      - id: word_order
+        title: "Question word order"
+        scope: "No auxiliary verb. After a question word the verb usually comes right after it, before the subject (¿Dónde vive Ana?). Yes/no questions can keep statement order with rising intonation (¿Ana vive aquí?)."
+      - id: preposition_first
+        title: "Preposition before the question word"
+        scope: "The preposition comes first: ¿De dónde eres? ¿Con quién vives? ¿Para qué es? ¿Adónde vas? It never stays at the end."
+        pitfall: "¿Dónde eres de? → ¿De dónde eres?"
+      - id: que_vs_cual
+        title: "qué or cuál"
+        scope: "qué + noun (¿Qué libro lees?), qué es… for a definition (¿Qué es un chiringuito?). cuál/cuáles to choose among options (¿Cuál prefieres?) and with ser for a piece of information (¿Cuál es tu número? ¿Cuál es la capital?)."
+        difficulty: hard
+        pitfall: "¿Qué es tu nombre? → ¿Cuál es tu nombre? / ¿Cómo te llamas?"
+      - id: por_que_porque
+        title: "¿por qué? and porque"
+        scope: "¿por qué? asks why (two words, accent); porque answers because (one word, no accent)."
+        difficulty: easy
+
+  - id: es.negacion
+    title: "Negación"
+    goal: "Say what you don't do, don't have and never do."
+    concepts:
+      - id: no_before_verb
+        title: "no before the verb"
+        scope: "no goes directly before the conjugated verb, and before any object pronouns (No trabajo; No lo sé)."
+        difficulty: easy
+      - id: double_negation
+        title: "Double negation"
+        scope: "nada, nadie, nunca, tampoco after the verb need no before the verb: No veo nada, No viene nadie, No voy nunca al cine."
+        difficulty: hard
+        pitfall: "Veo nada → No veo nada"
+      - id: negative_first
+        title: "Negative word first, no no"
+        scope: "When nunca, nadie or tampoco come before the verb, no is dropped: Nunca como carne, Nadie viene, Yo tampoco lo sé."
+      - id: tambien_tampoco
+        title: "también and tampoco"
+        scope: "también agrees with a positive statement, tampoco with a negative one: Yo también / Yo tampoco. A mí también / A mí tampoco with gustar-type verbs."
+        see: [es.gustar_1.reactions]
+      - id: si_no_contrast
+        title: "Yo sí, yo no"
+        scope: "Short contrasting answers: Yo no trabajo, pero ella sí."
+        difficulty: easy
+
+  - id: es.escritura
+    title: "Escritura y acentos"
+    goal: "Write what you can say with the right accents and spelling."
+    concepts:
+      - id: stress_rules
+        title: "Where the stress falls, when to write an accent"
+        scope: "Words ending in a vowel, -n or -s are stressed on the second-to-last syllable (casa, hablan); other words on the last (hablar, ciudad). A written accent marks every exception (café, árbol, canción, música)."
+        difficulty: hard
+      - id: accent_shift
+        title: "Accents that come and go"
+        scope: "Adding or removing a syllable can add or remove an accent, by the same rules: canción → canciones, alemán → alemana lose it; joven → jóvenes, examen → exámenes gain it."
+      - id: diacritic
+        title: "Accent that tells words apart"
+        scope: "tú/tu, él/el, mí/mi, sí/si, sé/se, té/te, más (more). solo and demonstratives (este, ese) no longer need an accent."
+      - id: question_words
+        title: "Accent on question and exclamation words"
+        scope: "qué, quién, cómo, dónde, cuándo, cuánto, cuál carry an accent in questions and exclamations; as connectors they don't (Dice que viene; Donde vivo hay un parque)."
+        later: [es.discurso_1.indirect_questions]
+      - id: inverted_marks
+        title: "¿ and ¡"
+        scope: "Questions and exclamations open with ¿ ¡ where the question or exclamation starts, which can be mid-sentence (Y tú, ¿qué haces?)."
+        difficulty: easy
+      - id: lowercase
+        title: "Lowercase days, months, languages, nationalities"
+        scope: "lunes, enero, español, alemana are lowercase. Only names of people, places and institutions are capitalised."
+        difficulty: easy
+        pitfall: "el Lunes, los Alemanes → el lunes, los alemanes"
+      - id: letters
+        title: "Spelling of the hard and soft sounds"
+        scope: "/k/ is c before a, o, u and qu before e, i; /θ, s/ is z before a, o, u and c before e, i; /g/ is gu before e, i (gü to pronounce the u); /x/ is j, or g before e, i. This explains verb spelling changes later (busqué, llegué, empecé, cojo)."
+        later: [es.indefinido_regular.spelling_yo]
+
+  - id: es.presente_irregular_1
+    title: "Presente: cambio de raíz"
+    goal: "Use the most common verbs in the present: querer, poder, pensar, dormir, pedir."
+    teach: "Teach the pattern first (the change happens in the four stressed forms), then one concept per change."
+    concepts:
+      - id: boot_pattern
+        title: "Where the stem changes"
+        scope: "The stem vowel changes in every form except nosotros and vosotros, because only those are stressed on the ending (quiero, quieres, quiere, queremos, queréis, quieren)."
+      - id: e_ie
+        title: "e → ie"
+        scope: "querer, pensar, empezar, preferir, entender, cerrar, perder, sentir (quiero, piensas, empieza)."
+      - id: o_ue
+        title: "o → ue"
+        scope: "poder, volver, dormir, costar, encontrar, recordar, contar, morir (puedo, vuelves, cuesta)."
+      - id: u_ue_jugar
+        title: "jugar: u → ue"
+        scope: "jugar is the only verb with u → ue (juego, juegas, jugamos)."
+        difficulty: easy
+        lemmas: [jugar]
+      - id: e_i
+        title: "e → i (-ir verbs only)"
+        scope: "pedir, repetir, servir, seguir, vestir, elegir (pido, repites, sirve)."
+      - id: spelling
+        title: "Spelling changes in yo"
+        scope: "To keep the sound: escoger → escojo, recoger → recojo, elegir → elijo, seguir → sigo. (coger, common in Spain, is vulgar in much of Latin America; use tomar or agarrar there.)"
+        see: [es.escritura.letters]
+
+  - id: es.presente_irregular_2
+    title: "Presente: verbos irregulares en yo y muy irregulares"
+    goal: "Use hacer, tener, ir, salir, conocer and other everyday verbs in the present."
+    concepts:
+      - id: go_verbs
+        title: "-go in yo"
+        scope: "hacer → hago, poner → pongo, salir → salgo, traer → traigo, caer → caigo, valer → valgo. Other forms regular."
+      - id: go_plus_stem
+        title: "tener, venir, decir: -go plus a stem change"
+        scope: "tengo, tienes, tiene, tenemos…; vengo, vienes…; digo, dices, dice, decimos…"
+        difficulty: hard
+        lemmas: [tener, venir, decir]
+      - id: zco
+        title: "-zco in yo"
+        scope: "-cer and -cir after a vowel: conocer → conozco, parecer → parezco, conducir → conduzco, traducir → traduzco, ofrecer → ofrezco."
+      - id: ir
+        title: "ir"
+        scope: "voy, vas, va, vamos, vais, van."
+        difficulty: easy
+        lemmas: [ir]
+      - id: only_yo
+        title: "doy, sé, veo: only yo is irregular"
+        scope: "dar → doy, saber → sé, ver → veo; the other forms are regular (das, sabes, ves)."
+        difficulty: easy
+        lemmas: [dar, saber, ver]
+      - id: saber_conocer
+        title: "saber or conocer"
+        scope: "saber for facts and information (Sé dónde vive, No sé su nombre) and, + infinitive, skills; conocer for people, places and things you're familiar with (Conozco a Ana, ¿Conoces Lima?)."
+        difficulty: hard
+        lemmas: [saber, conocer]
+        pitfall: "¿Sabes a Ana? → ¿Conoces a Ana?; ¿Conoces dónde está? → ¿Sabes dónde está?"
+      - id: ir_venir
+        title: "ir or venir"
+        scope: "venir is movement toward where the speaker is, ir toward anywhere else. Accepting an invitation to someone else's place: ¿Vienes a mi fiesta? — Sí, voy."
+        difficulty: hard
+        lemmas: [ir, venir]
+        pitfall: "Sí, vengo (said to the host, as in German ich komme) → Sí, voy"
+      - id: uir
+        title: "-uir: y in stressed forms"
+        scope: "construir, destruir, incluir, huir: construyo, construyes, construye, construimos, construís, construyen."
+      - id: oir
+        title: "oír"
+        scope: "oigo, oyes, oye, oímos, oís, oyen."
+        lemmas: [oír]
+
+  - id: es.perifrasis_1
+    title: "Perífrasis I: planes, obligaciones y capacidad"
+    goal: "Talk about plans, what you have to do and what you can do."
+    concepts:
+      - id: ir_a
+        title: "ir a + infinitive"
+        scope: "Plans and the near future: Voy a estudiar, Va a llover."
+        difficulty: easy
+        see: [es.presente_regular.future_scheduled]
+        later: [es.futuro_1.uses]
+      - id: tener_que
+        title: "tener que + infinitive"
+        scope: "Personal obligation: Tengo que trabajar."
+      - id: hay_que
+        title: "hay que + infinitive"
+        scope: "Impersonal obligation, no subject: Hay que pagar en la caja."
+      - id: modal_infinitive
+        title: "querer, poder, necesitar, preferir, pensar + infinitive"
+        scope: "Directly + infinitive, no preposition: Quiero viajar, Necesito dormir, Pienso ir (I intend to go)."
+        difficulty: easy
+      - id: saber_poder
+        title: "saber or poder"
+        scope: "saber + infinitive for a learned skill (Sé nadar), poder for possibility or permission (No puedo nadar hoy, ¿Puedo pasar?)."
+        difficulty: hard
+        pitfall: "No puedo nadar (never learned) → No sé nadar"
+
+  - id: es.posesivos_1
+    title: "Posesivos I"
+    goal: "Talk about your family, friends and things."
+    concepts:
+      - id: forms
+        title: "mi, tu, su, nuestro, vuestro"
+        scope: "mi(s), tu(s), su(s), nuestro/a/os/as, vuestro/a/os/as. They go before the noun."
+        difficulty: easy
+      - id: agreement
+        title: "Agreement with the thing owned"
+        scope: "The possessive agrees with what is owned, not with the owner: nuestras casas, mis hermanos. su/sus means his, her, its, their and your (usted/ustedes)."
+        pitfall: "their house: sus casa → su casa"
+      - id: su_clarify
+        title: "Clarifying su"
+        scope: "When su is ambiguous: el coche de él / de ella / de usted / de ellos."
+      - id: de
+        title: "de for possession"
+        scope: "No 's: el libro de Juan, la casa de mis padres."
+        difficulty: easy
+
+  - id: es.numeros_1
+    title: "Números I"
+    goal: "Use numbers to 100: prices, ages, phone numbers."
+    concepts:
+      - id: to_thirty
+        title: "0–30"
+        scope: "Up to 30, one word, with accents on dieciséis, veintidós, veintitrés, veintiséis."
+        difficulty: easy
+      - id: tens_y
+        title: "y between tens and units"
+        scope: "From 31: treinta y uno, cuarenta y cinco. y only joins tens and units (ciento uno, not ciento y uno)."
+        difficulty: easy
+      - id: uno_agreement
+        title: "un, una in numbers"
+        scope: "uno becomes un before a masculine noun and una before a feminine one, also inside numbers: veintiún años, treinta y una personas."
+        later: [es.numeros_2.hundreds]
+
+  - id: es.tener_hacer
+    title: "Expresiones con tener, hacer y estar"
+    goal: "Say you're hungry, cold or in a hurry, how old you are, and what the weather is like."
+    teach: "Fixed patterns where German and English use to be. Teach them as phrases."
+    concepts:
+      - id: tener_states
+        title: "tener hambre, frío, prisa…"
+        scope: "tener hambre, sed, frío, calor, sueño, miedo, prisa, razón, suerte. Intensified with mucho/mucha agreeing with the noun (Tengo mucha hambre, mucho frío)."
+        chunk: true
+        pitfall: "Estoy hambre / Estoy frío → Tengo hambre / Tengo frío"
+      - id: tener_age
+        title: "tener for age"
+        scope: "Tengo treinta años. ¿Cuántos años tienes?"
+        difficulty: easy
+        chunk: true
+      - id: weather
+        title: "The weather"
+        scope: "hace + noun (hace frío, calor, sol, viento, buen/mal tiempo), weather verbs (llueve, nieva), está + adjective (está nublado), hay + noun (hay niebla)."
+        chunk: true
+
+  - id: es.hora_fecha
+    title: "Hora y fecha"
+    goal: "Tell the time, make appointments and give dates."
+    concepts:
+      - id: es_la_son_las
+        title: "¿Qué hora es?"
+        scope: "Es la una, Son las dos (ser, plural from two on); y cuarto, y media, menos cuarto, y diez, menos veinte. Also Es tarde, Es temprano."
+        difficulty: easy
+      - id: a_las
+        title: "a las for at"
+        scope: "a la una, a las ocho y media; ¿A qué hora…?"
+        difficulty: easy
+      - id: parts_of_day
+        title: "de la mañana, por la tarde"
+        scope: "With a clock time: de la mañana/tarde/noche (a las ocho de la tarde). Without one: por la mañana, por la tarde, por la noche."
+      - id: dates
+        title: "Dates"
+        scope: "el cinco de mayo; en mayo, en 2025; Hoy es martes."
+        difficulty: easy
+
+  - id: es.demostrativos
+    title: "Demostrativos"
+    goal: "Point to things near and far, in a shop or a room."
+    concepts:
+      - id: distances
+        title: "este, ese, aquel"
+        scope: "este near me (aquí), ese near you or nearby (ahí), aquel far away or far back in time (allí): esta mesa, ese libro, aquella casa, en aquel tiempo."
+      - id: forms
+        title: "Forms"
+        scope: "este, esta, estos, estas; ese, esa, esos, esas; aquel, aquella, aquellos, aquellas."
+        difficulty: easy
+      - id: pronouns
+        title: "Demonstratives on their own"
+        scope: "The same forms replace a noun: Quiero este. ¿Cuál? — Esa. No accent needed."
+        difficulty: easy
+      - id: neuter
+        title: "esto, eso, aquello"
+        scope: "Neuter forms for unknown things and for ideas or situations, never with a noun: ¿Qué es esto? Eso es verdad. Eso no me gusta."
+
+  - id: es.muy_mucho
+    title: "Cantidad: muy, mucho, poco"
+    goal: "Say how much and how many."
+    concepts:
+      - id: muy_vs_mucho
+        title: "muy or mucho"
+        scope: "muy before adjectives and adverbs (muy grande, muy bien); mucho with nouns and verbs (mucho trabajo, Trabajo mucho). Never muy mucho; mucho before mejor, peor, más, menos (mucho mejor)."
+        pitfall: "muy hambre → mucha hambre; Me gusta muy → Me gusta mucho"
+      - id: mucho_agreement
+        title: "mucho agrees before a noun"
+        scope: "Before a noun: mucho, mucha, muchos, muchas (mucha gente, muchos libros). After a verb it doesn't change (Comen mucho)."
+      - id: poco
+        title: "poco and un poco"
+        scope: "poco = little, not much (Duerme poco); un poco = a bit (Estoy un poco cansado); un poco de + noun (un poco de agua)."
+      - id: bastante_demasiado
+        title: "bastante, demasiado"
+        scope: "bastante (quite, enough) and demasiado (too, too much) agree before a noun (bastantes amigos, demasiada sal) and don't after a verb or before an adjective (es demasiado caro)."
+        difficulty: easy
+
+  - id: es.reflexivos_1
+    title: "Verbos reflexivos I"
+    goal: "Describe your daily routine."
+    concepts:
+      - id: forms_position
+        title: "me, te, se, nos, os, se"
+        scope: "Reflexive pronouns go before the conjugated verb: me levanto, te duchas, se llama, nos acostamos."
+        difficulty: easy
+      - id: daily_routine
+        title: "Daily-routine verbs"
+        scope: "levantarse, despertarse, ducharse, lavarse, vestirse, acostarse, llamarse — reflexive in Spanish even where not in English."
+        difficulty: easy
+      - id: with_infinitive
+        title: "With an infinitive"
+        scope: "The pronoun attaches to the infinitive or goes before the conjugated verb: Voy a ducharme / Me voy a duchar. It still matches the person (Tengo que levantarme)."
+        pitfall: "Tengo que levantarse → levantarme"
+      - id: body_article
+        title: "Body parts and clothes take the article"
+        scope: "With reflexive verbs, the article, not the possessive: Me lavo las manos, Se pone la chaqueta."
+        pitfall: "Me lavo mis manos → Me lavo las manos"
+
+  - id: es.preposiciones_1
+    title: "Preposiciones I"
+    goal: "Say where you go, where you are, where things are from and who you're with."
+    concepts:
+      - id: a_direction
+        title: "a for destination"
+        scope: "ir a, llegar a, volver a + place: Voy a Madrid, Llegamos al hotel."
+        pitfall: "Llegué en Madrid → Llegué a Madrid"
+      - id: en
+        title: "en for place and transport"
+        scope: "Being in a place (en casa, en Madrid, en la mesa = on the table) and means of transport (en tren, en coche; but a pie, a caballo)."
+      - id: de_desde
+        title: "de, desde, hasta"
+        scope: "de for origin, possession, material and topic; de… a and desde… hasta for ranges (de lunes a viernes, desde las nueve hasta las cinco)."
+        difficulty: easy
+      - id: con_sin
+        title: "con, sin"
+        scope: "con and sin; sin + noun usually without article (café sin azúcar)."
+        difficulty: easy
+      - id: prep_pronouns
+        title: "para mí, contigo"
+        scope: "After a preposition: mí, ti (no accent), él, ella, usted, nosotros…; con + mí/ti = conmigo, contigo. Exceptions with subject forms: entre tú y yo, según tú."
+        pitfall: "con mí → conmigo; para yo → para mí"
+
+  - id: es.conectores_1
+    title: "Conectores I"
+    goal: "Join sentences with and, or, but, because."
+    concepts:
+      - id: y_e
+        title: "y → e"
+        scope: "y becomes e before a word starting with the i sound (padre e hijo, español e inglés), but not before hie- (agua y hielo)."
+        difficulty: easy
+      - id: o_u
+        title: "o → u"
+        scope: "o becomes u before a word starting with the o sound (siete u ocho, uno u otro)."
+        difficulty: easy
+      - id: pero_porque
+        title: "pero, porque"
+        scope: "pero for contrast, porque for cause (answering ¿por qué?)."
+        difficulty: easy
+        later: [es.conectores_3.pero_sino]
+
+  - id: es.gerundio_1
+    title: "Estar + gerundio"
+    goal: "Say what you're doing right now and these days."
+    concepts:
+      - id: forms
+        title: "-ando, -iendo"
+        scope: "hablar → hablando, comer → comiendo, vivir → viviendo."
+        difficulty: easy
+      - id: irregular
+        title: "Irregular gerunds"
+        scope: "Vowel + -er/-ir → -yendo (leyendo, oyendo, construyendo, cayendo; ir → yendo). -ir stem-changers e → i and o → u (pidiendo, diciendo, sintiendo, durmiendo, muriendo); poder → pudiendo."
+      - id: use_now
+        title: "Ongoing action"
+        scope: "estar + gerund for what is happening at this moment or around now (Estoy cocinando, Este mes estoy trabajando mucho)."
+        see: [es.presente_regular.uses]
+      - id: not_future
+        title: "Not for the future"
+        scope: "Unlike English, estar + gerund doesn't express plans: Mañana trabajo / voy a trabajar, not estoy trabajando mañana."
+        pitfall: "Estoy viendo a Ana mañana → Mañana veo a Ana"
+      - id: pronouns
+        title: "Pronouns with the gerund"
+        scope: "Before estar or attached to the gerund, with an accent: Me estoy duchando / Estoy duchándome."

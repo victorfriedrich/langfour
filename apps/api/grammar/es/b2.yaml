@@ -1,0 +1,423 @@
+level: b2
+chapters:
+  - id: es.subj_perfecto
+    title: "Pretérito perfecto de subjuntivo"
+    goal: "Hope, doubt and react to things that have already happened."
+    concepts:
+      - id: forms
+        title: "haya + participle"
+        scope: "haya, hayas, haya, hayamos, hayáis, hayan + participle (haya llegado)."
+        difficulty: easy
+      - id: past_after_present
+        title: "Espero que hayas dormido bien"
+        scope: "A subjunctive trigger in the present about something already done: Espero que hayas dormido bien. No creo que haya llegado. Me alegra que hayas venido."
+      - id: completed_future
+        title: "Cuando hayas terminado"
+        scope: "In time clauses, completed before a future point: Cuando hayas terminado, avísame."
+
+  - id: es.verbos_cambio
+    title: "Verbos de cambio"
+    goal: "Say how people and things change: get, become, turn into."
+    teach: "There is no single verb for become; each concept is one verb with its typical adjectives."
+    concepts:
+      - id: ponerse
+        title: "ponerse"
+        scope: "Sudden, temporary change of mood, state or colour: ponerse nervioso, rojo, triste, enfermo, contento."
+        difficulty: hard
+      - id: volverse
+        title: "volverse"
+        scope: "Lasting change of character, often negative: volverse loco, Se ha vuelto muy egoísta."
+        difficulty: hard
+      - id: hacerse
+        title: "hacerse"
+        scope: "Gradual or deliberate change, often through effort: hacerse rico, médico, vegetariano, famoso, mayor."
+        difficulty: hard
+      - id: quedarse
+        title: "quedarse"
+        scope: "The state left after an event: quedarse ciego, sorprendido, embarazada, sin dinero, solo."
+        difficulty: hard
+      - id: convertirse
+        title: "convertirse en"
+        scope: "Transformation, with a noun: La ciudad se convirtió en un destino turístico."
+      - id: llegar_a_ser
+        title: "llegar a ser"
+        scope: "Reaching a position after a long process: Llegó a ser directora."
+
+  - id: es.subj_imperfecto
+    title: "Imperfecto de subjuntivo: formas"
+    goal: "Form the imperfect subjunctive of any verb."
+    concepts:
+      - id: from_preterite
+        title: "From the ellos preterite"
+        scope: "Take the 3rd person plural indefinido, drop -ron, add -ra, -ras, -ra, -ramos, -rais, -ran: hablaron → hablara, tuvieron → tuviera, hicieron → hiciera, fueron → fuera, pidieron → pidiera. Every preterite irregularity carries over."
+      - id: nosotros_accent
+        title: "tuviéramos, habláramos"
+        scope: "nosotros takes an accent on the syllable before -ramos."
+        difficulty: easy
+      - id: se_forms
+        title: "-se forms"
+        scope: "An equivalent set in -se (hablase, tuviese, fuese), common in Spain and in writing. Same meaning."
+        mode: receptive
+        difficulty: easy
+
+  - id: es.subj_correlacion
+    title: "Correlación de tiempos"
+    goal: "Use the subjunctive when talking about the past and about unlikely wishes."
+    concepts:
+      - id: past_trigger
+        title: "Quería que vinieras"
+        scope: "A trigger in a past tense or the conditional takes the imperfect subjunctive: Quería que vinieras. Me pidió que lo hiciera. Lo hice para que lo vieras. Me gustaría que vinieras."
+        difficulty: hard
+        pitfall: "Quería que vengas → Quería que vinieras"
+      - id: present_trigger_past_event
+        title: "Me alegra que vinieras"
+        scope: "A present trigger about a past event: perfect subjunctive for a recent or still-relevant one (Me alegra que hayas venido), imperfect subjunctive for a finished past one (Es raro que no llamara ayer)."
+        difficulty: hard
+      - id: ojala_imperfect
+        title: "Ojalá tuviera…"
+        scope: "ojalá + imperfect subjunctive for unlikely or impossible wishes about the present or future: Ojalá tuviera más tiempo. Ojalá + present subjunctive stays for possible ones."
+      - id: como_si
+        title: "como si"
+        scope: "como si + imperfect subjunctive (or pluperfect for earlier): Habla como si lo supiera todo. Me miró como si no me hubiera visto nunca."
+        difficulty: hard
+      - id: quisiera
+        title: "Quisiera"
+        scope: "Very polite want: Quisiera reservar una mesa."
+        difficulty: easy
+        chunk: true
+
+  - id: es.ser_estar_3
+    title: "Ser o estar III"
+    goal: "Handle the remaining cases of ser and estar, including the passive."
+    continues: es.ser_estar_2
+    concepts:
+      - id: ser_passive
+        title: "fue construido / está construido"
+        scope: "ser + participle is the passive, an action (El puente fue construido en 1900); estar + participle the resulting state (El puente está construido)."
+        difficulty: hard
+        see: [es.pasiva.ser_participle]
+      - id: more_meaning_change
+        title: "More adjectives that change meaning"
+        scope: "abierto (open-minded / open), cerrado (narrow-minded / closed), atento (considerate / paying attention), interesado (self-serving / interested), orgulloso (arrogant / proud of), delicado (delicate / in poor health): ser gives the first meaning, estar the second."
+      - id: con_sin
+        title: "estar con, estar sin"
+        scope: "Temporary situations: Estoy con gripe. Estamos sin luz. Está sin trabajo."
+      - id: lo_attribute
+        title: "Sí, lo es"
+        scope: "lo replaces an adjective or noun after ser, estar and parecer, without agreeing: ¿Es médica? — Sí, lo es. ¿Están cansados? — Lo están."
+      - id: estar_bien_que
+        title: "Está bien que"
+        scope: "Está bien / mal que + subjunctive, as with es bueno que: Está bien que lo digas."
+
+  - id: es.condicionales
+    title: "Oraciones condicionales"
+    goal: "Talk about what would happen and what would have happened."
+    continues: es.futuro_1
+    concepts:
+      - id: si_unlikely
+        title: "Si tuviera dinero, viajaría"
+        scope: "Unlikely or unreal in the present/future: si + imperfect subjunctive, then conditional. Si tuviera tiempo, te ayudaría."
+        difficulty: hard
+      - id: never_after_si
+        title: "Never conditional or present subjunctive after si"
+        scope: "After si (if) only indicative or imperfect/pluperfect subjunctive."
+        difficulty: hard
+        pitfall: "Si tendría → Si tuviera; Si tenga → Si tengo"
+      - id: perfect_forms
+        title: "hubiera + participle, habría + participle"
+        scope: "Pluperfect subjunctive hubiera/hubiese + participle; conditional perfect habría + participle."
+      - id: si_past_unreal
+        title: "Si hubiera sabido, habría venido"
+        scope: "Unreal in the past: si + pluperfect subjunctive, then conditional perfect (in speech also pluperfect subjunctive: si lo hubiera sabido, hubiera venido)."
+        difficulty: hard
+      - id: mixed
+        title: "Mixed conditions"
+        scope: "Past condition, present result: Si hubiera estudiado, ahora tendría trabajo. Present condition, past result: Si fuera más valiente, se lo habría dicho."
+        difficulty: hard
+      - id: other_conditions
+        title: "en caso de que, a no ser que, con tal de que"
+        scope: "Always subjunctive: en caso de que, a no ser que, a menos que, con tal de que, siempre que (as long as): Te lo presto siempre que me lo devuelvas."
+      - id: por_si
+        title: "por si"
+        scope: "por si + indicative = in case: Lleva un paraguas por si llueve. por si acaso."
+      - id: de_infinitive
+        title: "De haberlo sabido…"
+        scope: "de + infinitive as a condition: De haberlo sabido, no habría venido."
+        mode: receptive
+
+  - id: es.orden_enfasis
+    title: "Orden de palabras y énfasis"
+    goal: "Put the focus where you want it, as native speakers do."
+    concepts:
+      - id: subject_after_verb
+        title: "Subject after the verb"
+        scope: "With verbs of appearing and happening, and gustar-type verbs, the subject usually follows: Llegó el tren. Ha pasado algo. Me encanta esta canción."
+      - id: pronoun_emphasis
+        title: "Stressed subject at the end"
+        scope: "A subject placed after the verb is in focus: Lo hice yo. Paga ella."
+        see: [es.presente_regular.pro_drop]
+      - id: cleft
+        title: "Fue Ana quien lo dijo"
+        scope: "ser + focus + que / quien / donde / cuando: Fue Ana quien lo dijo. Es aquí donde vivo. Fue en 2010 cuando nos conocimos."
+        difficulty: hard
+      - id: lo_que_es
+        title: "Lo que necesito es…"
+        scope: "lo que + clause + ser + focus: Lo que necesito es tiempo. Lo que no entiendo es por qué."
+      - id: si_que
+        title: "Sí que"
+        scope: "Sí que + verb for emphasis: Eso sí que es difícil."
+        difficulty: easy
+
+  - id: es.concesivas
+    title: "Oraciones concesivas"
+    goal: "Concede a point and still make your own: even if, although, however much."
+    concepts:
+      - id: aunque
+        title: "aunque: indicative or subjunctive"
+        scope: "aunque + indicative presents a fact as true and relevant (Aunque está lloviendo, voy a salir); + subjunctive for a hypothesis (even if: Aunque llueva mañana, iremos a la playa) or a fact both speakers know, treated as irrelevant (—Pero es tu jefe. —Ya, aunque sea mi jefe, no tiene razón)."
+        difficulty: hard
+      - id: aunque_past
+        title: "Aunque tuviera dinero"
+        scope: "aunque + imperfect subjunctive for unreal: Aunque tuviera dinero, no lo compraría. + pluperfect for past unreal."
+      - id: a_pesar_de
+        title: "a pesar de"
+        scope: "+ noun or infinitive (a pesar de la lluvia, a pesar de estar cansado); a pesar de que follows the aunque rules."
+      - id: por_mucho_que
+        title: "por mucho que"
+        scope: "por mucho / más que + subjunctive (however much): Por mucho que estudies, no vas a aprobar. por + adjective + que: Por difícil que sea."
+      - id: reduplicative
+        title: "Pase lo que pase"
+        scope: "Fixed subjunctive patterns: pase lo que pase, digas lo que digas, sea como sea, cueste lo que cueste."
+        chunk: true
+
+  - id: es.pasiva
+    title: "Pasiva e impersonalidad"
+    goal: "Talk about what was done without saying who did it, as in news and reports."
+    concepts:
+      - id: ser_participle
+        title: "ser + participle + por"
+        scope: "The passive with ser, participle agreeing, agent with por: La novela fue escrita por Cervantes. Mostly written; speech prefers the active or se."
+      - id: pasiva_refleja
+        title: "Se construyeron casas"
+        scope: "se + verb agreeing with a thing is the usual passive in speech: Se construyeron muchas casas. Se firmó el acuerdo."
+        see: [es.se_1.se_agreement]
+      - id: impersonal_people
+        title: "Se ayuda a los refugiados"
+        scope: "With people preceded by personal a, se + singular verb, no agreement: Se busca a los responsables. Se entrevistó a los candidatos."
+        difficulty: hard
+      - id: third_plural
+        title: "Dicen que…"
+        scope: "Third-person plural with no stated subject: Dicen que va a llover. Llaman a la puerta."
+        difficulty: easy
+      - id: uno
+        title: "uno"
+        scope: "uno as a general subject, needed with reflexive verbs: Uno se acostumbra a todo."
+
+  - id: es.discurso_2
+    title: "Estilo indirecto II"
+    goal: "Retell a conversation that happened in the past."
+    continues: es.discurso_1
+    concepts:
+      - id: tense_shift
+        title: "Tense shift after a past verb"
+        scope: "After dijo / me contó: present → imperfecto (estoy → estaba), indefinido or perfecto → pluscuamperfecto (or indefinido kept), futuro → condicional (vendré → vendría), ir a → iba a."
+        difficulty: hard
+      - id: commands_past
+        title: "Me dijo que viniera"
+        scope: "A command reported in the past: que + imperfect subjunctive. ¡Ven! → Me dijo que viniera."
+        difficulty: hard
+      - id: still_true
+        title: "No shift when still true"
+        scope: "If the content is still true now, the original tense can stay: Me dijo que es médico."
+      - id: deixis
+        title: "aquí → allí, mañana → al día siguiente"
+        scope: "Place and time words shift: aquí → allí, hoy → ese día, mañana → al día siguiente, ayer → el día anterior, este → ese; venir → ir, traer → llevar."
+      - id: reporting_verbs
+        title: "Reporting verbs"
+        scope: "contar, explicar, comentar, asegurar, prometer, recomendar, preguntar, quejarse de que — each with its own mood (recomendar que + subjunctive)."
+
+  - id: es.adjetivo_2
+    title: "El adjetivo II"
+    goal: "Use adjective position and agreement with nuance."
+    continues: es.adjetivo_1
+    concepts:
+      - id: position_meaning
+        title: "Position changes the meaning"
+        scope: "un gran hombre (great) / un hombre grande (big); un viejo amigo (long-standing) / un amigo viejo (old); pobre hombre (unfortunate) / hombre pobre (poor); un nuevo coche (another) / un coche nuevo (brand new); un único día (only) / un día único (unique); cierto (some / true)."
+        difficulty: hard
+      - id: before_for_evaluation
+        title: "Adjective before the noun for evaluation"
+        scope: "Before the noun an adjective stresses an inherent or subjective quality, common in writing: la blanca nieve, un precioso día."
+        mode: receptive
+      - id: invariable_colours
+        title: "Invariable colours"
+        scope: "Nouns used as colours don't change: camisas rosa, zapatos naranja; also colour + adjective (ojos azul claro)."
+      - id: several_nouns
+        title: "One adjective for several nouns"
+        scope: "After several nouns: plural, masculine if mixed (un libro y una revista nuevos)."
+
+  - id: es.subj_otros
+    title: "Subjuntivo V: otros casos"
+    goal: "Use the subjunctive in the remaining common patterns."
+    concepts:
+      - id: sin_que
+        title: "sin que"
+        scope: "sin que + subjunctive: Salió sin que nadie lo viera. Same subject → sin + infinitive."
+      - id: lo_que
+        title: "Haz lo que quieras"
+        scope: "lo que / donde / como / cuando + subjunctive for something undetermined: Haz lo que quieras. Ven cuando puedas. With something known, indicative: Hice lo que querías."
+        difficulty: hard
+      - id: double_meaning
+        title: "Verbs whose mood changes the meaning"
+        scope: "decir que + indicative reports, + subjunctive orders (Dice que viene / Dice que vengas); sentir que + indicative = feel, + subjunctive = regret (Siento que me miran / Siento que no puedas venir); temerse que + indicative breaks bad news politely (Me temo que no puedo), temer que + subjunctive = fear."
+        difficulty: hard
+      - id: de_modo_que
+        title: "de modo que: result or purpose"
+        scope: "de modo / manera que + indicative for a result (Llovía, de modo que nos quedamos), + subjunctive for a purpose (Habla alto de modo que te oigan)."
+      - id: no_es_que
+        title: "No es que…, es que…"
+        scope: "No es que no quiera, es que no puedo — the rejected reason in the subjunctive."
+      - id: el_hecho_de_que
+        title: "El hecho de que"
+        scope: "el hecho de que usually takes the subjunctive: El hecho de que sea rico no significa nada."
+        mode: receptive
+      - id: mientras_condition
+        title: "mientras = as long as"
+        scope: "mientras + subjunctive = as long as: Mientras no llueva, jugamos fuera."
+
+  - id: es.relativas_3
+    title: "Oraciones de relativo III"
+    goal: "Write precise, connected sentences with formal relatives."
+    continues: es.relativas_2
+    concepts:
+      - id: lo_cual
+        title: "lo que, lo cual for a whole clause"
+        scope: "Referring back to a whole statement: Llegó tarde, lo que / lo cual me molestó."
+      - id: el_cual
+        title: "el cual, la cual"
+        scope: "Formal alternative to el que, mostly after prepositions: la razón por la cual, el edificio desde el cual."
+      - id: cuyo
+        title: "cuyo"
+        scope: "cuyo = whose, agreeing with what is possessed: el autor cuya novela leí, una casa cuyas ventanas…"
+      - id: non_restrictive
+        title: "With commas"
+        scope: "Non-restrictive clauses go between commas and allow quien and el cual: Mi hermano, que / quien vive en Lima, viene mañana."
+      - id: adverbs
+        title: "donde, como, cuando as relatives"
+        scope: "la ciudad donde nací, la manera como lo dijo, el día (en) que nos conocimos."
+
+  - id: es.probabilidad
+    title: "Probabilidad y conjetura"
+    goal: "Guess about the present and the past with the right tense."
+    continues: es.futuro_2
+    concepts:
+      - id: conditional_past
+        title: "Serían las diez"
+        scope: "The conditional as a guess about a moment in the past, one step back from the futuro guess about now: Serían las diez cuando llegó. Tendría unos veinte años entonces."
+        difficulty: hard
+      - id: conditional_perfect
+        title: "Ya habría salido"
+        scope: "The conditional perfect as a guess about something before a past moment: Cuando llegamos, ya habría salido."
+        difficulty: hard
+      - id: markers
+        title: "a lo mejor, igual, seguramente, deber de"
+        scope: "a lo mejor and igual (colloquial Spain) + indicative; seguramente, probablemente + indicative or subjunctive; deber de + infinitive (Debe de ser caro) for probability, deber + infinitive for obligation."
+
+  - id: es.perifrasis_3
+    title: "Perífrasis III"
+    goal: "Express nuances of progress, result and approximation."
+    continues: es.perifrasis_2
+    concepts:
+      - id: acabar_gerundio
+        title: "acabar + gerund"
+        scope: "To end up doing: Acabó aceptando el trabajo."
+      - id: ir_gerundio
+        title: "ir + gerund"
+        scope: "Gradual progress: Voy entendiendo. La situación va mejorando."
+      - id: llegar_a
+        title: "llegar a + infinitive"
+        scope: "To go as far as: Llegó a decir que no me conocía."
+      - id: tener_participio
+        title: "tengo pensado"
+        scope: "tener + participle for a result or plan: Tengo pensado viajar. Tengo entendido que…"
+      - id: andar_gerundio
+        title: "andar + gerund"
+        scope: "Going around doing something, often disapproving: Anda diciendo tonterías."
+        mode: receptive
+      - id: venir_a
+        title: "venir a + infinitive"
+        scope: "Approximation: Viene a costar unos cien euros."
+        mode: receptive
+
+  - id: es.por_para_3
+    title: "Por y para III"
+    goal: "Master the remaining uses of por and para."
+    continues: es.por_para_2
+    concepts:
+      - id: agent
+        title: "por for the agent"
+        scope: "The doer in a passive: escrito por García Márquez."
+        difficulty: easy
+        see: [es.pasiva.ser_participle]
+      - id: por_infinitive
+        title: "por + infinitive"
+        scope: "Cause (Me multaron por aparcar mal) and something not yet done (La casa está por limpiar, Queda mucho por hacer)."
+      - id: estar_para_por
+        title: "estar para, estar por"
+        scope: "estar para = be in the mood for, mostly negative (No estoy para bromas); estar por + infinitive = still to be done (Eso está por ver) and, in Latin America, about to (Está por llover)."
+      - id: expressions
+        title: "More fixed expressions"
+        scope: "por lo visto, por las buenas o por las malas, por mi parte, para colmo, para entonces, no es para tanto."
+        chunk: true
+
+  - id: es.que_de_que
+    title: "Que y de que"
+    goal: "Avoid two common mistakes even native speakers make."
+    concepts:
+      - id: dequeismo
+        title: "No de where the verb has none"
+        scope: "Verbs of saying and thinking take que alone: Pienso que, Creo que, Dijo que, Me parece que."
+        difficulty: hard
+        pitfall: "Pienso de que → Pienso que"
+      - id: queismo
+        title: "Keep de where it belongs"
+        scope: "Verbs and phrases with de keep it before que: me acuerdo de que, estoy seguro de que, me di cuenta de que, tengo ganas de que, antes de que."
+        difficulty: hard
+        pitfall: "Estoy seguro que → Estoy seguro de que"
+
+  - id: es.conectores_4
+    title: "Conectores IV: textos"
+    goal: "Write structured texts: essays, emails, arguments."
+    concepts:
+      - id: formal_contrast
+        title: "no obstante, ahora bien, mientras que"
+        scope: "no obstante, ahora bien; mientras que (whereas) + indicative for contrast."
+      - id: formal_cause_consequence
+        title: "dado que, por consiguiente"
+        scope: "dado que, en vista de que + indicative for cause; por consiguiente, por ende (formal) for consequence."
+      - id: stance
+        title: "de hecho, en realidad"
+        scope: "de hecho, en realidad, en cualquier caso, en resumen, en definitiva."
+      - id: cuanto_mas
+        title: "Cuanto más…, más…"
+        scope: "Proportional comparison: Cuanto más estudio, más entiendo. Cuantos más seamos, mejor. Future reference takes the subjunctive: Cuanto antes llegues, mejor."
+      - id: ordering
+        title: "en primer lugar, para terminar"
+        scope: "en primer lugar, en segundo lugar, por otra parte, para terminar."
+        difficulty: easy
+
+  - id: es.voseo
+    title: "El voseo"
+    goal: "Understand vos in Argentina, Uruguay and Central America."
+    teach: "Receptive unless the learner is learning a voseo variety; then teach it as productive."
+    concepts:
+      - id: present
+        title: "vos tenés, sos"
+        scope: "vos replaces tú with its own present forms, stressed on the ending: vos hablás, tenés, vivís, sos, podés (no stem change)."
+        mode: receptive
+        variety: latam
+      - id: imperative
+        title: "vení, decime"
+        scope: "Imperative drops the final -r and stresses the last syllable: hablá, vení, decime, andate."
+        mode: receptive
+        variety: latam
