@@ -13,6 +13,9 @@ what it reports back about texts the user read with it.
     a text the user chose to read (docs/plans/learner-word-data-model.md:
     exposure counts only what the user chose to read or hear, never every
     word an AI wrote).
+  - set_word_status: move words of the user's list between learning and
+    known, as the web app's "Move to known" does. Back to learning, the
+    userwords trigger gives the word a Langfour card again.
 
 The API runs these with the service role on behalf of the OAuth user, so every
 query names the user explicitly.
@@ -25,6 +28,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from practice import PracticeStore
 from supabase_client import supabase
 
 Language = Literal["es", "de", "it", "fr"]
@@ -88,6 +92,11 @@ class ExposureSummary(BaseModel):
     recorded: int  # distinct learning or new words logged as read
 
 
+class StatusChange(BaseModel):
+    changed: list[str]    # now in the requested status, including any already in it
+    not_found: list[str]  # not in the user's list in that language, or turned off
+
+
 # ---------------------------------------------------------------------------
 # Storage. Like practice.PracticeStore: everything that touches Supabase is
 # here, so the logic below runs against an in-memory stand-in in tests.
@@ -128,6 +137,30 @@ class VocabularyStore:
             return 0
         res = self.db.table("word_events").insert(rows).execute()
         return len(res.data or [])
+
+    def user_words(self, user_id: str, language: str, roots: list[str]) -> list[dict]:
+        """The user's learning and known words with these roots: [{word_id, root}]."""
+        res = (self.db.table("userwords").select("word_id, words!inner(root, language)")
+               .eq("user_id", user_id).eq("words.language", language)
+               .in_("status", ["learning", "known"]).in_("words.root", roots).execute())
+        return [{"word_id": r["word_id"], "root": r["words"]["root"]} for r in res.data or []]
+
+    def resolve_words(self, language: str, words: list[str]) -> dict[str, int]:
+        """word as given -> word_id, conjugated or inflected forms included."""
+        return PracticeStore(self.db).resolve_words(language, words)
+
+    def owned(self, user_id: str, word_ids: list[int]) -> set[int]:
+        """Which of these words are in the user's list as learning or known."""
+        res = (self.db.table("userwords").select("word_id").eq("user_id", user_id)
+               .in_("status", ["learning", "known"]).in_("word_id", word_ids).execute())
+        return {r["word_id"] for r in res.data or []}
+
+    def set_status(self, user_id: str, word_ids: list[int], status: str) -> None:
+        # Not set_userwords_status: it updates auth.uid()'s words, and the API
+        # runs as the service role. Rows already in the status are left alone,
+        # so the userwords trigger doesn't touch their cards.
+        (self.db.table("userwords").update({"status": status})
+         .eq("user_id", user_id).in_("word_id", word_ids).neq("status", status).execute())
 
 
 def get_vocabulary_store() -> VocabularyStore:
@@ -187,3 +220,21 @@ def record_exposure(store: VocabularyStore, user_id: str, language: str,
         for w in word_ids
     ])
     return ExposureSummary(recorded=recorded)
+
+
+def set_word_status(store: VocabularyStore, user_id: str, language: str, words: list[str],
+                    status: Literal["known", "learning"]) -> StatusChange:
+    asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
+    # By root first, so every homograph listed under one spelling moves; then
+    # forms ('encontré' -> encontrar) for the rest.
+    rows = store.user_words(user_id, language, asked)
+    found = {r["root"] for r in rows}
+    ids = {r["word_id"] for r in rows}
+    forms = store.resolve_words(language, [w for w in asked if w not in found])
+    owned = store.owned(user_id, sorted(set(forms.values()))) if forms else set()
+    found |= {w for w, word_id in forms.items() if word_id in owned}
+    ids |= owned
+    if ids:
+        store.set_status(user_id, sorted(ids), status)
+    return StatusChange(changed=[w for w in asked if w in found],
+                        not_found=[w for w in asked if w not in found])

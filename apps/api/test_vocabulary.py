@@ -43,6 +43,25 @@ class FakeStore:
         self.events.extend(rows)
         return len(rows)
 
+    # The user's list: word_id -> root. 7 and 8 are homographs.
+    LIST = {2: "el perro", 4: "la", 7: "de", 8: "de", 10: "encontrar"}
+
+    def user_words(self, user_id, language, roots):
+        self.calls.append(("user_words", user_id, language, roots))
+        return [{"word_id": w, "root": root} for w, root in self.LIST.items() if root in roots]
+
+    # As find_roots and wordforms would resolve them; 11 isn't in the list.
+    FORMS = {"encontré": 10, "El perro": 2, "hablé": 11}
+
+    def resolve_words(self, language, words):
+        return {w: self.FORMS[w] for w in words if w in self.FORMS}
+
+    def owned(self, user_id, word_ids):
+        return {w for w in word_ids if w in self.LIST}
+
+    def set_status(self, user_id, word_ids, status):
+        self.calls.append(("set_status", user_id, word_ids, status))
+
 
 def test_get_vocabulary_passes_the_user_and_parses_the_answer():
     store = FakeStore()
@@ -85,3 +104,26 @@ def test_record_exposure_logs_learning_and_new_words_once_each():
         {"user_id": USER, "word_id": 2, "kind": "exposure", "source": "chatgpt"},
         {"user_id": USER, "word_id": 5, "kind": "exposure", "source": "chatgpt"},
     ]
+
+
+def test_set_word_status_moves_every_listed_word_with_that_root():
+    store = FakeStore()
+    change = vocabulary.set_word_status(store, USER, "es",
+                                        ["el perro", " de ", "de", "la casa"], "known")
+    assert ("set_status", USER, [2, 7, 8], "known") in store.calls
+    assert (change.changed, change.not_found) == (["el perro", "de"], ["la casa"])
+
+
+def test_set_word_status_finds_forms_in_the_users_list():
+    store = FakeStore()
+    change = vocabulary.set_word_status(store, USER, "es",
+                                        ["encontré", "El perro", "hablé"], "known")
+    assert ("set_status", USER, [2, 10], "known") in store.calls
+    assert (change.changed, change.not_found) == (["encontré", "El perro"], ["hablé"])
+
+
+def test_set_word_status_with_nothing_found_updates_nothing():
+    store = FakeStore()
+    change = vocabulary.set_word_status(store, USER, "es", ["casa"], "learning")
+    assert not any(c[0] == "set_status" for c in store.calls)
+    assert change.not_found == ["casa"]
