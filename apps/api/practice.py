@@ -61,6 +61,9 @@ class PracticeAnswer(BaseModel):
         ..., description="'recognize': the user saw the word and gave its meaning. "
                          "'produce': the user had to come up with the word themselves.")
     correct: bool
+    self_reported: bool = Field(
+        False, description="True when the user told you how they'd do (e.g. 'I can read "
+                           "these') instead of answering a question.")
 
 
 class PracticeRequest(BaseModel):
@@ -234,7 +237,7 @@ def record_practice(store: PracticeStore, user_id: str, req: PracticeRequest,
         {"user_id": user_id, "word_id": word_id,
          "kind": "recall_correct" if a.correct else "recall_wrong",
          "source": SOURCE, "occurred_at": now.isoformat(),
-         "context": {"direction": a.direction}}
+         "context": {"direction": a.direction, **({"self_reported": True} if a.self_reported else {})}}
         for a, word_id in answers
     ])
 
