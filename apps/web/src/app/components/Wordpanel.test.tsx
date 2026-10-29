@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Wordpanel from './Wordpanel';
 
@@ -17,7 +17,7 @@ it('says there is nothing new instead of an empty list when every word is known'
   expect(screen.queryByText('Select all')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /to learning set/ })).not.toBeInTheDocument();
   expect(screen.queryByText(/new words found/)).not.toBeInTheDocument();
-  screen.getAllByRole('button', { name: 'Back to library' })[1].click();
+  screen.getAllByRole('button', { name: 'Back to Media' })[1].click();
   expect(onClose).toHaveBeenCalledWith(0);
 });
 
@@ -30,7 +30,12 @@ it('keeps the Seen button in the side panel when every word is known', () => {
 it('lists the words when there are some', () => {
   words.recommendedWords = [{ id: 1, content: 'luna', translation: 'moon' }];
   render(<Wordpanel videoId="song" videoTitle="Canción de prueba" variant="page" source="media" onClose={vi.fn()} />);
-  expect(screen.getByText('Recommended (1)')).toBeInTheDocument();
-  expect(screen.getByText(/1 new word found/)).toBeInTheDocument();
+  expect(screen.getByText('Recommended')).toBeInTheDocument();
+  expect(screen.getByText(/1 new word$/)).toBeInTheDocument();
   expect(screen.queryByText('Nothing new to learn here')).not.toBeInTheDocument();
+  // Nothing to add until a word is picked, then the selection pill appears.
+  expect(screen.queryByRole('button', { name: 'Add to learning set' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText('luna'));
+  expect(screen.getByText('1 selected')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add to learning set' })).toBeInTheDocument();
 });

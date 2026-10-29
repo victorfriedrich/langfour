@@ -20,28 +20,26 @@ interface EmptyStateProps {
   title: string;
   children?: ReactNode;
   actions?: ReactNode;
-  /** Draw the white card around it; off inside panels that already have one. */
-  framed?: boolean;
 }
 
-export default function EmptyState({ icon: Icon, title, children, actions, framed = true }: EmptyStateProps) {
+export default function EmptyState({ icon: Icon, title, children, actions }: EmptyStateProps) {
   return (
-    <div className={`relative overflow-hidden px-6 pb-12 pt-8 text-center ${framed ? 'rounded-2xl border border-slate-200 bg-white shadow-sm' : ''}`}>
+    <div className="relative overflow-hidden px-6 pb-12 pt-4 text-center">
       <div aria-hidden className="relative mx-auto h-60 w-full max-w-sm [mask-image:radial-gradient(circle_at_50%_55%,black_35%,transparent_75%)]">
         {RINGS.map((size) => (
-          <span key={size} className="absolute left-1/2 top-[55%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200" style={{ width: size, height: size }} />
+          <span key={size} className="absolute left-1/2 top-[55%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-gray-200" style={{ width: size, height: size }} />
         ))}
         {ORBIT.map(({ icon: OrbitIcon, x, y, size, faded }) => (
-          <span key={`${x},${y}`} className={`absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-xl bg-slate-50 text-slate-500 ring-1 ring-slate-200/70 ${size === 'md' ? 'h-11 w-11' : 'h-8 w-8'} ${faded ? 'opacity-60' : ''}`} style={{ left: `calc(50% + ${x}px)`, top: `calc(55% + ${y}px)` }}>
+          <span key={`${x},${y}`} className={`absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-xl bg-gray-50 text-gray-500 ring-1 ring-gray-200/70 ${size === 'md' ? 'h-11 w-11' : 'h-8 w-8'} ${faded ? 'opacity-60' : ''}`} style={{ left: `calc(50% + ${x}px)`, top: `calc(55% + ${y}px)` }}>
             <OrbitIcon size={size === 'md' ? 20 : 15} strokeWidth={1.75} />
           </span>
         ))}
-        <span className="absolute left-1/2 top-[55%] flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-lg shadow-slate-900/20">
+        <span className="absolute left-1/2 top-[55%] flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl bg-gray-900 text-white shadow-lg shadow-gray-900/20">
           <Icon size={28} strokeWidth={2} />
         </span>
       </div>
-      <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-      {children && <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">{children}</p>}
+      <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+      {children && <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-gray-500">{children}</p>}
       {actions && <div className="mt-6 flex flex-wrap items-center justify-center gap-3">{actions}</div>}
     </div>
   );

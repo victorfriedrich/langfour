@@ -17,16 +17,12 @@ vi.mock('@/context/UserContext', async () => {
   return { UserContext: createContext({ language: { code: 'es' }, fetchWithAuth: () => {} }) };
 });
 
-it('leads songs and articles with their own title, and episodes with their series', async () => {
+it('lists each item by its own title, with where it is from underneath', async () => {
   render(<MediaPage />);
-  const card = async (title: string) => (await screen.findByRole('link', { name: `Open vocabulary for ${title}` }));
-  const song = await card('Canción de prueba');
-  expect(within(song).getByRole('heading', { level: 2 })).toHaveTextContent('Canción de prueba');
-  expect(within(song).getByRole('heading', { level: 3 })).toHaveTextContent('Prueba');
-  const episode = await card('Prueba');
-  expect(within(episode).getByRole('heading', { level: 2 })).toHaveTextContent('Netling Test');
-  expect(within(episode).getByRole('heading', { level: 3 })).toHaveTextContent('Prueba');
-  const article = await card('El tranvía vuelve');
-  expect(within(article).getByRole('heading', { level: 2 })).toHaveTextContent('El tranvía vuelve');
-  expect(within(article).getByRole('heading', { level: 3 })).toHaveTextContent('Diario de prueba');
+  const row = (title: string) => screen.findByRole('link', { name: `Open vocabulary for ${title}` });
+  const song = await row('Canción de prueba');
+  expect(song).toHaveTextContent('Canción de prueba');
+  expect(within(song).getByText('Prueba · 1 min read')).toBeInTheDocument();
+  expect(within(await row('Prueba')).getByText('Netling Test · S01 E03 · 54 min')).toBeInTheDocument();
+  expect(within(await row('El tranvía vuelve')).getByText('Diario de prueba · 1 min read')).toBeInTheDocument();
 });
