@@ -103,6 +103,10 @@ EVIDENCE     grammar_events(id, user_id, concept_id, kind, correct, self_reporte
 - `grammar_events` is the record of what happened, like `word_events`: never updated or deleted
   from. `user_grammar_concepts` is the current refresh state. Python computes the new rows and
   one SQL function (`record_grammar`) writes events, concepts and chapters in one transaction.
+  Each changed row includes its previous state. The function checks those snapshots under a
+  per-user transaction advisory lock before writing; a conflict writes nothing and the API
+  rereads and retries, at most three attempts. This uses the existing rows, without version
+  columns or a separate lock table.
 - Several chapters can be started at once (a user may skip ahead or go back).
 - RLS: users select their own rows. Writes go only through `record_grammar`, executable by the
   service role alone, the way `srs_card_sm2` revokes direct writes.
@@ -134,7 +138,8 @@ EVIDENCE     grammar_events(id, user_id, concept_id, kind, correct, self_reporte
 - **Self-reported** ("I know por vs para well"): counts as a first correct production, which
   takes the user at their word, as `set_word_status` does for words.
 - **Receptive concepts** (`mode: receptive`) are never drilled, so `seen` counts for them the
-  way a correct production does for the others.
+  way a correct production does for the others. Session results apply `seen` before `produced`,
+  so an error keeps tomorrow's refresh regardless of the order the client sends them in.
 
 ## 4. MCP tools
 
@@ -209,7 +214,10 @@ with `record_grammar`.
 2. **SQL** in `apps/api/sql/grammar.sql`: three tables, RLS, `record_grammar`. Applied
    2026-10-29 as migration `grammar`, checked live: RLS on, select-own policies only, no
    client writes, `record_grammar` executable by the service role alone, and a rolled-back
-   call wrote the expected rows.
+   call wrote the expected rows. The `grammar_concurrent_recording` migration also applied
+   the snapshot checks on 2026-10-29; live checks confirmed stale writes return -1 and the
+   function remains executable only by the service role. Concurrent writes and retry were
+   tested against local PostgreSQL with two independent connections.
 3. **Python** in `apps/api/grammar.py`, following `vocabulary.py`: curriculum loading and
    validation, the store, the overview formatter, the refresh rule. `test_grammar.py` covers
    them; `test_mcp_server.py` calls the tools over HTTP. The three tools and the instructions are

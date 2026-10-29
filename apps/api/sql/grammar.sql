@@ -90,7 +90,10 @@ revoke insert, update, delete, truncate on public.grammar_events from anon, auth
 --   p_events    [{concept_id, kind, correct, self_reported, sentence}]
 --   p_concepts  full user_grammar_concepts rows, minus user_id
 --   p_chapters  full user_grammar_chapters rows, minus user_id
--- Returns the number of events inserted.
+-- Each concept/chapter row includes `previous`: the row read by the API, or
+-- JSON null if it did not exist. Compare under a per-user transaction lock so
+-- overlapping sessions cannot overwrite each other's progress. Returns -1 on
+-- a stale read (nothing written), otherwise the number of events inserted.
 create or replace function public.record_grammar(p_user_id uuid, p_events jsonb,
                                                  p_concepts jsonb, p_chapters jsonb)
 returns integer
@@ -100,7 +103,43 @@ set search_path = ''
 as $$
 declare
     v_inserted integer;
+    v_row jsonb;
+    v_current jsonb;
+    v_previous jsonb;
 begin
+    perform pg_advisory_xact_lock(hashtextextended('grammar:' || p_user_id::text, 0));
+
+    -- Check every precondition before writing any state or appending events.
+    -- Populate typed records to compare timestamps independently of formatting.
+    for v_row in select value from jsonb_array_elements(p_chapters) loop
+        if not (v_row ? 'previous') then
+            raise exception 'grammar chapter is missing previous state';
+        end if;
+        select to_jsonb(c) - 'user_id' into v_current
+        from public.user_grammar_chapters c
+        where c.user_id = p_user_id and c.chapter_id = v_row->>'chapter_id';
+        v_previous := case when v_row->'previous' = 'null'::jsonb then null else
+            to_jsonb(jsonb_populate_record(null::public.user_grammar_chapters,
+                                          v_row->'previous')) - 'user_id' end;
+        if v_current is distinct from v_previous then
+            return -1;
+        end if;
+    end loop;
+    for v_row in select value from jsonb_array_elements(p_concepts) loop
+        if not (v_row ? 'previous') then
+            raise exception 'grammar concept is missing previous state';
+        end if;
+        select to_jsonb(c) - 'user_id' into v_current
+        from public.user_grammar_concepts c
+        where c.user_id = p_user_id and c.concept_id = v_row->>'concept_id';
+        v_previous := case when v_row->'previous' = 'null'::jsonb then null else
+            to_jsonb(jsonb_populate_record(null::public.user_grammar_concepts,
+                                          v_row->'previous')) - 'user_id' end;
+        if v_current is distinct from v_previous then
+            return -1;
+        end if;
+    end loop;
+
     insert into public.user_grammar_chapters (user_id, chapter_id, status, started_at, finished_at)
     select p_user_id, r.chapter_id, r.status, r.started_at, r.finished_at
     from jsonb_to_recordset(p_chapters)

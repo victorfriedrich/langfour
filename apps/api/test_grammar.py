@@ -100,6 +100,7 @@ def test_using_a_rule_again_the_same_day_doesnt_grow_the_interval():
         p = grammar.practise(p, SER, "produced", True, NOW + timedelta(hours=1))
     assert p.interval_days == 14
     assert p.produced_count == 6
+    assert p.refresh_at == NOW + 14 * DAY
 
 
 def test_the_interval_doubles_once_half_has_passed_and_stops_at_180():
@@ -218,8 +219,8 @@ def test_record_writes_events_progress_and_opens_the_chapter():
 
     user, events, concepts, chapters = store.recorded
     assert user == USER
-    assert [e["concept_id"] for e in events] == [HARD.id, "es.ser.identity"]
-    assert events[0]["sentence"] == "Está cansado."
+    assert {e["concept_id"] for e in events} == {HARD.id, "es.ser.identity"}
+    assert next(e for e in events if e["concept_id"] == HARD.id)["sentence"] == "Está cansado."
     by_id = {c["concept_id"]: c for c in concepts}
     assert by_id[HARD.id]["refresh_at"] == (NOW + 7 * DAY).isoformat()
     assert by_id["es.ser.identity"]["first_correct_at"] is None
@@ -255,3 +256,74 @@ def test_produced_needs_correct_and_seen_must_not_have_it():
 def test_record_refuses_a_language_without_a_curriculum():
     with pytest.raises(ValueError, match="no grammar curriculum"):
         grammar.record(FakeStore(), USER, "fr", [], [], NOW)
+
+
+@pytest.mark.parametrize("kind,correct", [("produced", True), ("seen", None)])
+def test_early_practice_keeps_tomorrows_refresh_after_an_error(kind, correct):
+    p = grammar.practise(practised(RECEPTIVE), RECEPTIVE, "produced", False, NOW + DAY)
+    after = grammar.practise(p, RECEPTIVE, kind, correct, NOW + DAY + timedelta(hours=1))
+    assert after.refresh_at == p.refresh_at == NOW + 2 * DAY
+    assert after.interval_days == p.interval_days
+    assert after.interval_grown_at == p.interval_grown_at
+
+
+@pytest.mark.parametrize("previous", [None, practised(RECEPTIVE)])
+def test_receptive_exposure_doesnt_override_a_sessions_error_in_either_order(previous):
+    seen = GrammarResult(concept=RECEPTIVE.id, kind="seen")
+    wrong = GrammarResult(concept=RECEPTIVE.id, kind="produced", correct=False)
+    saved = []
+    for results in ([seen, wrong], [wrong, seen]):
+        store = FakeStore(concepts=[{"concept_id": RECEPTIVE.id, **previous.to_row()}]
+                          if previous else [])
+        grammar.record(store, USER, "es", results, [], NOW + DAY)
+        [progress] = store.recorded[2]
+        assert progress["refresh_at"] == (NOW + 2 * DAY).isoformat()
+        assert progress["error_count"] == 1
+        assert progress["last_seen_at"] == (NOW + DAY).isoformat()
+        saved.append(progress)
+    assert saved[0] == saved[1]
+
+
+def test_record_rereads_after_a_conflict_and_preserves_the_other_sessions_progress():
+    class OverlappingStore(FakeStore):
+        calls = 0
+
+        def record(self, user_id, events, concepts, chapters):
+            self.calls += 1
+            if self.calls == 1:
+                assert concepts[0]["previous"] is None
+                assert chapters[0]["previous"] is None
+                # Another request produced the concept and finished its chapter
+                # between our read and our attempted write. The RPC wrote nothing.
+                self.concept_rows = [{"concept_id": SER.id, **practised(SER).to_row()}]
+                self.chapter_rows = [{"chapter_id": SER.chapter_id, "status": "done",
+                                      "started_at": NOW.isoformat(),
+                                      "finished_at": NOW.isoformat()}]
+                return -1
+            return super().record(user_id, events, concepts, chapters)
+
+    store = OverlappingStore()
+    out = grammar.record(store, USER, "es", [GrammarResult(concept=SER.id, kind="seen")],
+                         [ChapterUpdate(chapter=SER.chapter_id, status="started")], NOW + DAY)
+    assert store.calls == 2
+    assert out.recorded == 1 and out.chapters == [] and out.changed == []
+    _, events, [progress], chapters = store.recorded
+    assert len(events) == 1 and chapters == []
+    assert progress["first_correct_at"] == NOW.isoformat()
+    assert progress["produced_count"] == 1
+    assert progress["refresh_at"] == (NOW + 14 * DAY).isoformat()
+    assert progress["previous"] == store.concept_rows[0]
+
+
+def test_record_stops_after_three_conflicts():
+    class ConflictingStore(FakeStore):
+        calls = 0
+
+        def record(self, *args):
+            self.calls += 1
+            return -1
+
+    store = ConflictingStore()
+    with pytest.raises(RuntimeError, match="please try again"):
+        grammar.record(store, USER, "es", [GrammarResult(concept=SER.id, kind="seen")], [], NOW)
+    assert store.calls == 3

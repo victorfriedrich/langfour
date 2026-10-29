@@ -240,6 +240,8 @@ def practise(p: Progress, concept: Concept, kind: Literal["seen", "produced"],
         elif now - p.interval_grown_at >= timedelta(days=p.interval_days / 2):
             p = replace(p, interval_days=min(2 * p.interval_days, MAX_INTERVAL),
                         interval_grown_at=now)
+        else:
+            return p  # too soon: keep the refresh date, including tomorrow after an error
         out = now + timedelta(days=p.interval_days)
         return replace(p, refresh_at=max(p.refresh_at or out, out))
 
@@ -368,6 +370,7 @@ class GrammarStore:
 
     def record(self, user_id: str, events: list[dict], concepts: list[dict],
                chapters: list[dict]) -> int:
+        """Write atomically; -1 means a previous-row check failed, with nothing written."""
         return self.db.rpc("record_grammar", {
             "p_user_id": user_id, "p_events": events,
             "p_concepts": concepts, "p_chapters": chapters,
@@ -497,7 +500,15 @@ def get_details(store: GrammarStore, user_id: str, language: str | None,
 
 def record(store: GrammarStore, user_id: str, language: str, results: list[GrammarResult],
            chapter_updates: list[ChapterUpdate], now: datetime | None = None) -> GrammarRecord:
-    now = now or _now()
+    for _ in range(3):
+        saved = _record_once(store, user_id, language, results, chapter_updates, now or _now())
+        if saved is not None:
+            return saved
+    raise RuntimeError("Grammar progress changed during recording; please try again.")
+
+
+def _record_once(store: GrammarStore, user_id: str, language: str, results: list[GrammarResult],
+                 chapter_updates: list[ChapterUpdate], now: datetime) -> GrammarRecord | None:
     cur = _require(language)
     chapters, progress = _user_state(store, user_id, cur)
     old_status = {i: _status(chapters, i) for i in cur.chapter}
@@ -526,7 +537,9 @@ def record(store: GrammarStore, user_id: str, language: str, results: list[Gramm
             not_found.append(u.chapter)
 
     events, before, touched = [], {}, {}
-    for r in results:
+    # Results summarize a session, not a timeline. Apply exposure first so a
+    # production error wins even when a receptive concept was also seen.
+    for r in sorted(results, key=lambda r: r.kind == "produced"):
         c = cur.concept.get(r.concept)
         if c is None:
             not_found.append(r.concept)
@@ -543,9 +556,13 @@ def record(store: GrammarStore, user_id: str, language: str, results: list[Gramm
     new_status = old_status | {i: row["status"] for i, row in changed_chapters.items()}
     recorded = store.record(
         user_id, events,
-        [{"concept_id": i} | p.to_row() for i, p in touched.items()],
-        list(changed_chapters.values()),
+        [{"concept_id": i, **p.to_row(),
+          "previous": {"concept_id": i, **progress[i].to_row()} if i in progress else None}
+         for i, p in touched.items()],
+        [{**row, "previous": chapters.get(i)} for i, row in changed_chapters.items()],
     ) if events or changed_chapters else 0
+    if recorded == -1:  # another request committed since our read; no writes were made
+        return None
 
     after = {i: state(touched[i], new_status[cur.concept[i].chapter_id], now) for i in touched}
     return GrammarRecord(
