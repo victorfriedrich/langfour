@@ -46,6 +46,7 @@ class FakeStore:
         self.langfour = {(USER, 1): {"id": 30, "next_due_at": None},
                          (USER, 2): {"id": 31, "next_due_at": (NOW + timedelta(days=5)).isoformat()}}
         self.langfour_reviews: list[tuple[int, bool]] = []
+        self.fail_practice_after: int | None = None  # simulate a failure part-way
         self.removed_rems: set[str] = set()
         self.events: list[dict] = []
         self.outbox: dict[int, dict] = {}
@@ -65,9 +66,23 @@ class FakeStore:
         return {(w, k): {"id": c, "next_due_at": None} for (u, w, k), c in self.cards.items()
                 if u == user_id and w in word_ids}
 
-    def langfour_review(self, user_id, word_id, correct):
-        self.langfour_reviews.append((word_id, correct))
-        return NOW.isoformat()
+    def langfour_practice(self, event_id, outcome):
+        """Like srs_langfour_practice: review and row together, idempotent."""
+        if event_id in self.outbox:
+            return self.outbox[event_id]
+        if self.fail_practice_after is not None and len(self.langfour_reviews) >= self.fail_practice_after:
+            raise RuntimeError("connection dropped")
+        event = next(e for e in self.events if e["id"] == event_id)
+        card = self.langfour[(event["user_id"], event["word_id"])]
+        row = {"event_id": event_id, "card_id": card["id"], "outcome": outcome}
+        due = card["next_due_at"]
+        if outcome == "good" and due and datetime.fromisoformat(due) > NOW:
+            row |= {"status": "skipped", "reason": "not_due"}
+        else:
+            self.langfour_reviews.append((event["word_id"], outcome == "good"))
+            row |= {"status": "applied", "applied_review_at": NOW.isoformat()}
+        self.outbox[event_id] = row
+        return row
 
     def cards_practiced_since(self, card_ids, since):
         events = {e["id"]: e for e in self.events}
@@ -187,6 +202,21 @@ def test_langfour_scheduled_users_have_results_applied_at_once():
     assert (rows[30]["status"], rows[30]["applied_review_at"]) == ("applied", NOW.isoformat())
     assert (rows[31]["status"], rows[31]["reason"]) == ("skipped", "not_due")
     assert all(r["status"] != "pending" for r in rows.values())
+
+
+def test_a_retry_after_a_failure_part_way_applies_nothing_twice():
+    store = FakeStore(provider="langfour")
+    session = answers(("hablar", "recognize", False), ("casa", "recognize", False))
+    store.fail_practice_after = 1
+    with pytest.raises(RuntimeError):
+        record_practice(store, USER, session, now=NOW)
+    store.fail_practice_after = None
+    retry = record_practice(store, USER, session, now=NOW)
+
+    # hablar's first result was applied and recorded together, so the retry
+    # finds its card practised today; only casa is applied now.
+    assert store.langfour_reviews == [(1, False), (2, False)]
+    assert retry.applied == 1
 
 
 def test_a_wrong_answer_reaches_a_langfour_card_that_is_not_due():

@@ -167,8 +167,9 @@ on conflict (card_id, reviewed_at) do nothing;
 -- ---------------------------------------------------------------------------
 -- A review in Langfour: record it and reschedule the card with SM-2 (the
 -- algorithm update_spaced_repetition always used). Returns the review's time,
--- or null when the user doesn't have the word. For the API, which passes the
--- user (practice.py); clients go through update_spaced_repetition.
+-- or null when the user doesn't have the word or has turned it off
+-- ('disabled': stop practising it). Clients go through
+-- update_spaced_repetition, the API through srs_langfour_practice.
 -- ---------------------------------------------------------------------------
 create or replace function public.srs_langfour_review(p_user_id uuid, p_word_id integer,
                                                       p_correct boolean)
@@ -183,7 +184,8 @@ declare
     v_now timestamptz := now();
 begin
     if not exists (select 1 from public.userwords
-                   where user_id = p_user_id and word_id = p_word_id) then
+                   where user_id = p_user_id and word_id = p_word_id
+                     and status <> 'disabled') then
         return null;
     end if;
     v_card := public.srs_langfour_card(p_user_id, p_word_id);
@@ -218,6 +220,54 @@ $$;
 
 revoke execute on function public.srs_langfour_review(uuid, integer, boolean) from public, anon, authenticated;
 grant execute on function public.srs_langfour_review(uuid, integer, boolean) to service_role;
+
+-- A practice result from outside (practice.py, ChatGPT) on a Langfour card:
+-- the review, the schedule and the srs_outbox row that records it, in one
+-- transaction, so a failure can't leave a review without its record (a retry
+-- would apply it again and dodge the one-per-day rule). Idempotent on the
+-- event: called again, it returns the row it wrote. 'good' only reaches a
+-- card that is due.
+create or replace function public.srs_langfour_practice(p_event_id bigint, p_outcome text)
+returns public.srs_outbox
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    v_row public.srs_outbox;
+    v_event public.word_events;
+    v_card bigint;
+    v_due timestamptz;
+    v_at timestamptz;
+begin
+    select * into v_row from public.srs_outbox where event_id = p_event_id;
+    if found then
+        return v_row;
+    end if;
+    select * into strict v_event from public.word_events where id = p_event_id;
+    select c.id, c.next_due_at into v_card, v_due
+      from public.srs_notes n join public.srs_cards c on c.note_id = n.id
+     where n.user_id = v_event.user_id and n.word_id = v_event.word_id
+       and n.provider = 'langfour'
+       for update of c;
+
+    if p_outcome = 'good' and v_due > now() then
+        v_row := row(p_event_id, v_card, p_outcome, 'skipped', now(), 'not_due', null);
+    else
+        v_at := public.srs_langfour_review(v_event.user_id, v_event.word_id, p_outcome = 'good');
+        if v_at is null then
+            v_row := row(p_event_id, v_card, p_outcome, 'skipped', now(), 'word_off', null);
+        else
+            v_row := row(p_event_id, v_card, p_outcome, 'applied', now(), null, v_at);
+        end if;
+    end if;
+    insert into public.srs_outbox select v_row.*;
+    return v_row;
+end;
+$$;
+
+revoke execute on function public.srs_langfour_practice(bigint, text) from public, anon, authenticated;
+grant execute on function public.srs_langfour_practice(bigint, text) to service_role;
 
 -- The web app's review session (updateFlashCardInfo.ts). It used to need a
 -- second call, insert_flashcard_test, to record the answer; this records it.

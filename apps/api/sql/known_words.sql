@@ -33,11 +33,14 @@ from (
     union all
 
     -- Learned in reviews, in Langfour or a connected app (srs_notes.provider):
-    -- every card of the note, judged by its latest review. Langfour's cards
-    -- have been here since langfour_provider.sql; before that its schedule
-    -- lived on userwords.
+    -- every card of the note, judged by its latest review. Only words still
+    -- being learned: a turned-off word ('disabled') is neither learning nor
+    -- known, however its cards stand. Langfour's cards have been here since
+    -- langfour_provider.sql; before that its schedule lived on userwords.
     select n.user_id, n.word_id, 'reviews', 2
     from public.srs_notes n
+    join public.userwords uw on uw.user_id = n.user_id and uw.word_id = n.word_id
+                            and uw.status = 'learning'
     where n.removed_at is null
       and exists (select 1 from public.srs_cards c where c.note_id = n.id)
       and not exists (

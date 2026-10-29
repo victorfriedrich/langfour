@@ -101,8 +101,9 @@ grant execute on function public.apply_word_audit(jsonb, jsonb) to service_role;
 -- target keeps that row: it becomes known if the source was, takes the source's
 -- review progress if further along, and gets the source's tests and RemNote note.
 -- Word events (word_events.sql) move to the target for every user. Where the
--- user has a Langfour card for both, the source's reviews and (if further
--- along) schedule go to the target's card.
+-- user has a Langfour card for both, the source's reviews go to the target's
+-- card, and so does its whole schedule when the target is new to the user or
+-- the source is further along.
 -- The source row is then deleted, unless the user has a note on both (two Rems
 -- for one word); that row stays so its Rem keeps syncing. The source is left
 -- invalid.
@@ -136,8 +137,8 @@ begin
       from userwords where word_id = m.src and user_id = any(moved);
     -- Langfour cards (langfour_provider.sql): the insert above gave moved
     -- users a target card, and others may have one already. Where both
-    -- exist, the target card takes the source's reviews and, if further
-    -- along, its schedule, and the source's Langfour note goes.
+    -- exist, the target card takes the source's reviews and, when it wins,
+    -- its schedule, and the source's Langfour note goes.
     insert into srs_reviews (card_id, reviewed_at, outcome)
     select dc.id, r.reviewed_at, r.outcome
       from srs_notes sn
@@ -147,6 +148,19 @@ begin
       join srs_cards dc on dc.note_id = dn.id
      where sn.word_id = m.src and sn.provider = 'langfour'
     on conflict (card_id, reviewed_at) do nothing;
+    -- Whose schedule the target card keeps is decided once, and all of it
+    -- goes together: the source's when the target is new to the user (its
+    -- card was just made with defaults) or when the source is further along.
+    -- The due date is copied first, while repetition still tells them apart.
+    update srs_cards dc set next_due_at = sc.next_due_at
+      from srs_notes sn
+      join srs_cards sc on sc.note_id = sn.id
+      join srs_card_sm2 s on s.card_id = sc.id
+      join srs_notes dn on dn.user_id = sn.user_id and dn.provider = 'langfour' and dn.word_id = m.dst,
+           srs_card_sm2 d
+     where sn.word_id = m.src and sn.provider = 'langfour' and dc.note_id = dn.id
+       and d.card_id = dc.id
+       and (sn.user_id = any(moved) or s.repetition > d.repetition);
     update srs_card_sm2 d set ease_factor = s.ease_factor, repetition = s.repetition,
            interval_days = s.interval_days
       from srs_notes sn
@@ -155,15 +169,7 @@ begin
       join srs_notes dn on dn.user_id = sn.user_id and dn.provider = 'langfour' and dn.word_id = m.dst
       join srs_cards dc on dc.note_id = dn.id
      where sn.word_id = m.src and sn.provider = 'langfour' and d.card_id = dc.id
-       and s.repetition > d.repetition;
-    update srs_cards dc set next_due_at = sc.next_due_at
-      from srs_notes sn
-      join srs_cards sc on sc.note_id = sn.id
-      join srs_card_sm2 s on s.card_id = sc.id
-      join srs_notes dn on dn.user_id = sn.user_id and dn.provider = 'langfour' and dn.word_id = m.dst
-     where sn.word_id = m.src and sn.provider = 'langfour' and dc.note_id = dn.id
-       and s.repetition >= (select d.repetition from srs_card_sm2 d where d.card_id = dc.id)
-       and s.repetition > 0;
+       and (sn.user_id = any(moved) or s.repetition > d.repetition);
     delete from srs_notes sn
      where sn.word_id = m.src and sn.provider = 'langfour'
        and exists (select 1 from srs_notes dn
