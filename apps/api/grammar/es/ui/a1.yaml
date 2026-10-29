@@ -1,0 +1,486 @@
+level: a1
+chapters:
+- id: es.pronombres_sujeto
+  title: Subject pronouns and forms of address
+  description: Say who you mean and choose informal or formal you.
+  concepts:
+  - id: forms
+    title: Subject pronouns
+    description: Identify Spanish subject pronouns, including gendered plurals.
+  - id: usted
+    title: 'Formal you: usted'
+    description: Use formal usted/ustedes with third-person verb forms.
+  - id: plural_you
+    title: 'Plural you: vosotros and ustedes'
+    description: In most of Spain, vosotros is informal; ustedes is used across Latin America.
+- id: es.ser
+  title: 'Ser: identity and characteristics'
+  description: Say who someone is and what things are like.
+  concepts:
+  - id: forms
+    title: Forms of ser
+    description: Use soy, eres, es, somos, sois and son.
+  - id: identity
+    title: Identity and definitions
+    description: Use ser for names, relationships and what something is.
+  - id: origin
+    title: Origin and nationality
+    description: Use ser de for origins and ser with nationality adjectives.
+  - id: profession
+    title: Jobs and professions
+    description: Use ser with bare professions, usually without an article.
+  - id: characteristics
+    title: General characteristics
+    description: Describe typical qualities with ser.
+  - id: possession_material
+    title: Ownership and material
+    description: Use ser de for whose it is or what it's made of.
+- id: es.presente_regular
+  title: Regular present tense
+  description: Talk about habits, current facts and planned events.
+  concepts:
+  - id: ar
+    title: Present tense of -ar verbs
+    description: Conjugate regular -ar verbs in the present tense.
+  - id: er
+    title: Present tense of -er verbs
+    description: Conjugate regular -er verbs in the present tense.
+  - id: ir
+    title: Present tense of -ir verbs
+    description: Conjugate regular -ir verbs in the present tense.
+  - id: pro_drop
+    title: Leaving out subject pronouns
+    description: Usually omit yo, tú and other pronouns before verbs.
+  - id: no_it
+    title: No subject pronoun for it
+    description: Spanish normally omits a subject pronoun corresponding to English it.
+  - id: uses
+    title: Present tense uses
+    description: Use the same present for habits and what happens now.
+  - id: future_scheduled
+    title: Present for future schedules
+    description: Use the present tense for plans and timetables with a future time.
+  - id: offers
+    title: Present questions for offers
+    description: Use present-tense questions to make offers or ask permission.
+- id: es.sustantivo
+  title: Noun gender and plurals
+  description: Choose masculine or feminine forms and make nouns plural.
+  concepts:
+  - id: gender_o_a
+    title: Nouns ending in -o or -a
+    description: Most -o nouns are masculine and -a nouns feminine.
+  - id: gender_endings
+    title: Gender from other endings
+    description: Recognize gender clues like -ción and -aje.
+  - id: gender_learn
+    title: Gender to memorize
+    description: Learn the article of nouns ending in -e or consonants.
+  - id: gender_ma
+    title: Masculine -ma nouns
+    description: Recognize common masculine nouns of Greek origin ending in -ma.
+  - id: gender_exceptions
+    title: Exceptions to noun gender
+    description: Learn exceptions like el día and la mano.
+  - id: people
+    title: Words for people
+    description: Use gendered endings, shared forms or separate words for people.
+  - id: mixed_plural
+    title: Mixed groups
+    description: Use masculine plural for mixed-gender groups.
+  - id: plural
+    title: Making nouns plural
+    description: Add -s or -es, with changes like lápiz to lápices.
+- id: es.articulo_1
+  title: 'Articles: el, la, un, una'
+  description: Choose the right article for people and things.
+  concepts:
+  - id: forms
+    title: Definite and indefinite articles
+    description: Distinguish definite el/la/los/las from indefinite un/una/unos/unas.
+  - id: contractions
+    title: Contractions al and del
+    description: Combine a + el and de + el.
+  - id: def_vs_indef
+    title: El versus un
+    description: Distinguish a known thing from a new or unspecified one.
+  - id: unos
+    title: Unos and unas
+    description: Say some or approximately with unos/unas.
+  - id: days
+    title: Days of the week
+    description: Use el for a particular weekday and los for recurring weekdays.
+  - id: titles
+    title: Titles before names
+    description: Use articles when discussing people, not addressing them.
+- id: es.adjetivo_1
+  title: 'Adjectives: basics'
+  description: Describe nouns with the correct form and placement.
+  concepts:
+  - id: agreement
+    title: Adjective agreement
+    description: Match adjectives to the noun's gender and number.
+  - id: consonant_feminine
+    title: Adjectives with feminine -a
+    description: Some consonant-ending adjectives gain -a in the feminine.
+  - id: position
+    title: Adjective position
+    description: Usually put descriptive adjectives after the noun.
+  - id: apocope
+    title: Short forms before nouns
+    description: 'Shorten certain adjectives before nouns: buen, mal, gran, primer and tercer.'
+- id: es.gustar_1
+  title: 'Gustar: likes and dislikes'
+  description: Express what you like and react to others' preferences.
+  concepts:
+  - id: structure
+    title: Gusta versus gustan
+    description: Use gusta for a singular noun or infinitive, gustan for plural nouns.
+  - id: pronouns
+    title: Pronouns with gustar
+    description: Mark who likes something with me, te, le and others.
+  - id: a_mi
+    title: A mí, a ti, a Juan
+    description: Add a mí or a name for clarity; keep the matching object pronoun.
+  - id: reactions
+    title: Agreeing and disagreeing
+    description: Agree or disagree about likes using también, tampoco, sí or no.
+  - id: encantar
+    title: Me encanta
+    description: Say you love something using the gustar pattern.
+  - id: me_gustaria
+    title: Me gustaría
+    description: Politely say what you would like to do.
+- id: es.estar_hay
+  title: Estar and hay
+  description: Talk about locations, states and what exists.
+  concepts:
+  - id: forms
+    title: Forms of estar
+    description: Use estoy, estás, está, estamos, estáis and están.
+  - id: location
+    title: Where things are
+    description: Use estar for the location of known people and things.
+  - id: states
+    title: How people feel
+    description: Use estar for feelings and current conditions.
+  - id: bien_mal
+    title: Estar with bien and mal
+    description: Use estar with bien and mal for how someone or something is.
+  - id: hay
+    title: 'Hay: there is or are'
+    description: Use hay to say something exists, singular or plural.
+  - id: hay_vs_esta
+    title: Hay versus está
+    description: Use hay to introduce what exists and estar to locate something specific.
+  - id: location_prepositions
+    title: Position words
+    description: Locate things with cerca de, al lado de and similar phrases.
+- id: es.ser_estar_1
+  title: 'Ser or estar: essentials'
+  description: Describe what someone is like versus how they are now.
+  concepts:
+  - id: characteristic_vs_state
+    title: Characteristics versus states
+    description: Ser for typical qualities; estar for current conditions.
+  - id: state_adjectives
+    title: State adjectives
+    description: Some adjectives for conditions normally use estar.
+  - id: nouns_ser
+    title: Nouns after ser
+    description: Use ser, not estar, before a noun describing identity.
+  - id: ser_de_estar_en
+    title: Origin versus location
+    description: Ser de for origin; estar en for current location.
+- id: es.preguntas_1
+  title: Asking questions
+  description: Ask who, what, where, when, why and how.
+  concepts:
+  - id: question_words
+    title: Question words
+    description: Use qué, quién, dónde, cuándo, cómo and others.
+  - id: word_order
+    title: Word order in questions
+    description: Questions need no do/does; place the verb near the question word.
+  - id: preposition_first
+    title: Prepositions in questions
+    description: Put de, con or para before the question word.
+  - id: que_vs_cual
+    title: Qué versus cuál
+    description: Use qué for what or definitions, cuál to choose or identify.
+  - id: por_que_porque
+    title: Por qué versus porque
+    description: Ask why with por qué; answer because with porque.
+- id: es.negacion
+  title: Negation
+  description: Say no, nobody, nothing and never.
+  concepts:
+  - id: no_before_verb
+    title: No before the verb
+    description: Put no before the verb and object pronouns.
+  - id: double_negation
+    title: Negative words after verbs
+    description: Use no with nada, nadie or nunca after the verb.
+  - id: negative_first
+    title: Negative words first
+    description: Drop no when nadie or nunca comes before the verb.
+  - id: tambien_tampoco
+    title: También versus tampoco
+    description: Agree with positive statements using también, negative with tampoco.
+  - id: si_no_contrast
+    title: Sí and no for contrast
+    description: Contrast people with yo sí and yo no.
+- id: es.escritura
+  title: Spelling and accents
+  description: Read and write Spanish words with standard spelling.
+  concepts:
+  - id: stress_rules
+    title: Written accent rules
+    description: Know which stressed syllables need an accent mark.
+  - id: accent_shift
+    title: Accents when words change
+    description: Add or remove accents when endings change the stress pattern.
+  - id: diacritic
+    title: Accents that change meaning
+    description: Distinguish tú/tu, él/el, sí/si and similar pairs.
+  - id: question_words
+    title: Accents in question words
+    description: Accent question words in direct or indirect questions and exclamations.
+  - id: inverted_marks
+    title: Opening punctuation marks
+    description: Start Spanish questions with ¿ and exclamations with ¡.
+  - id: lowercase
+    title: Lowercase words
+    description: Write months, weekdays, languages and nationalities in lowercase.
+  - id: letters
+    title: Letter and sound patterns
+    description: Apply c/qu, g/gu/gü and related spelling patterns for Spanish sounds.
+- id: es.presente_irregular_1
+  title: 'Present tense: stem changes'
+  description: Use common verbs like querer, poder and pedir.
+  concepts:
+  - id: boot_pattern
+    title: Where stems change
+    description: Change the stressed stem vowel, except in nosotros and vosotros forms.
+  - id: e_ie
+    title: E to ie verbs
+    description: Change e to ie in stressed present-tense stems, as in querer.
+  - id: o_ue
+    title: O to ue verbs
+    description: Change o to ue in stressed present-tense stems, as in poder.
+  - id: u_ue_jugar
+    title: 'Jugar: u to ue'
+    description: Change u to ue in stressed forms of jugar, but not nosotros/vosotros.
+  - id: e_i
+    title: E to i verbs
+    description: Change e to i in stressed present-tense stems of certain -ir verbs.
+  - id: spelling
+    title: Spelling in the yo form
+    description: Adjust spelling in irregular yo forms to preserve the sound.
+- id: es.presente_irregular_2
+  title: 'Present tense: irregular verbs'
+  description: Use everyday verbs that don't follow regular endings.
+  concepts:
+  - id: go_verbs
+    title: Yo forms ending in -go
+    description: Use irregular present-tense yo forms ending in -go.
+  - id: go_plus_stem
+    title: Tener, venir and decir
+    description: Combine an irregular yo form with a stem change.
+  - id: zco
+    title: Yo forms ending in -zco
+    description: Use -zco in the present-tense yo form of many -cer/-cir verbs.
+  - id: ir
+    title: Present tense of ir
+    description: Use voy, vas, va, vamos, vais and van.
+  - id: only_yo
+    title: Doy, sé and veo
+    description: Learn irregular first-person forms of dar, saber and ver.
+  - id: saber_conocer
+    title: Saber versus conocer
+    description: Saber for knowledge and skills; conocer for familiarity.
+  - id: ir_venir
+    title: Ir versus venir
+    description: Distinguish movement toward the speaker from movement elsewhere.
+  - id: uir
+    title: Y in -uir verbs
+    description: Insert y in stressed present forms of -uir verbs, but not nosotros/vosotros.
+  - id: oir
+    title: Present tense of oír
+    description: Use oigo, oyes, oye, oímos and other forms.
+- id: es.perifrasis_1
+  title: Plans, duties and ability
+  description: Say what you're going to do, must do or can do.
+  concepts:
+  - id: ir_a
+    title: Ir a + infinitive
+    description: Express plans or the near future.
+  - id: tener_que
+    title: Tener que + infinitive
+    description: Say what someone has to do.
+  - id: hay_que
+    title: Hay que + infinitive
+    description: Say what must be done in general.
+  - id: modal_infinitive
+    title: Verbs followed by infinitives
+    description: Use querer, necesitar and pensar directly before an infinitive.
+  - id: saber_poder
+    title: Saber versus poder
+    description: Distinguish knowing how from being able or allowed.
+- id: es.posesivos_1
+  title: 'Possessives: mi, tu, su'
+  description: Say whose people and things are.
+  concepts:
+  - id: forms
+    title: Possessives before nouns
+    description: Use mi, tu, su, nuestro and vuestro before nouns.
+  - id: agreement
+    title: Matching possessives
+    description: Make possessives agree with the thing owned.
+  - id: su_clarify
+    title: Clarifying su
+    description: Use de él, de ella and similar phrases to clarify ambiguous su.
+  - id: de
+    title: Ownership with de
+    description: Express possession with de rather than an English possessive ending.
+- id: es.numeros_1
+  title: Numbers up to 100
+  description: Use numbers for prices, ages and quantities.
+  concepts:
+  - id: to_thirty
+    title: Numbers from 0 to 30
+    description: Form numbers from 0 to 30, including their written accents.
+  - id: tens_y
+    title: Tens plus units
+    description: Join treinta y uno and similar numbers with y.
+  - id: uno_agreement
+    title: Un and una with numbers
+    description: Change uno to un or una before nouns, even within larger numbers.
+- id: es.tener_hacer
+  title: Tener, hacer and everyday expressions
+  description: Talk about age, hunger, feelings and weather.
+  concepts:
+  - id: tener_states
+    title: Tener hambre and other states
+    description: Use tener for hunger, thirst, fear and similar states.
+  - id: tener_age
+    title: Saying your age
+    description: Express age with tener + number + años.
+  - id: weather
+    title: Weather expressions
+    description: Use hace, está, hay, llueve and nieva for weather.
+- id: es.hora_fecha
+  title: Time and dates
+  description: Tell the time and arrange when things happen.
+  concepts:
+  - id: es_la_son_las
+    title: Telling the time
+    description: Tell the time with es la, son las, y and menos.
+  - id: a_las
+    title: At a specific time
+    description: Use a la una or a las ocho.
+  - id: parts_of_day
+    title: Parts of the day
+    description: Choose de la mañana after clock times, por la mañana otherwise.
+  - id: dates
+    title: Calendar dates
+    description: Use el for specific dates and en for months or years.
+- id: es.demostrativos
+  title: 'Demonstratives: this and that'
+  description: Point to nearby and distant people or things.
+  concepts:
+  - id: distances
+    title: Este, ese and aquel
+    description: Indicate something near you, nearby or far away.
+  - id: forms
+    title: Demonstrative forms
+    description: Match este, esa, aquellos and other forms to nouns.
+  - id: pronouns
+    title: Demonstratives alone
+    description: Use este or esa without repeating the noun.
+  - id: neuter
+    title: Esto, eso and aquello
+    description: Use esto, eso and aquello for ideas or unidentified things, not before nouns.
+- id: es.muy_mucho
+  title: Muy, mucho and other amounts
+  description: Say how much, how many and to what degree.
+  concepts:
+  - id: muy_vs_mucho
+    title: Muy versus mucho
+    description: Use muy with adjectives/adverbs and mucho with verbs or quantities.
+  - id: mucho_agreement
+    title: Mucho with nouns
+    description: Match mucho, mucha, muchos or muchas to a noun.
+  - id: poco
+    title: Poco and un poco
+    description: Distinguish little from a little or a bit.
+  - id: bastante_demasiado
+    title: Bastante and demasiado
+    description: Use bastante/demasiado with agreement before nouns, but not adjectives.
+- id: es.reflexivos_1
+  title: 'Reflexive verbs: daily routine'
+  description: Describe actions you do to yourself.
+  concepts:
+  - id: forms_position
+    title: Reflexive pronouns
+    description: Put reflexive pronouns before a conjugated verb.
+  - id: daily_routine
+    title: Daily routine verbs
+    description: Use levantarse, ducharse and other daily-action verbs.
+  - id: with_infinitive
+    title: Reflexives with infinitives
+    description: Place a reflexive pronoun before the verb group or on the infinitive.
+  - id: body_article
+    title: Body parts and clothing
+    description: Use a definite article, not a possessive, for body parts in reflexive phrases.
+- id: es.preposiciones_1
+  title: Basic prepositions
+  description: Say where, where to, where from and with whom.
+  concepts:
+  - id: a_direction
+    title: A for destinations
+    description: Use a after ir, llegar and volver for destinations.
+  - id: en
+    title: En for location and transport
+    description: Use en for locations and most means of transport.
+  - id: de_desde
+    title: De, desde and hasta
+    description: Use de for origin or ownership and de... a / desde... hasta for ranges.
+  - id: con_sin
+    title: Con and sin
+    description: Say with or without someone or something.
+  - id: prep_pronouns
+    title: Pronouns after prepositions
+    description: Use pronouns such as mí, ti, conmigo and contigo after prepositions.
+- id: es.conectores_1
+  title: Basic connectors
+  description: Join ideas with and, or, but and because.
+  concepts:
+  - id: y_e
+    title: Y becomes e
+    description: Change y to e before an i sound, except in words beginning with hie-.
+  - id: o_u
+    title: O becomes u
+    description: Use u before a word starting with an o sound.
+  - id: pero_porque
+    title: Pero and porque
+    description: Express a contrast with pero or a reason with porque.
+- id: es.gerundio_1
+  title: 'Estar + gerund: actions in progress'
+  description: Describe actions in progress with estar + gerund.
+  concepts:
+  - id: forms
+    title: Gerund endings
+    description: Form the gerund with -ando for -ar and -iendo for -er/-ir verbs.
+  - id: irregular
+    title: Irregular gerunds
+    description: Use -yendo and stem changes in irregular gerund forms.
+  - id: use_now
+    title: Actions happening now
+    description: Use estar + gerund for actions in progress now or around now.
+  - id: not_future
+    title: Future plans without estar + gerund
+    description: Use the present or ir a rather than estar + gerund for most future plans.
+  - id: pronouns
+    title: Pronouns with gerunds
+    description: Place pronouns before estar or attach them to the gerund.

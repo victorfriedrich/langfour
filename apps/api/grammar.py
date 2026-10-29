@@ -75,6 +75,7 @@ class Concept:
     lemmas: tuple[str, ...] = ()
     later: tuple[str, ...] = ()
     see: tuple[str, ...] = ()
+    image: str | None = None  # the web app's picture, in apps/web/public/grammar/<language>/
 
     @property
     def base_interval(self) -> int:
@@ -102,7 +103,7 @@ class Curriculum:
 
 _CHAPTER_FIELDS = {"id", "title", "goal", "continues", "teach", "concepts"}
 _CONCEPT_FIELDS = {"id", "title", "scope", "difficulty", "mode", "variety", "chunk",
-                   "lemmas", "pitfall", "later", "see"}
+                   "lemmas", "pitfall", "later", "see", "image"}
 
 
 def parse_curriculum(language: str, levels: dict[str, dict]) -> Curriculum:
@@ -138,6 +139,7 @@ def parse_curriculum(language: str, levels: dict[str, dict]) -> Curriculum:
                     variety=c.get("variety"), chunk=bool(c.get("chunk", False)),
                     pitfall=c.get("pitfall"), lemmas=tuple(c.get("lemmas") or ()),
                     later=tuple(c.get("later") or ()), see=tuple(c.get("see") or ()),
+                    image=c.get("image"),
                 ))
             chapters.append(Chapter(
                 id=cid, level=level, title=ch.get("title", ""), goal=ch.get("goal", ""),
@@ -183,6 +185,50 @@ def load_curriculum(language: str) -> Curriculum | None:
 @cache
 def teaching_guide() -> str:
     return (CURRICULUM_DIR / "teaching_guide.md").read_text()
+
+
+@dataclass(frozen=True)
+class Copy:
+    title: str
+    description: str
+
+
+@cache
+def load_ui_copy(language: str) -> dict[str, Copy] | None:
+    """The learner-facing titles and one-line descriptions in
+    grammar/<language>/ui/, by chapter and full concept id; None if there are
+    none. They must cover the curriculum exactly, so a new or renamed id fails
+    the tests until it has copy."""
+    cur = load_curriculum(language)
+    folder = CURRICULUM_DIR / language / "ui"
+    files = [folder / f"{lvl}.yaml" for lvl in LEVELS if (folder / f"{lvl}.yaml").exists()]
+    if cur is None or not files:
+        return None
+    copy: dict[str, Copy] = {}
+    for path in files:
+        for ch in yaml.safe_load(path.read_text()).get("chapters") or []:
+            copy[ch["id"]] = Copy(ch["title"], ch["description"])
+            for c in ch.get("concepts") or []:
+                copy[f"{ch['id']}.{c['id']}"] = Copy(c["title"], c["description"])
+    ids = set(cur.chapter) | set(cur.concept)
+    if missing := sorted(ids - set(copy)):
+        raise ValueError(f"{language} grammar UI copy is missing {missing}")
+    if extra := sorted(set(copy) - ids):
+        raise ValueError(f"{language} grammar UI copy has ids the curriculum doesn't: {extra}")
+    return copy
+
+
+def _ui_copy(cur: Curriculum):
+    """Learner-facing copy for an id, falling back to the curriculum's own
+    title and goal or scope where a language has no UI files."""
+    copy = load_ui_copy(cur.language)
+
+    def get(i: str) -> Copy:
+        if copy:
+            return copy[i]
+        item = cur.chapter.get(i) or cur.concept[i]
+        return Copy(item.title, item.goal if i in cur.chapter else item.scope)
+    return get
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +388,76 @@ class GrammarRecord(BaseModel):
     changed: list[ConceptChange]  # concepts whose state moved
     chapters: list[str]          # chapters whose status changed
     not_found: list[str]         # ids not in the curriculum, so not recorded
+
+
+class BookConcept(BaseModel):
+    id: str
+    title: str
+    state: State
+
+
+class BookChapter(BaseModel):
+    id: str
+    number: int  # its place in the book, from 1
+    level: str
+    title: str
+    description: str
+    status: ChapterStatus
+    concepts: list[BookConcept]
+
+
+class GrammarBook(BaseModel):
+    """The web app's table of contents; no chapters without a curriculum."""
+    language: str
+    chapters: list[BookChapter]
+
+
+class ChapterRef(BaseModel):
+    id: str
+    number: int
+    title: str
+
+
+class LessonRef(BaseModel):
+    """A concept in another chapter, with where to find it."""
+    id: str
+    title: str
+    chapter: ChapterRef
+
+
+class LessonConcept(BaseModel):
+    id: str
+    title: str
+    description: str
+    image: str | None
+    state: State
+    difficulty: Literal["easy", "medium", "hard"]
+    mode: Literal["productive", "receptive"]
+    variety: Literal["spain", "latam"] | None
+    chunk: bool
+    pitfall: str | None
+    later: list[LessonRef]
+    see: list[LessonRef]
+    used: int      # times the user produced it
+    mistakes: int  # of those, wrong
+    last_used_at: str | None
+    refresh_at: str | None
+
+
+class Lesson(BaseModel):
+    """One chapter in full, for the web app's lesson page."""
+    id: str
+    number: int
+    level: str
+    title: str
+    description: str
+    status: ChapterStatus
+    started_at: str | None
+    finished_at: str | None
+    continues: ChapterRef | None
+    previous: ChapterRef | None
+    next: ChapterRef | None
+    concepts: list[LessonConcept]
 
 
 # ---------------------------------------------------------------------------
@@ -572,3 +688,73 @@ def _record_once(store: GrammarStore, user_id: str, language: str, results: list
         chapters=[i for i in changed_chapters if new_status[i] != old_status[i]],
         not_found=list(dict.fromkeys(not_found)),
     )
+
+
+# ---------------------------------------------------------------------------
+# The web app's grammar book: the same curriculum and progress as the MCP
+# tools, as structured data for the table of contents and a lesson page.
+# ---------------------------------------------------------------------------
+
+def get_book(store: GrammarStore, user_id: str, language: str,
+             now: datetime | None = None) -> GrammarBook:
+    now = now or _now()
+    cur = load_curriculum(language)
+    if cur is None:
+        return GrammarBook(language=language, chapters=[])
+    chapters, progress = _user_state(store, user_id, cur)
+    copy = _ui_copy(cur)
+    out = []
+    for n, ch in enumerate(cur.chapters, 1):
+        status = _status(chapters, ch.id)
+        out.append(BookChapter(
+            id=ch.id, number=n, level=ch.level, title=copy(ch.id).title,
+            description=copy(ch.id).description, status=status,
+            concepts=[BookConcept(id=c.id, title=copy(c.id).title,
+                                  state=state(progress.get(c.id), status, now))
+                      for c in ch.concepts]))
+    return GrammarBook(language=language, chapters=out)
+
+
+def get_lesson(store: GrammarStore, user_id: str, language: str, chapter_id: str,
+               now: datetime | None = None) -> Lesson:
+    """Raises LookupError for a chapter the curriculum doesn't have."""
+    now = now or _now()
+    cur = _require(language)
+    if chapter_id not in cur.chapter:
+        raise LookupError(f"No grammar chapter {chapter_id}")
+    chapters, progress = _user_state(store, user_id, cur)
+    number = {c.id: n for n, c in enumerate(cur.chapters, 1)}
+    copy = _ui_copy(cur)
+
+    def chapter_ref(i: str | None) -> ChapterRef | None:
+        return ChapterRef(id=i, number=number[i], title=copy(i).title) if i else None
+
+    def ref(i: str) -> LessonRef:
+        return LessonRef(id=i, title=copy(i).title, chapter=chapter_ref(cur.concept[i].chapter_id))
+
+    def iso(t: datetime | None) -> str | None:
+        return t.isoformat() if t else None
+
+    ch = cur.chapter[chapter_id]
+    n = number[ch.id]
+    status = _status(chapters, ch.id)
+    row = chapters.get(ch.id) or {}
+    concepts = []
+    for c in ch.concepts:
+        p = progress.get(c.id) or Progress()
+        concepts.append(LessonConcept(
+            id=c.id, title=copy(c.id).title, description=copy(c.id).description, image=c.image,
+            state=state(progress.get(c.id), status, now), difficulty=c.difficulty, mode=c.mode,
+            variety=c.variety, chunk=c.chunk, pitfall=c.pitfall,
+            later=[ref(i) for i in c.later], see=[ref(i) for i in c.see],
+            used=p.produced_count, mistakes=p.error_count,
+            last_used_at=iso(p.last_produced_at), refresh_at=iso(p.refresh_at)))
+    return Lesson(
+        id=ch.id, number=n, level=ch.level, title=copy(ch.id).title,
+        description=copy(ch.id).description, status=status,
+        started_at=row.get("started_at"), finished_at=row.get("finished_at"),
+        continues=chapter_ref(ch.continues),
+        previous=chapter_ref(cur.chapters[n - 2].id) if n > 1 else None,
+        next=chapter_ref(cur.chapters[n].id) if n < len(cur.chapters) else None,
+        concepts=concepts)
+

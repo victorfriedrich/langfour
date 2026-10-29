@@ -327,3 +327,53 @@ def test_record_stops_after_three_conflicts():
     with pytest.raises(RuntimeError, match="please try again"):
         grammar.record(store, USER, "es", [GrammarResult(concept=SER.id, kind="seen")], [], NOW)
     assert store.calls == 3
+
+
+# ---------------------------------------------------------------------------
+# The web app's grammar book
+# ---------------------------------------------------------------------------
+
+def test_the_book_numbers_every_chapter_and_gives_each_concept_its_state():
+    store = FakeStore(chapters=[{"chapter_id": "es.ser", "status": "started",
+                                 "started_at": NOW.isoformat(), "finished_at": None}],
+                      concepts=[row("es.ser.identity", NOW + DAY), row("es.ser.origin", NOW - DAY)])
+    book = grammar.get_book(store, USER, "es", NOW)
+    assert [c.number for c in book.chapters] == list(range(1, len(ES.chapters) + 1))
+    ser = next(c for c in book.chapters if c.id == "es.ser")
+    states = {c.id: c.state for c in ser.concepts}
+    assert (ser.status, states["es.ser.identity"], states["es.ser.origin"],
+            states["es.ser.forms"]) == ("started", "fresh", "fading", "studied")
+    assert grammar.get_book(store, USER, "de", NOW).chapters == []
+
+
+def test_a_lesson_has_its_concepts_in_full_and_its_neighbours():
+    store = FakeStore(concepts=[row("es.ser.identity", NOW + DAY)])
+    lesson = grammar.get_lesson(store, USER, "es", "es.ser", NOW)
+    assert (lesson.number, lesson.status) == (2, "not started")
+    assert (lesson.previous.id, lesson.next.id) == ("es.pronombres_sujeto", "es.presente_regular")
+    identity = next(c for c in lesson.concepts if c.id == "es.ser.identity")
+    assert (identity.state, identity.used) == ("fresh", 1)
+    assert identity.see[0].chapter.id == "es.ser_estar_1"
+    with pytest.raises(LookupError):
+        grammar.get_lesson(store, USER, "es", "es.nope", NOW)
+
+
+def test_a_concept_can_carry_an_image():
+    level = {"chapters": [{"id": "xx.a", "title": "A", "goal": "g", "concepts": [
+        {"id": "c", "title": "C", "scope": "s", "image": "a-c.webp"}]}]}
+    assert grammar.parse_curriculum("xx", {"a1": level}).concept["xx.a.c"].image == "a-c.webp"
+
+
+def test_the_ui_copy_covers_every_chapter_and_concept():
+    copy = grammar.load_ui_copy("es")  # raises on a missing or extra id
+    assert len(copy) == len(ES.chapters) + len(ES.concept)
+    assert all(c.title and c.description for c in copy.values())
+
+
+def test_the_book_and_lessons_use_the_ui_copy():
+    copy = grammar.load_ui_copy("es")
+    ser = next(c for c in grammar.get_book(FakeStore(), USER, "es", NOW).chapters if c.id == "es.ser")
+    assert (ser.title, ser.description) == (copy["es.ser"].title, copy["es.ser"].description)
+    lesson = grammar.get_lesson(FakeStore(), USER, "es", "es.ser", NOW)
+    assert lesson.concepts[0].description == copy["es.ser.forms"].description
+    assert lesson.concepts[1].see[0].title == copy[lesson.concepts[1].see[0].id].title

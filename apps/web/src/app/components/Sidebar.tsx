@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useContext } from 'react';
 import Link from 'next/link';
-import { ChevronRight, BarChart2, BookMarked, Film, Clapperboard, Menu, X, Globe, LogInIcon, LogOutIcon, Download, Plus } from 'lucide-react';
+import { ChevronRight, BarChart2, BookMarked, BookOpenText, Film, Clapperboard, Menu, X, Globe, LogInIcon, LogOutIcon, Download, Plus } from 'lucide-react';
 import { UserContext, AvailableLanguageOption } from '@/context/UserContext';
 import { supabase } from '@/lib/supabaseclient';
 
@@ -43,6 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
     { href: '/media', name: 'Media', icon: Clapperboard },
     { href: '/vocabulary', name: 'Practice', icon: BookMarked },
     { href: '/progress', name: 'Vocabulary', icon: BarChart2 },
+    { href: '/grammar', name: 'Grammar', icon: BookOpenText },
     { href: '/extension', name: 'Extension', icon: Download },
   ];
 
