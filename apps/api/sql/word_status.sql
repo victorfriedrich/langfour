@@ -100,6 +100,7 @@ grant execute on function public.apply_word_audit(jsonb, jsonb) to service_role;
 -- to the target with their RemNote notes and tests. A user who already has the
 -- target keeps that row: it becomes known if the source was, takes the source's
 -- review progress if further along, and gets the source's tests and RemNote note.
+-- Word events (word_events.sql) move to the target for every user.
 -- The source row is then deleted, unless the user has a note on both (two Rems
 -- for one word); that row stays so its Rem keeps syncing. The source is left
 -- invalid.
@@ -149,6 +150,9 @@ begin
      where s.word_id = m.src and s.user_id = d.user_id and d.word_id = m.dst
        and coalesce(s.repetition, 0) > coalesce(d.repetition, 0);
     update flashcardtests set word_id = m.dst where word_id = m.src;
+    -- The event log is append-only for clients; a root merge is the one
+    -- correction that moves its rows (word_events.sql).
+    update word_events set word_id = m.dst where word_id = m.src;
     delete from userwords u
      where u.word_id = m.src
        and not exists (select 1 from srs_notes s where s.user_id = u.user_id and s.word_id = m.src);
