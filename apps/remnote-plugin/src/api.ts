@@ -44,6 +44,29 @@ export interface PushResult {
   rejected_word_ids: number[];
 }
 
+/** What Langfour has waiting for RemNote; checked between syncs. */
+export interface Inbox {
+  pending_words: number; // learning words without a Rem yet
+  practice: number; // practice results (ChatGPT) waiting to be added to cards
+}
+
+/** A practice result to add to a card: 'again' for a wrong answer, 'good'
+ *  for a right one (apps/api/practice.py). */
+export interface PracticeItem {
+  event_id: number;
+  card_id: string;
+  rem_id: string;
+  outcome: 'again' | 'good';
+  practiced_at: string;
+}
+
+export interface PracticeDecision {
+  event_id: number;
+  status: 'applied' | 'skipped';
+  reason?: string;
+  review_at?: number; // unix ms of the repetition RemNote recorded; only when applied
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -115,6 +138,19 @@ export class LangfourApi {
 
   async relink(body: { word_id: number; from_rem_id: string; to_rem_id: string }): Promise<void> {
     await this.request('/sync/remnote/relink', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  /** Unleased and cheap: only counts. */
+  async inbox(): Promise<Inbox> {
+    return (await this.request('/sync/remnote/inbox')).json();
+  }
+
+  async practice(): Promise<PracticeItem[]> {
+    return (await this.request('/sync/remnote/practice')).json();
+  }
+
+  async reportPractice(decisions: PracticeDecision[]): Promise<void> {
+    await this.request('/sync/remnote/practice', { method: 'POST', body: JSON.stringify({ decisions }) });
   }
 
   /** Hand the lease back early; if this never arrives it lapses on its own. */

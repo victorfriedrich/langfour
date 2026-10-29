@@ -345,7 +345,7 @@ export function isSyncing(): boolean {
   return running > 0;
 }
 
-async function withSync<T>(plugin: RNPlugin, work: (settings: Settings) => Promise<T>): Promise<T> {
+export async function withSync<T>(plugin: RNPlugin, work: (settings: Settings) => Promise<T>): Promise<T> {
   let settings: Settings | undefined;
   running += 1;
   try {
@@ -370,6 +370,15 @@ async function withSync<T>(plugin: RNPlugin, work: (settings: Settings) => Promi
  *  words are skipped. The next sync resends anything this misses. Throws
  *  SyncBusyError while a sync holds the server's lease. */
 export async function pushRems(plugin: RNPlugin, remIds: string[]): Promise<PushResult | null> {
+  const notes = await remNotes(plugin, remIds);
+  if (notes.length === 0) return null;
+  return withSync(plugin, ({ api }) => api.push({ notes }));
+}
+
+/** What pushRems sends for these Rems: their cards, the last day's reviews and
+ *  whether their flashcards are on. Rems that are not Langfour words are left
+ *  out. */
+export async function remNotes(plugin: RNPlugin, remIds: string[]): Promise<NotePayload[]> {
   const since = Date.now() - DAY_MS;
   const notes: NotePayload[] = [];
   for (const rem of (await plugin.rem.findMany(remIds)) ?? []) {
@@ -383,8 +392,7 @@ export async function pushRems(plugin: RNPlugin, remIds: string[]): Promise<Push
       practiced: await rem.getEnablePractice(),
     });
   }
-  if (notes.length === 0) return null;
-  return withSync(plugin, ({ api }) => api.push({ notes }));
+  return notes;
 }
 
 /** Run a sync and record its outcome. Throws, without recording anything,

@@ -15,6 +15,9 @@ export const STORAGE_LAST_SYNC = 'last-sync';
 export const STORAGE_TOKEN = 'token';
 export const STORAGE_LANGUAGES = 'word-languages'; // word id -> language code
 export const STORAGE_LAYOUT_VERSION = 'layout-version';
+export const STORAGE_PRACTICE_DECISIONS = 'practice-decisions'; // event id -> decision, until reported
+// Local to the device: Rems whose live push failed, resent on the next try.
+export const STORAGE_UNSENT_REMS = 'unsent-rems';
 
 export const LANGUAGE_NAMES: Record<string, string> = {
   es: 'Spanish',
