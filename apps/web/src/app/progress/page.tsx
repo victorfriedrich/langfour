@@ -66,7 +66,7 @@ const VocabularyPage = () => {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-white">
-        <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+        <div className="max-w-3xl px-4 py-10 sm:px-8">
           <h1 className="mb-8 text-2xl font-semibold text-gray-900">Vocabulary</h1>
 
           <section className="mb-8">

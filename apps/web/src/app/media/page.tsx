@@ -2,34 +2,21 @@
 
 import { useCallback, useContext, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Clock3, FileJson, Loader2, Plus } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { ChevronRight, Clapperboard, FileText, Film, Music, Newspaper, Plus, Tv } from 'lucide-react';
+import EmptyState from '../components/EmptyState';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { UserContext } from '@/context/UserContext';
 import { ImportedMediaSummary, listImportedMedia } from './api';
 import ImportDialog from './ImportDialog';
 
+// The same two buttons as the Practice page.
+const primary = 'inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700';
+const secondary = 'inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50';
+
 const formatDuration = (seconds: number) => {
   const minutes = Math.round(seconds / 60);
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes} min`;
-};
-
-// What each kind of item shows on its card: the small label above the name,
-// the name itself, and how long it takes to get through.
-const cardHeading = (media: ImportedMediaSummary) => {
-  switch (media.type) {
-    case 'series':
-      return {
-        label: media.season === null || media.episode === null ? 'Episode' : `S${String(media.season).padStart(2, '0')} E${String(media.episode).padStart(2, '0')}`,
-        name: media.series || media.title,
-        tone: 'from-indigo-700 via-violet-700 to-slate-900',
-      };
-    case 'article':
-      return { label: 'Article', name: media.site || hostOf(media.sourceUrl) || media.title, tone: 'from-sky-700 via-cyan-800 to-slate-900' };
-    case 'song':
-      return { label: 'Song', name: media.artist || media.title, tone: 'from-rose-600 via-fuchsia-800 to-slate-900' };
-    default:
-      return { label: media.type === 'movie' ? 'Movie' : 'Text', name: media.title, tone: 'from-slate-600 via-slate-700 to-slate-900' };
-  }
 };
 
 const timeToFinish = (media: ImportedMediaSummary) =>
@@ -37,6 +24,27 @@ const timeToFinish = (media: ImportedMediaSummary) =>
 
 const hostOf = (url: string | null | undefined) => {
   try { return url ? new URL(url).hostname.replace(/^www\./, '') : null; } catch { return null; }
+};
+
+// What each row shows under the title: who or where it is from, then the
+// episode number for series. The title itself is always the item's own.
+const rowDetails = (media: ImportedMediaSummary): { icon: LucideIcon; kind: string; parts: (string | null | undefined)[] } => {
+  switch (media.type) {
+    case 'series':
+      return {
+        icon: Tv,
+        kind: 'Episode',
+        parts: [media.series, media.season === null || media.episode === null ? null : `S${String(media.season).padStart(2, '0')} E${String(media.episode).padStart(2, '0')}`],
+      };
+    case 'article':
+      return { icon: Newspaper, kind: 'Article', parts: [media.site || hostOf(media.sourceUrl)] };
+    case 'song':
+      return { icon: Music, kind: 'Song', parts: [media.artist] };
+    case 'movie':
+      return { icon: Film, kind: 'Movie', parts: [] };
+    default:
+      return { icon: FileText, kind: 'Text', parts: [] };
+  }
 };
 
 function MediaPageContent() {
@@ -57,48 +65,56 @@ function MediaPageContent() {
   useEffect(() => { refresh(); }, [refresh]);
 
   return (
-    <div className="min-h-full bg-slate-50">
-      <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-5 pt-8">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-            <div><p className="mb-1 text-sm font-semibold uppercase tracking-widest text-indigo-600">Learn before you start</p><h1 className="text-3xl font-bold tracking-tight text-slate-950">Series & Media</h1><p className="mt-2 max-w-xl text-slate-500">Episodes, articles and songs: learn their words before you start.</p></div>
-            <button onClick={() => setShowImport(true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-indigo-700"><Plus size={18}/> Import episode</button>
+    <div className="min-h-screen bg-white">
+      <div className="max-w-3xl px-4 py-10 sm:px-8">
+        <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Media</h1>
+            <p className="mt-1 text-sm text-gray-500">Learn the words of an episode, article or song before you start.</p>
           </div>
-          <div className="h-8" />
-        </div>
+          {media.length > 0 && <button onClick={() => setShowImport(true)} className={secondary}><Plus size={16}/>Import episode</button>}
+        </header>
+
+        {error && <p className="mb-6 text-sm text-red-600">{error}</p>}
+        {loading ? (
+          <div className="divide-y divide-gray-100 border-t border-gray-100" aria-label="Loading">
+            {Array.from({ length: 3 }, (_, i) => (
+              <div key={i} className="flex items-center gap-4 py-4 pl-1">
+                <span className="h-4 w-4 animate-pulse rounded bg-gray-100" />
+                <span className="h-3 w-56 animate-pulse rounded bg-gray-100" />
+              </div>
+            ))}
+          </div>
+        ) : media.length === 0 ? (
+          !error && <EmptyState icon={Clapperboard} title="Nothing in your library yet" actions={<>
+            <Link href="/extension" className={secondary}>Get the extension</Link>
+            <button onClick={() => setShowImport(true)} className={primary}><Plus size={16}/>Import episode</button>
+          </>}>Import an episode transcript here, or add an article or song from the extension&apos;s reader with Add to Library.</EmptyState>
+        ) : (
+          <ul className="divide-y divide-gray-100 border-t border-gray-100">{media.map((item) => <MediaRow key={item.id} item={item}/>)}</ul>
+        )}
       </div>
 
-      <main className="mx-auto max-w-6xl px-5 py-8">
-        {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-        {loading ? <div className="flex h-64 items-center justify-center"><Loader2 className="animate-spin text-indigo-600"/></div> : media.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><FileJson size={28}/></div><h2 className="text-xl font-bold text-slate-900">Nothing in your library yet</h2><p className="mx-auto mt-2 max-w-md text-slate-500">Import an episode transcript here, or send an article or song from the Langfour reader with Add to Library.</p><button onClick={() => setShowImport(true)} className="mt-6 rounded-lg bg-slate-900 px-4 py-2.5 font-semibold text-white">Import episode</button></div>
-        ) : (
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{media.map((item) => <MediaCard key={item.id} item={item}/>)}</div>
-        )}
-      </main>
-
-      {showImport && <ImportDialog language={languageCode} existing={media} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); refresh(); }}/>} 
+      {showImport && <ImportDialog language={languageCode} existing={media} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); refresh(); }}/>}
     </div>
   );
 }
 
-function MediaCard({ item }: { item: ImportedMediaSummary }) {
-  const heading = cardHeading(item);
-  const time = timeToFinish(item);
+function MediaRow({ item }: { item: ImportedMediaSummary }) {
+  const { icon: Icon, kind, parts } = rowDetails(item);
+  const details = [...parts, timeToFinish(item)].filter(Boolean).join(' · ');
   return (
-    <Link href={`/media/${encodeURIComponent(item.id)}`} aria-label={`Open vocabulary for ${item.title}`} className="group rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
-      <article className="flex min-h-72 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition group-hover:-translate-y-0.5 group-hover:border-indigo-200 group-hover:shadow-lg">
-        <div className={`flex h-28 items-end bg-gradient-to-br ${heading.tone} p-5 text-white`}>
-          <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-widest text-white/70">{heading.label}</p><h2 className="mt-1 line-clamp-1 text-xl font-bold">{heading.name}</h2></div>
+    <li>
+      <Link href={`/media/${encodeURIComponent(item.id)}`} aria-label={`Open vocabulary for ${item.title}`} className="group flex items-center gap-4 py-4 pl-1 pr-2 hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50">
+        <Icon size={18} className="shrink-0 text-gray-400" aria-label={kind}/>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-gray-900">{item.title}</p>
+          {details && <p className="mt-0.5 truncate text-sm text-gray-500">{details}</p>}
         </div>
-        <div className="flex flex-1 flex-col p-5">
-          <h3 className="line-clamp-2 font-semibold text-slate-900">{item.title}</h3>
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500">{time && <span className="flex items-center gap-1"><Clock3 size={14}/>{time}</span>}<span className="uppercase">{item.language}</span><span>{new Date(item.importedAt).toLocaleDateString()}</span></div>
-          {item.transcriptionModel && <p className="mt-3 truncate text-xs text-slate-400" title={item.transcriptionModel}>{item.transcriptionModel}</p>}
-          <div className="mt-auto flex justify-end border-t border-slate-100 pt-4 text-indigo-600 transition group-hover:translate-x-1"><ChevronRight size={19}/></div>
-        </div>
-      </article>
-    </Link>
+        <span className="hidden shrink-0 text-sm tabular-nums text-gray-400 sm:block">{new Date(item.importedAt).toLocaleDateString()}</span>
+        <ChevronRight size={16} className="shrink-0 text-gray-300 group-hover:text-gray-500"/>
+      </Link>
+    </li>
   );
 }
 
