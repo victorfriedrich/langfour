@@ -7,8 +7,8 @@ directly. Stateless streamable HTTP with plain JSON responses, so nothing is
 streamed through the BaseHTTPMiddleware auth layer and any instance can answer
 any request.
 
-Clients: anything that can send a bearer token (Claude Code, Cursor). ChatGPT
-and claude.ai connectors expect OAuth 2.1 discovery, which isn't here yet.
+Clients discover Supabase OAuth through mcp_auth.py. See docs/mcp-oauth.md
+for project setup and connecting ChatGPT or Claude.
 
 Tools so far: record_practice (practice.py). The read tools from the design
 discussion (get_vocabulary, score_text) come next.

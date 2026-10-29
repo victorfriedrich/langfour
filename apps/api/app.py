@@ -13,6 +13,7 @@ from auth import AuthMiddleware, get_current_user
 from database import initialize_cache
 from flashcards import router as flashcards_router
 from languages import require_code
+from mcp_auth import router as mcp_auth_router
 from mcp_server import mcp
 from media_import import (
     ImportLimitError,
@@ -126,6 +127,7 @@ app.include_router(remnote_pair_router, prefix="/pair/remnote", tags=["remnote"]
 # MCP server (mcp_server.py) at /mcp. Its route joins this app directly rather
 # than as a mounted sub-app, so /mcp needs no trailing slash and AuthMiddleware
 # covers it like any other path. The session manager runs for the app's life.
+app.include_router(mcp_auth_router)
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 

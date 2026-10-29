@@ -20,8 +20,11 @@ from types import SimpleNamespace
 
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPBearer
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+
+from mcp_auth import MCP_PUBLIC_PATHS, is_oauth_token, mcp_challenge, token_claims, valid_mcp_claims
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +46,7 @@ PUBLIC_PATHS = {
     # a token after a signed-in user approved the code.
     "/pair/remnote/start",
     "/pair/remnote/claim",
-}
+} | MCP_PUBLIC_PATHS
 
 # ---------------------------------------------------------------------------
 # Token cache.
@@ -186,6 +189,16 @@ def _authenticate(token: str, path: str):
     if scope is None:
         if token_only_paths:
             return None, "This endpoint takes a personal access token"
+        claims = token_claims(token)
+        if path.rstrip("/") == "/mcp":
+            user = verify_token(token)
+            if user is None or not valid_mcp_claims(claims, user):
+                return None, "Connect to Langfour using OAuth"
+            return user, None
+        # Never let a third-party OAuth grant spend translation credits, issue
+        # RemNote credentials, or exercise the web app's account endpoints.
+        if is_oauth_token(claims):
+            return None, "OAuth tokens are only valid at /mcp"
         return verify_token(token), None
 
     purpose, allowed_prefix = scope
@@ -221,10 +234,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Missing bearer token"},
+                headers=mcp_challenge(path),
             )
 
         try:
-            user, error = _authenticate(token, path)
+            user, error = await run_in_threadpool(_authenticate, token, path)
         except AuthUnavailable:
             return JSONResponse(
                 status_code=503,
@@ -234,6 +248,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=401,
                 content={"detail": error or "Invalid authentication credentials"},
+                headers=mcp_challenge(path, invalid=True),
             )
 
         # Downstream handlers read this instead of re-verifying.
