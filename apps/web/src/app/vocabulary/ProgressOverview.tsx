@@ -11,7 +11,7 @@ const STAGES = [
   { key: 'learning', label: 'learning', color: '#a5b4fc' },
   { key: 'new', label: 'not started', color: '#d1d5db' },
 ] as const;
-const FORGOTTEN_SHOWN = 5;
+const ROWS_SHOWN = 5;
 // Ticks drawn per forgotten word; the count beside them says the rest.
 const LAPSE_TICKS = 5;
 const DAY_MS = 86_400_000;
@@ -141,12 +141,56 @@ function DayRow({ label, words }: { label: string; words: ProgressWord[] }) {
   );
 }
 
-function forgottenLabel(ms: number, now: number) {
+function relativeDay(ms: number, now: number) {
   const days = Math.round((startOfDay(now) - startOfDay(ms)) / DAY_MS);
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days} days ago`;
   return dayLabel(ms);
+}
+
+/** The words that would be learned but for a late review: most recently
+ *  dropped first, each with its meaning and when it stopped counting. */
+function Overdue({ overdue, words, now }: { overdue: Summary['overdue']; words: ProgressWord[]; now: number }) {
+  const [all, setAll] = useState(false);
+  const translations = useMemo(() => new Map(words.map((w) => [w.remId, w.translation])), [words]);
+  if (overdue.length === 0) return null;
+  const shown = all ? overdue : overdue.slice(0, ROWS_SHOWN);
+  const thisWeek = overdue.filter((w) => w.since >= now - 7 * DAY_MS).length;
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="font-semibold text-gray-900">
+          Overdue
+          <span className="ml-2 font-normal tabular-nums text-gray-400">{overdue.length.toLocaleString()}</span>
+        </h2>
+        {thisWeek > 0 && <span className="text-sm tabular-nums text-gray-500">{thisWeek} this week</span>}
+      </div>
+      <p className="mt-1 text-sm text-gray-500">Learned, but reviewed too late to count. Review them to get them back.</p>
+      <ul className="mt-2 divide-y divide-gray-100">
+        {shown.map((w) => {
+          const translation = translations.get(w.remId);
+          return (
+            <li key={w.remId} className="flex items-baseline gap-3 py-2 text-sm">
+              <span className="min-w-0 flex-1 truncate">
+                <span className="text-gray-900">{w.root}</span>
+                {translation && <span className="ml-2 text-gray-500">{translation}</span>}
+              </span>
+              <span className="w-20 shrink-0 text-right tabular-nums text-gray-400" title="Stopped counting as learned">
+                {relativeDay(w.since, now)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {overdue.length > ROWS_SHOWN && (
+        <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 py-1 text-sm text-gray-500 hover:text-gray-900">
+          {all ? 'Show fewer' : `Show all ${overdue.length}`}
+        </button>
+      )}
+    </section>
+  );
 }
 
 /** The words forgotten in the last 30 days that aren't learned yet: most
@@ -155,7 +199,7 @@ function Forgotten({ slipping, words, now }: { slipping: Summary['slipping']; wo
   const [all, setAll] = useState(false);
   const translations = useMemo(() => new Map(words.map((w) => [w.remId, w.translation])), [words]);
   if (slipping.length === 0) return null;
-  const shown = all ? slipping : slipping.slice(0, FORGOTTEN_SHOWN);
+  const shown = all ? slipping : slipping.slice(0, ROWS_SHOWN);
 
   return (
     <section className="mt-10">
@@ -187,12 +231,12 @@ function Forgotten({ slipping, words, now }: { slipping: Summary['slipping']; wo
                   <span aria-hidden>{w.lapses}×</span>
                 </span>
               </span>
-              <span className="w-20 shrink-0 text-right tabular-nums text-gray-400">{forgottenLabel(w.lastLapse, now)}</span>
+              <span className="w-20 shrink-0 text-right tabular-nums text-gray-400">{relativeDay(w.lastLapse, now)}</span>
             </li>
           );
         })}
       </ul>
-      {slipping.length > FORGOTTEN_SHOWN && (
+      {slipping.length > ROWS_SHOWN && (
         <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 py-1 text-sm text-gray-500 hover:text-gray-900">
           {all ? 'Show fewer' : `Show all ${slipping.length}`}
         </button>
@@ -202,7 +246,7 @@ function Forgotten({ slipping, words, now }: { slipping: Summary['slipping']; wo
 }
 
 /** Learned / learning / not started, the 90-day trend, the words saved this
- *  week and the words forgotten recently, for whichever system schedules
+ *  week and the words overdue or forgotten recently, for whichever system schedules
  *  the reviews. */
 export default function ProgressOverview({ words }: { words: ProgressWord[] }) {
   const [now] = useState(() => Date.now());
@@ -267,6 +311,7 @@ export default function ProgressOverview({ words }: { words: ProgressWord[] }) {
         )}
       </section>
 
+      <Overdue overdue={summary.overdue} words={words} now={now} />
       <Forgotten slipping={summary.slipping} words={words} now={now} />
     </div>
   );

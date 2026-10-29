@@ -2,6 +2,10 @@ export interface TranscriptChunk {
   // null for articles and lyrics, which are passages rather than timed cues.
   timestamp: [number, number] | null;
   text: string;
+  // The reader element an article passage came from; absent for paragraphs.
+  block?: 'h2' | 'h3' | 'h4' | 'li' | 'blockquote' | 'pre' | 'figcaption';
+  // [start, end, word id] for each recognised word, as offsets into `text`.
+  words?: [number, number, number][];
 }
 
 export type MediaKind = 'series' | 'movie' | 'article' | 'song' | 'text';

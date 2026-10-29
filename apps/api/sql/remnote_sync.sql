@@ -30,15 +30,25 @@ alter table public.userdata add constraint userdata_review_provider_check
     check (review_provider in ('langfour', 'remnote'));
 
 -- The user's top-level "Langfour" document in RemNote, reported by the plugin
--- on every full sync. The web app and the extension link to its flashcard
--- queue (https://www.remnote.com/flashcards/<id>), which reviews every
--- Langfour card. Null until the plugin has synced once.
+-- on every full sync. The apps open it (https://www.remnote.com/document/<id>)
+-- when the language's own document is not known. Null until the plugin has
+-- synced once.
 alter table public.userdata
     add column if not exists remnote_root_rem_id text;
 
 alter table public.userdata drop constraint if exists userdata_remnote_root_rem_id_check;
 alter table public.userdata add constraint userdata_remnote_root_rem_id_check
     check (remnote_root_rem_id ~ '^[A-Za-z0-9_-]{1,64}$');
+
+-- Each language's document under it (Langfour/Spanish, ...), as language code
+-- -> Rem id, reported with the root. The web app and the extension open the
+-- one of the language being learned.
+alter table public.userdata
+    add column if not exists remnote_language_rem_ids jsonb not null default '{}'::jsonb;
+
+alter table public.userdata drop constraint if exists userdata_remnote_language_rem_ids_check;
+alter table public.userdata add constraint userdata_remnote_language_rem_ids_check
+    check (jsonb_typeof(remnote_language_rem_ids) = 'object');
 
 -- ---------------------------------------------------------------------------
 -- Personal access tokens. The RemNote plugin cannot hold a Supabase session,

@@ -4,20 +4,20 @@ import { buildLibraryImport, existingIdFrom, kindOf } from './libraryImport';
 const article = (over: Record<string, unknown> = {}) => ({ title: 'La economía crece', content: '', url: 'https://elpais.com/economia/1.html', siteName: 'El País', byline: 'Ana Ruiz', savedAt: 0, ...over });
 
 describe('buildLibraryImport', () => {
-  it('sends an article as untimed passages with its source', () => {
-    expect(buildLibraryImport(article(), ['  Primer  párrafo. ', '', 'Segundo.'], 'es')).toEqual({
+  it('sends an article as untimed passages, with headings marked, and its source', () => {
+    expect(buildLibraryImport(article(), [{ text: 'Titular', block: 'h2' }, { text: '  Primer  párrafo. ' }, { text: '' }, { text: 'Segundo.' }], 'es')).toEqual({
       media_type: 'article', language: 'es', title: 'La economía crece', site: 'El País', artist: null,
-      source_url: 'https://elpais.com/economia/1.html', chunks: [{ text: 'Primer párrafo.' }, { text: 'Segundo.' }],
+      source_url: 'https://elpais.com/economia/1.html', chunks: [{ text: 'Titular', block: 'h2' }, { text: 'Primer párrafo.' }, { text: 'Segundo.' }],
     });
   });
 
   it('files lyrics pages under songs and keeps stanza line breaks', () => {
-    const payload = buildLibraryImport(article({ url: 'https://genius.com/x', title: 'Tití Me Preguntó Lyrics', byline: 'Bad Bunny', siteName: null }), ['Línea uno \n  línea dos'], 'es');
+    const payload = buildLibraryImport(article({ url: 'https://genius.com/x', title: 'Tití Me Preguntó Lyrics', byline: 'Bad Bunny', siteName: null }), [{ text: 'Línea uno \n  línea dos' }], 'es');
     expect(payload).toMatchObject({ media_type: 'song', title: 'Tití Me Preguntó', artist: 'Bad Bunny', site: 'genius.com', chunks: [{ text: 'Línea uno\nlínea dos' }] });
   });
 
   it('returns null for an empty page', () => {
-    expect(buildLibraryImport(article(), [' ', ''], 'es')).toBeNull();
+    expect(buildLibraryImport(article(), [{ text: ' ' }, { text: '' }], 'es')).toBeNull();
   });
 });
 

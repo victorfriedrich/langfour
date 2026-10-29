@@ -34,6 +34,14 @@ body {
   --active-text: #8b4513;
   /* Same amber as the new-word underline, solid instead of dashed. */
   --learning-line: var(--new-line);
+  /* The word popup keeps Langfour's original look: a cream band with the
+     word in brown, a saddle-brown button along the bottom. */
+  --popup-band: #f8f5f0;
+  --popup-band-line: #e2d1c3;
+  --popup-word: #5d2e0d;
+  --popup-rule: #f0e9e0;
+  --popup-button: #8b4513;
+  --popup-button-hover: #7a3c10;
 }
 body.theme-sepia {
   --bg: #f8f1e3;
@@ -70,6 +78,12 @@ body.theme-dark {
   --new-line: #e0a87d;
   --active-bg: rgba(224, 168, 125, 0.3);
   --active-text: #e0a87d;
+  --popup-band: #3a322b;
+  --popup-band-line: rgba(224, 168, 125, 0.22);
+  --popup-word: #e0a87d;
+  --popup-rule: rgba(255, 255, 255, 0.08);
+  --popup-button: #8b4513;
+  --popup-button-hover: #9c5220;
 }
 
 * { box-sizing: border-box; }
@@ -382,13 +396,13 @@ body.highlight-off .learning-word { border-bottom-color: transparent; }
 .dismissable-popup {
   position: absolute;
   z-index: 100;
-  width: min(300px, calc(100vw - 32px));
+  width: min(280px, calc(100vw - 32px));
   overflow: hidden;
   background: var(--surface);
   color: var(--text);
-  border: 0.5px solid var(--line);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
   font-family: var(--sans);
   opacity: 0;
   transform: translateY(-6px);
@@ -402,8 +416,11 @@ body.highlight-off .learning-word { border-bottom-color: transparent; }
 .sheet-handle { display: none; }
 
 .popup-header {
-  padding: 14px 16px 4px;
-  font-size: 22px;
+  padding: 12px 16px;
+  background: var(--popup-band);
+  border-bottom: 1px solid var(--popup-band-line);
+  color: var(--popup-word);
+  font-size: 18px;
   font-weight: 700;
 }
 /* Small, right after the word at the top. */
@@ -415,7 +432,8 @@ body.highlight-off .learning-word { border-bottom-color: transparent; }
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-2);
+  color: inherit;
+  opacity: 0.7;
   cursor: pointer;
 }
 .speak-btn:hover { background: rgba(127, 127, 127, 0.15); color: inherit; }
@@ -425,26 +443,28 @@ body.highlight-off .learning-word { border-bottom-color: transparent; }
 body.font-sans .popup-header,
 body.font-sans .translations-container,
 body.font-sans .dismissable-translation { font-family: var(--sans); }
-.translations-container { padding: 2px 16px 14px; font-size: 18px; line-height: 1.4; color: var(--text-2); }
+.translations-container { padding: 12px 16px; font-size: 17px; line-height: 1.4; }
 .translation { display: block; }
+.translation + .translation { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--popup-rule); }
 .popup-message { padding: 4px 16px 14px; font-size: 15px; line-height: 1.45; color: var(--text-2); }
 .loading-content { display: flex; justify-content: center; padding: 14px 16px 18px; }
 
 .flashcard-btn {
   display: block;
-  width: calc(100% - 24px);
-  margin: 0 12px 12px;
-  padding: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 16px;
   border: none;
-  border-radius: 12px;
-  background: var(--accent);
+  border-radius: 0;
+  background: var(--popup-button);
   color: #fff;
-  font-family: var(--sans);
-  font-size: 16px;
-  font-weight: 600;
+  font-family: var(--serif);
+  font-size: 15px;
   cursor: pointer;
+  transition: background-color 0.2s;
 }
-body.theme-dark .flashcard-btn { color: #1c1c1e; }
+body.font-sans .flashcard-btn { font-family: var(--sans); }
+.flashcard-btn:hover { background: var(--popup-button-hover); }
 .flashcard-btn:disabled { opacity: 0.6; cursor: default; }
 
 .dismissable-original {
@@ -469,6 +489,7 @@ body.theme-dark .flashcard-btn { color: #1c1c1e; }
   animation: spin 0.8s linear infinite;
 }
 #reader-container > .spinner { width: 32px; height: 32px; }
+.word-popup .spinner { border-color: var(--popup-rule); border-top-color: var(--popup-button); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .word-popup.sheet,
@@ -502,12 +523,12 @@ body.theme-dark .flashcard-btn { color: #1c1c1e; }
   border-radius: 3px;
   background: var(--line);
 }
-.sheet .popup-header { padding: 10px 20px 4px; font-size: 26px; }
+.sheet .popup-header { padding: 10px 20px 4px; font-size: 26px; background: none; border-bottom: none; }
 .sheet .translations-container,
 .sheet .popup-message,
 .sheet .dismissable-translation { padding-left: 20px; padding-right: 20px; }
 .sheet .dismissable-original { padding: 10px 20px 6px; }
-.sheet .flashcard-btn { width: calc(100% - 40px); margin: 4px 20px 4px; padding: 15px; font-size: 17px; }
+.sheet .flashcard-btn { width: calc(100% - 40px); margin: 4px 20px 4px; padding: 15px; border-radius: 12px; font-size: 17px; }
 
 /* ---------------------------------------------------------------------
    Display settings: popover under Aa, sheet on phones
@@ -709,13 +730,14 @@ body.theme-dark .problem-btn { color: #1c1c1e; }
 /* Progress with a word the user is learning or knows: a byline under the
    word, in the style of the article's own (.article-meta). */
 .word-progress {
-  margin: 0 16px 6px;
+  margin: 10px 16px 0;
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.4;
   color: var(--text-2);
 }
 .sheet .word-progress { margin: 0 20px 8px; }
+.sheet .translations-container { padding-top: 2px; }
 .progress-mark { color: var(--text); font-weight: 500; }
 .progress-mark.progress-learning { border-bottom: 1.5px solid var(--learning-line); }
 

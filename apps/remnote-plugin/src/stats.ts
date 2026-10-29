@@ -67,15 +67,31 @@ export function cardSteps(card: CardLike): Step[] {
   });
 }
 
-export function cardStageAt(card: CardLike, at: number): Stage {
+function lastStepAt(card: CardLike, at: number): Step | undefined {
   let last: Step | undefined;
   for (const step of cardSteps(card)) {
     if (step.date > at) break;
     last = step;
   }
+  return last;
+}
+
+/** When the step's grace runs out and its card stops counting as learned. */
+const graceEnds = (step: Step) => step.date + step.intervalDays * (1 + OVERDUE_GRACE) * DAY_MS;
+
+export function cardStageAt(card: CardLike, at: number): Stage {
+  const last = lastStepAt(card, at);
   if (!last) return 'new';
-  const overdue = at > last.date + last.intervalDays * (1 + OVERDUE_GRACE) * DAY_MS;
-  return !last.failed && last.intervalDays >= LEARNED_DAYS && !overdue ? 'learned' : 'learning';
+  return !last.failed && last.intervalDays >= LEARNED_DAYS && at <= graceEnds(last) ? 'learned' : 'learning';
+}
+
+/** If the word would be learned but for a late review, when it stopped
+ *  counting: the first of its cards to run out of grace. */
+export function overdueSince(cards: CardLike[], at: number): number | undefined {
+  const steps = cards.map((c) => lastStepAt(c, at));
+  if (steps.length === 0 || steps.some((s) => !s || s.failed || s.intervalDays < LEARNED_DAYS)) return undefined;
+  const ends = (steps as Step[]).map(graceEnds).filter((end) => at > end);
+  return ends.length > 0 ? Math.min(...ends) : undefined;
 }
 
 /** A word is as far along as its weakest card. */
@@ -110,6 +126,9 @@ export interface Summary {
   // Forgotten in the last 30 days and not learned: most lapses first, then
   // the most recently forgotten. All of them; each view caps its own list.
   slipping: (WordRef & { lapses: number; lastLapse: number })[];
+  // Answered right every time but reviewed too late to count as learned:
+  // most recently dropped first. Never also slipping.
+  overdue: (WordRef & { since: number })[];
 }
 
 function endOfDay(ms: number): number {
@@ -123,6 +142,7 @@ export function summarize(words: WordCards[], now: number, trendDays = 90): Summ
   const weekAgo = now - 7 * DAY_MS;
   const newlyLearned: WordRef[] = [];
   const slipping: Summary['slipping'] = [];
+  const overdue: Summary['overdue'] = [];
 
   // Day ends from oldest to today; today's point is "now".
   const days = Array.from({ length: trendDays }, (_, i) =>
@@ -144,6 +164,9 @@ export function summarize(words: WordCards[], now: number, trendDays = 90): Summ
     const lapses = lapsesSince(word.cards, now - 30 * DAY_MS);
     if (stage !== 'learned' && lapses.length > 0) {
       slipping.push({ remId: word.remId, root: word.root, lapses: lapses.length, lastLapse: Math.max(...lapses) });
+    } else {
+      const since = overdueSince(word.cards, now);
+      if (since !== undefined) overdue.push({ remId: word.remId, root: word.root, since });
     }
   }
 
@@ -155,5 +178,6 @@ export function summarize(words: WordCards[], now: number, trendDays = 90): Summ
     trend: days.map((day, i) => ({ day, learned: learnedPerDay[i] })),
     newlyLearned,
     slipping: slipping.sort((a, b) => b.lapses - a.lapses || b.lastLapse - a.lastLapse),
+    overdue: overdue.sort((a, b) => b.since - a.since),
   };
 }

@@ -8,6 +8,14 @@ import { StoredArticle } from './readerArticles';
 
 export type LibraryKind = 'article' | 'song';
 
+/** The reader element a passage came from; plain paragraphs have none. */
+export type Block = 'h2' | 'h3' | 'h4' | 'li' | 'blockquote' | 'pre' | 'figcaption';
+
+export interface Passage {
+  text: string;
+  block?: Block;
+}
+
 export interface LibraryImport {
   media_type: LibraryKind;
   language: Language;
@@ -15,7 +23,7 @@ export interface LibraryImport {
   site: string | null;
   artist: string | null;
   source_url: string | null;
-  chunks: { text: string }[];
+  chunks: Passage[];
 }
 
 // Lyrics pages read like articles to the extractor, but belong under Music.
@@ -28,10 +36,13 @@ export function kindOf(url: string | null | undefined): LibraryKind {
 
 /**
  * `passages` are the visible text of the reader's blocks, in order (one per
- * paragraph, list item or stanza). Returns null when there is nothing to send.
+ * paragraph, heading, list item or stanza), so the Library can show the text
+ * laid out as it was here. Returns null when there is nothing to send.
  */
-export function buildLibraryImport(article: StoredArticle, passages: string[], language: Language): LibraryImport | null {
-  const chunks = passages.map((text) => text.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim()).filter(Boolean).map((text) => ({ text }));
+export function buildLibraryImport(article: StoredArticle, passages: Passage[], language: Language): LibraryImport | null {
+  const chunks = passages
+    .map(({ text, block }) => ({ text: text.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim(), ...(block && { block }) }))
+    .filter((passage) => passage.text);
   if (chunks.length === 0) return null;
   const kind = kindOf(article.url);
   const site = article.siteName || hostOf(article.url) || null;

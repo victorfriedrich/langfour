@@ -223,6 +223,9 @@ class FakeStore:
     def set_root_rem(self, user_id, rem_id):
         self.root_rem_id = rem_id
 
+    def set_language_rems(self, user_id, rem_ids):
+        self.language_rem_ids = rem_ids
+
     def set_last_sync(self, user_id, at):
         self.last_sync_at = at
 
@@ -551,6 +554,20 @@ def test_the_sweep_stores_the_root_document_and_a_plain_push_keeps_it():
 def test_a_root_document_id_that_is_not_an_id_is_refused():
     with pytest.raises(ValidationError):
         PushRequest(root_rem_id="../../evil?x=1")
+
+
+def test_the_sweep_stores_each_language_document_and_a_plain_push_keeps_them():
+    store = FakeStore(spanish(1))
+    apply_push(store, USER, PushRequest(present_rem_ids=[], language_rem_ids={"es": "OwMhWacnh73xF7bq6"}))
+    assert store.language_rem_ids == {"es": "OwMhWacnh73xF7bq6"}
+    apply_push(store, USER, PushRequest())
+    assert store.language_rem_ids == {"es": "OwMhWacnh73xF7bq6"}
+
+
+@pytest.mark.parametrize("rem_ids", [{"es": "../../evil?x=1"}, {"../es": "OwMhWacnh73xF7bq6"}])
+def test_a_language_document_that_is_not_an_id_is_refused(rem_ids):
+    with pytest.raises(ValidationError):
+        PushRequest(language_rem_ids=rem_ids)
 
 
 def test_pending_offers_unlinked_learning_words_with_custom_translations():

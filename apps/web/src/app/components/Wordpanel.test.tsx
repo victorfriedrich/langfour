@@ -39,3 +39,21 @@ it('lists the words when there are some', () => {
   expect(screen.getByText('1 selected')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Add to learning set' })).toBeInTheDocument();
 });
+
+it('shows the text beside the list, with its new words marked and pickable', () => {
+  words.recommendedWords = [{ id: 1, content: 'luna', translation: 'moon' }];
+  const transcript = [
+    { timestamp: null, text: 'Canción', block: 'h2' as const, words: [[0, 7, 9]] as [number, number, number][] },
+    { timestamp: null, text: 'La luna sale.', words: [[0, 2, 5], [3, 7, 1], [8, 12, 6]] as [number, number, number][] },
+  ];
+  render(<Wordpanel videoId="song" videoTitle="Canción de prueba" variant="page" source="media" transcript={transcript} onClose={vi.fn()} />);
+  expect(screen.getByRole('heading', { name: 'Canción' })).toBeInTheDocument();
+  // Only the new word is marked, and no sentence is repeated under the list.
+  const marked = screen.getByRole('button', { name: 'luna', pressed: false });
+  expect(screen.queryByRole('button', { name: 'sale' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/“/)).not.toBeInTheDocument();
+  fireEvent.click(marked);
+  expect(screen.getByText('1 selected')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'luna', pressed: true })).toBeInTheDocument();
+  expect(screen.getByRole('checkbox')).toBeChecked();
+});

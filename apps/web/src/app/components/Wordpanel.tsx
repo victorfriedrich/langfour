@@ -5,6 +5,7 @@ import { useUpdateUserwords } from '../hooks/useUpdateUserwords';
 import { useSeenVideos } from '../hooks/useSeenVideos';
 import type { TranscriptChunk } from '../media/api';
 import EmptyState from './EmptyState';
+import MediaText from './MediaText';
 
 interface WordpanelProps {
   videoId: string;
@@ -32,6 +33,9 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   const { addWordsToUserwords } = useUpdateUserwords();
   const { seenVideos, markVideoAsSeen } = useSeenVideos(0);
   const fullPage = variant === 'page';
+  // On the page, the text sits beside the list, laid out as the reader showed it.
+  const showText = fullPage && transcript.length > 0;
+  const newIds = useMemo(() => new Set(allWords.map((word) => word.id)), [allWords]);
 
   const toggleVideoSeen = useCallback(async () => {
     await markVideoAsSeen(videoId);
@@ -93,15 +97,21 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
     );
   }
 
+  const list = allWords.length === 0 ? <NothingNew fullPage={fullPage} onClose={onClose} /> : <>
+    <WordGroup label="Recommended" words={recommendedWords} startIndex={0} selectedWords={selectedWords} fullPage={fullPage} toggleGroup={() => toggleWordGroup(recommendedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />
+    {flaggedWords.length > 0 && <WordGroup label="Flagged" words={flaggedWords} startIndex={recommendedWords.length} selectedWords={selectedWords} fullPage={fullPage} collapsible toggleGroup={() => toggleWordGroup(flaggedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
+  </>;
+  const body = !showText
+    ? <div className={fullPage ? 'max-w-3xl flex-1 space-y-10 px-4 pb-32 sm:px-8' : 'flex-1 space-y-4 overflow-y-auto'}>{list}</div>
+    : <div className="px-4 pb-32 sm:px-8 lg:grid lg:grid-cols-[minmax(0,42rem)_20rem] lg:items-start lg:gap-16">
+      <MediaText chunks={transcript} newIds={newIds} selectedIds={selectedWords} onWordClick={toggleWordSelection} />
+      <aside className="mt-12 space-y-10 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">{list}</aside>
+    </div>;
+
   return (
     <div className={`${shell} ${isShiftPressed ? 'select-none' : ''}`} onClick={(event) => event.stopPropagation()}>
-      <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={allWords.length} fullPage={fullPage} onClose={onClose} />
-      <div className={fullPage ? 'max-w-3xl flex-1 space-y-10 px-4 pb-32 sm:px-8' : 'flex-1 space-y-4 overflow-y-auto'}>
-        {allWords.length === 0 ? <NothingNew fullPage={fullPage} onClose={onClose} /> : <>
-          <WordGroup label="Recommended" words={recommendedWords} startIndex={0} selectedWords={selectedWords} fullPage={fullPage} transcript={transcript} toggleGroup={() => toggleWordGroup(recommendedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />
-          {flaggedWords.length > 0 && <WordGroup label="Flagged" words={flaggedWords} startIndex={recommendedWords.length} selectedWords={selectedWords} fullPage={fullPage} transcript={transcript} collapsible toggleGroup={() => toggleWordGroup(flaggedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
-        </>}
-      </div>
+      <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={allWords.length} fullPage={fullPage} wide={showText} onClose={onClose} />
+      {body}
       {/* The page uses the app's floating selection pill; the panel keeps its bar for the Seen button. */}
       {fullPage
         ? <SelectionPill count={selectedWords.length} onAdd={addToLearningSet} onClear={() => setSelectedWords([])} />
@@ -110,9 +120,9 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   );
 };
 
-function Header({ videoTitle, eyebrow, wordCount, fullPage, onClose }: { videoTitle: string; eyebrow: string; wordCount: number; fullPage: boolean; onClose: (count: number) => void }) {
+function Header({ videoTitle, eyebrow, wordCount, fullPage, wide = false, onClose }: { videoTitle: string; eyebrow: string; wordCount: number; fullPage: boolean; wide?: boolean; onClose: (count: number) => void }) {
   if (fullPage) {
-    return <header className="max-w-3xl px-4 pb-8 pt-10 sm:px-8"><button onClick={() => onClose(0)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900"><ArrowLeft size={16}/>Back to Media</button><h1 className="text-2xl font-semibold text-gray-900">{videoTitle}</h1><p className="mt-1 text-sm text-gray-500">{eyebrow}{wordCount > 0 && ` · ${wordCount} new ${wordCount === 1 ? 'word' : 'words'}`}</p></header>;
+    return <header className={`${wide ? 'max-w-[42rem]' : 'max-w-3xl'} px-4 pb-8 pt-10 sm:px-8`}><button onClick={() => onClose(0)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900"><ArrowLeft size={16}/>Back to Media</button><h1 className="text-2xl font-semibold text-gray-900">{videoTitle}</h1><p className="mt-1 text-sm text-gray-500">{eyebrow}{wordCount > 0 && ` · ${wordCount} new ${wordCount === 1 ? 'word' : 'words'}`}</p></header>;
   }
   return <header className="border-b p-4"><div className="flex items-center justify-between"><button onClick={() => onClose(0)} aria-label="Close" className="order-2 text-gray-500 hover:text-gray-700"><X size={24}/></button><div className="min-w-0 flex-1"><h1 className="text-lg font-semibold">{videoTitle}</h1></div></div></header>;
 }
@@ -122,24 +132,18 @@ function NothingNew({ fullPage, onClose }: { fullPage: boolean; onClose: (count:
   return <EmptyState icon={Check} title="Nothing new to learn here" actions={fullPage && <button onClick={() => onClose(0)} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"><ArrowLeft size={16}/>Back to Media</button>}>You already know every word in it.</EmptyState>;
 }
 
-function WordGroup({ label, words, startIndex, selectedWords, fullPage, transcript, collapsible = false, toggleGroup, handleWordClick, toggleWordSelection }: { label: string; words: MissingWord[]; startIndex: number; selectedWords: number[]; fullPage: boolean; transcript: TranscriptChunk[]; collapsible?: boolean; toggleGroup: () => void; handleWordClick: (event: React.MouseEvent, word: MissingWord, index: number) => void; toggleWordSelection: (id: number) => void }) {
+function WordGroup({ label, words, startIndex, selectedWords, fullPage, collapsible = false, toggleGroup, handleWordClick, toggleWordSelection }: { label: string; words: MissingWord[]; startIndex: number; selectedWords: number[]; fullPage: boolean; collapsible?: boolean; toggleGroup: () => void; handleWordClick: (event: React.MouseEvent, word: MissingWord, index: number) => void; toggleWordSelection: (id: number) => void }) {
   const [expanded, setExpanded] = useState(!collapsible);
   const allSelected = words.length > 0 && words.every((word) => selectedWords.includes(word.id));
-  return <section><div className={fullPage ? 'flex w-full items-center justify-between border-b border-gray-100 pb-2 text-sm' : 'flex w-full items-center justify-between border-b bg-gray-50 px-4 py-2 text-sm'}><button onClick={() => collapsible ? setExpanded((current) => !current) : undefined} className={`flex items-center gap-2 ${collapsible ? 'hover:text-indigo-700' : 'cursor-default'}`} aria-expanded={expanded}>{fullPage ? <span className="font-medium text-gray-900">{label}<span className="ml-1.5 tabular-nums text-gray-400">{words.length}</span></span> : <span className="font-medium">Select {label} ({words.length})</span>}{collapsible && (expanded ? <ChevronUp size={16}/> : <ChevronDown size={16}/>)}</button>{expanded && <button onClick={toggleGroup} className={fullPage ? 'text-indigo-600 hover:text-indigo-700' : 'font-semibold text-indigo-600'}>{allSelected ? 'Clear all' : 'Select all'}</button>}</div>{expanded && <ul className={fullPage ? 'divide-y divide-gray-100' : 'space-y-2 p-4'}>{words.map((word, index) => <WordItem key={word.id} word={word} index={startIndex + index} selected={selectedWords.includes(word.id)} fullPage={fullPage} sentences={findSentences(transcript, word.content)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection}/>)}</ul>}</section>;
+  return <section><div className={fullPage ? 'flex w-full items-center justify-between border-b border-gray-100 pb-2 text-sm' : 'flex w-full items-center justify-between border-b bg-gray-50 px-4 py-2 text-sm'}><button onClick={() => collapsible ? setExpanded((current) => !current) : undefined} className={`flex items-center gap-2 ${collapsible ? 'hover:text-indigo-700' : 'cursor-default'}`} aria-expanded={expanded}>{fullPage ? <span className="font-medium text-gray-900">{label}<span className="ml-1.5 tabular-nums text-gray-400">{words.length}</span></span> : <span className="font-medium">Select {label} ({words.length})</span>}{collapsible && (expanded ? <ChevronUp size={16}/> : <ChevronDown size={16}/>)}</button>{expanded && <button onClick={toggleGroup} className={fullPage ? 'text-indigo-600 hover:text-indigo-700' : 'font-semibold text-indigo-600'}>{allSelected ? 'Clear all' : 'Select all'}</button>}</div>{expanded && <ul className={fullPage ? 'divide-y divide-gray-100' : 'space-y-2 p-4'}>{words.map((word, index) => <WordItem key={word.id} word={word} index={startIndex + index} selected={selectedWords.includes(word.id)} fullPage={fullPage} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection}/>)}</ul>}</section>;
 }
 
-function WordItem({ word, index, selected, fullPage, sentences, handleWordClick, toggleWordSelection }: { word: MissingWord; index: number; selected: boolean; fullPage: boolean; sentences: string[]; handleWordClick: (event: React.MouseEvent, word: MissingWord, index: number) => void; toggleWordSelection: (id: number) => void }) {
+function WordItem({ word, index, selected, fullPage, handleWordClick, toggleWordSelection }: { word: MissingWord; index: number; selected: boolean; fullPage: boolean; handleWordClick: (event: React.MouseEvent, word: MissingWord, index: number) => void; toggleWordSelection: (id: number) => void }) {
   const checkbox = <input type="checkbox" checked={selected} onChange={() => toggleWordSelection(word.id)} className={fullPage ? 'mt-0.5 h-4 w-4 shrink-0 text-indigo-600' : 'form-checkbox ml-3 h-5 w-5 text-indigo-600'} onClick={(event) => event.stopPropagation()}/>;
   if (fullPage) {
-    return <li className="flex cursor-pointer items-start gap-3 py-3 pl-1 text-sm hover:bg-gray-50" onClick={(event) => handleWordClick(event, word, index)}>{checkbox}<div className="min-w-0"><p><span className="font-medium text-gray-900">{word.content}</span><span className="ml-3 text-gray-500">{word.translation || 'No translation'}</span></p>{sentences.map((sentence) => <p key={sentence} className="mt-1 text-gray-500">“{sentence}”</p>)}</div></li>;
+    return <li className="flex cursor-pointer items-start gap-3 py-3 pl-1 text-sm hover:bg-gray-50" onClick={(event) => handleWordClick(event, word, index)}>{checkbox}<p className="min-w-0"><span className="font-medium text-gray-900">{word.content}</span><span className="ml-3 text-gray-500">{word.translation || 'No translation'}</span></p></li>;
   }
   return <li className="flex cursor-pointer items-center justify-between border-b pb-2" onClick={(event) => handleWordClick(event, word, index)}><div className="flex min-w-0 flex-col"><span className="font-medium">{word.content}</span><span className="truncate text-sm text-slate-500">{word.translation || 'No translation'}</span></div>{checkbox}</li>;
-}
-
-function findSentences(transcript: TranscriptChunk[], word: string): string[] {
-  const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const wordPattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapedWord}(?=$|[^\\p{L}\\p{N}])`, 'iu');
-  return transcript.flatMap((chunk) => chunk.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || []).map((sentence) => sentence.trim()).filter((sentence) => wordPattern.test(sentence)).filter((sentence, index, matches) => matches.indexOf(sentence) === index).slice(0, 2);
 }
 
 // The same pill the Vocabulary page shows for a selection.

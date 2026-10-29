@@ -39,8 +39,10 @@ load_dotenv()
 YDL_OPTS = {"format": "ba[acodec=opus]/ba", "format_sort": ["lang", "+abr"],
             "outtmpl": "%(id)s.%(ext)s", "quiet": True, "no_warnings": True,
             "noprogress": True}
-# yt-dlp's wiki asks for 5-10 s between videos. A caption run is spaced by the
-# caption throttle as well; this covers videos that go straight to Whisper.
+# yt-dlp's wiki asks for 5-10 s between videos on one IP. With CAPTION_PROXY_URL
+# set, a caption run reads each video's metadata through its own proxy session
+# (a new IP per video), so only reads from our own IP are spaced: Whisper-only
+# runs, and the re-read when a download from proxied info fails.
 YTDLP_MIN_INTERVAL_S = float(os.getenv("YTDLP_MIN_INTERVAL_S", "10"))
 _ytdlp_lock = threading.Lock()
 _ytdlp_next_at = 0.0
@@ -55,11 +57,22 @@ def _space_ytdlp() -> None:
         _ytdlp_next_at = time.monotonic() + YTDLP_MIN_INTERVAL_S
 
 
-def video_info(url) -> dict:
-    """Metadata and the selected audio format, from one page load."""
+def video_info(url, proxied: bool = False) -> dict:
+    """Metadata and the selected audio format, from one page load.
+
+    proxied=True sends the read through a fresh proxy session when
+    CAPTION_PROXY_URL is set: ~1.8 MB of proxy traffic and 3-4 s per video
+    (measured on three videos), against a limit of roughly 300 videos an hour
+    for one signed-out IP. Audio downloads never use the proxy: ~2-5 MB each
+    is too much traffic to pay for, and the googlevideo URL a proxied read
+    returns still downloaded from our own IP."""
     import yt_dlp
-    _space_ytdlp()
-    with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+    opts = dict(YDL_OPTS)
+    if proxied and CAPTION_PROXY_URL:
+        opts["proxy"] = proxy_url()
+    else:
+        _space_ytdlp()
+    with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
 
 
@@ -303,11 +316,16 @@ class _ThrottledSession(requests.Session):
         return super().request(*args, **kwargs)
 
 
+def proxy_url() -> str:
+    """CAPTION_PROXY_URL on a new proxy session, so a new IP."""
+    return CAPTION_PROXY_URL.replace("{session}", uuid.uuid4().hex[:12])
+
+
 def caption_session() -> requests.Session:
     """A fresh session (no cookies) for one video, on its own proxy session."""
     session = _ThrottledSession()
     if CAPTION_PROXY_URL:
-        url = CAPTION_PROXY_URL.replace("{session}", uuid.uuid4().hex[:12])
+        url = proxy_url()
         session.proxies = {"http": url, "https": url}
     return session
 
@@ -447,7 +465,9 @@ def main(url, language: str, use_captions=True):
     txt_filename = os.path.join("transcripts", f"{video_id}.txt")
     
     try:
-        info = video_info(url)
+        # Whisper-only runs read on our own IP: they download from it anyway.
+        proxied = use_captions and bool(CAPTION_PROXY_URL)
+        info = video_info(url, proxied=proxied)
         title = info.get("title")
         creator = info.get("channel") or info.get("uploader")
         tags = info.get("tags") or []
@@ -477,6 +497,11 @@ def main(url, language: str, use_captions=True):
             return
 
     audio_file = download_video(info)
+    if not audio_file and proxied:
+        # The format URL is signed for the proxy's IP. It downloaded from ours
+        # when tested, but if Google enforces that, read the page again here.
+        print(f"Retrying the download for {video_id} after a read on our own IP")
+        audio_file = download_video(video_info(url))
     if not audio_file:
         print(f"Audio download failed for {video_id}")
         return

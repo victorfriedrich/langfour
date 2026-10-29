@@ -1,7 +1,7 @@
 import { supabase } from '../supabaseclient';
 import { setPrefs, Prefs, defaultPrefs } from './prefs';
 import { sendToActiveTab, sendToBackground } from '../messages';
-import { getLanguageInfo, toLanguage, LanguageInfo } from '../languages';
+import { getLanguageInfo, toLanguage, LanguageInfo, type Language } from '../languages';
 import type { Session } from '@supabase/supabase-js';
 import { getErrorMessage } from '../errors';
 import { WEB_URL } from '../config';
@@ -125,6 +125,7 @@ function drawLanguageButtons(languages: string[], activeLang: string) {
         setPrefs(newPrefs, () => {
           sendPrefsUpdate();
         });
+        setReviewLanguage(lang);
       } catch (err) {
         console.error('Error setting default language:', err);
       }
@@ -158,6 +159,7 @@ function updateUIForSession(session: Session | null) {
       // an older version persisted the transient Spanish fallback.
       setPrefs({ preferredLanguage: activeLang }, sendPrefsUpdate);
       renderLanguageButtons(activeLang);
+      setReviewLanguage(activeLang);
     });
   } else {
     // Logged Out View
@@ -323,17 +325,31 @@ signUpBtn.addEventListener('click', () => {
 // and closes the popup, which window.open does not do reliably.
 const reviewBtn = document.getElementById('reviewBtn') as HTMLButtonElement;
 let reviewUrl = `${WEB_URL}/vocabulary`;
+// RemNote reviews open the active language's notes, so the link is redrawn
+// when either the settings arrive or the language changes.
+let reviewSettings: Parameters<typeof reviewLink>[0] = null;
+let reviewLanguage: Language | null = null;
+
+function drawReviewLink() {
+  const link = reviewLink(reviewSettings, reviewLanguage);
+  reviewUrl = link.url;
+  reviewBtn.textContent = link.label;
+}
+
+function setReviewLanguage(language: Language) {
+  reviewLanguage = language;
+  drawReviewLink();
+}
 
 async function updateReviewLink(userId: string) {
   const { data, error } = await supabase
     .from('userdata')
-    .select('review_provider, remnote_root_rem_id')
+    .select('review_provider, remnote_root_rem_id, remnote_language_rem_ids')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) console.error('Could not read review provider:', error);
-  const link = reviewLink(data);
-  reviewUrl = link.url;
-  reviewBtn.textContent = link.label;
+  reviewSettings = data;
+  drawReviewLink();
 }
 
 reviewBtn.addEventListener('click', () => {
