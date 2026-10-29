@@ -25,10 +25,9 @@ function PracticeSkeleton() {
   const bar = 'animate-pulse rounded bg-gray-100';
   return (
     <div aria-label="Loading">
-      <div className="h-[72px] animate-pulse rounded-xl bg-gray-50" />
-      <div className={`mt-10 h-12 w-56 ${bar}`} />
-      <div className={`mt-5 h-20 w-full ${bar}`} />
-      <div className={`mt-6 h-2 w-full ${bar}`} />
+      <div className={`h-5 w-32 ${bar}`} />
+      <div className={`mt-4 h-28 w-full ${bar}`} />
+      <div className={`mt-6 h-1.5 w-full ${bar}`} />
       <div className={`mt-3 h-4 w-72 ${bar}`} />
       <div className="mt-10 border-t border-gray-100 pt-8">
         <div className={`h-5 w-32 ${bar}`} />
@@ -135,17 +134,26 @@ const PracticePage = () => {
       <div className="min-h-screen bg-white">
         {/* Flat: no cards. Sections are separated by space and a hairline. */}
         <div className="max-w-3xl px-4 py-10 sm:px-8">
-          <header className="mb-8 flex min-h-8 flex-wrap items-end justify-between gap-2">
+          <header className="mb-10 flex min-h-9 flex-wrap items-center justify-between gap-3">
             <h1 className="text-2xl font-semibold text-gray-900">Practice</h1>
             {revealed && provider && (
-              <SchedulerLabel
-                provider={provider}
-                remnote={remnote}
-                onDisconnect={async () => {
-                  await disconnect();
-                  window.location.reload(); // the scheduler changed; reload every view
-                }}
-              />
+              <div className="flex flex-wrap items-center gap-3">
+                <SchedulerLabel
+                  provider={provider}
+                  remnote={remnote}
+                  onDisconnect={async () => {
+                    await disconnect();
+                    window.location.reload(); // the scheduler changed; reload every view
+                  }}
+                />
+                <TodayCard
+                  provider={provider}
+                  remnoteDocumentUrl={remnoteDocumentUrl}
+                  due={provider === 'remnote' ? dueInRemnote : learningSet.length}
+                  onStartReview={() => setShowSession(true)}
+                  onContextReview={() => setShowContextReview(true)}
+                />
+              </div>
             )}
           </header>
 
@@ -159,18 +167,8 @@ const PracticePage = () => {
                 : 'hidden'
             }
           >
-            {provider && (
-              <TodayCard
-                provider={provider}
-                remnoteDocumentUrl={remnoteDocumentUrl}
-                due={provider === 'remnote' ? dueInRemnote : learningSet.length}
-                onStartReview={() => setShowSession(true)}
-                onContextReview={() => setShowContextReview(true)}
-              />
-            )}
-
             {(progressError || progressWords) && (
-              <section className="mt-10">
+              <section>
                 {progressError ? (
                   <p className="text-sm text-red-600">{progressError}</p>
                 ) : (

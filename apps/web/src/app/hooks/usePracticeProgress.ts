@@ -6,6 +6,9 @@ import type { ReviewProvider } from './useReviewProvider';
 // disagree on what "learned" means.
 import type { WordCards } from '../../../../remnote-plugin/src/stats';
 
+/** A word with its cards, and when the user saved it. */
+export type ProgressWord = WordCards & { addedAt: number | null };
+
 const PAGE = 1000;
 // srs_reviews.outcome in RemNote's scores, which the stats module reads.
 const OUTCOME_SCORES: Record<string, number> = { again: 0, hard: 0.5, good: 1, easy: 1.5 };
@@ -24,17 +27,17 @@ async function selectAll<T>(build: () => Query): Promise<T[]> {
 
 /** The user's words in one scheduler, with their cards and reviews: Langfour's
  *  own (one card per learning word) or RemNote's, as the plugin reported them. */
-async function providerWords(provider: ReviewProvider): Promise<WordCards[]> {
+async function providerWords(provider: ReviewProvider): Promise<ProgressWord[]> {
   type Row = {
     id: number;
     word_id: number;
-    userwords: { words: { root: string; language: string } | null } | null;
+    userwords: { created_at: string | null; words: { root: string; language: string } | null } | null;
     srs_cards: { next_due_at: string | null; srs_reviews: { reviewed_at: string; outcome: string }[] }[];
   };
   const rows = await selectAll<Row>(() => {
     const query = supabase
       .from('srs_notes')
-      .select('id, word_id, userwords!inner(words(root, language)), srs_cards(next_due_at, srs_reviews(reviewed_at, outcome))')
+      .select('id, word_id, userwords!inner(created_at, words(root, language)), srs_cards(next_due_at, srs_reviews(reviewed_at, outcome))')
       .eq('provider', provider)
       .is('removed_at', null);
     // Langfour keeps cards for known words that have review history; its
@@ -48,6 +51,7 @@ async function providerWords(provider: ReviewProvider): Promise<WordCards[]> {
     wordId: row.word_id,
     root: row.userwords?.words?.root ?? '',
     language: row.userwords?.words?.language ?? '?',
+    addedAt: row.userwords?.created_at ? Date.parse(row.userwords.created_at) : null,
     cards: row.srs_cards.map((card) => ({
       remId: String(row.id),
       nextRepetitionTime: card.next_due_at ? Date.parse(card.next_due_at) : undefined,
@@ -60,7 +64,7 @@ async function providerWords(provider: ReviewProvider): Promise<WordCards[]> {
  *  shape the stats module reads. Null while loading. */
 export const usePracticeProgress = (provider: ReviewProvider | null, refreshTrigger = 0) => {
   const { user } = useContext(UserContext);
-  const [words, setWords] = useState<WordCards[] | null>(null);
+  const [words, setWords] = useState<ProgressWord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
