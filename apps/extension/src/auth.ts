@@ -5,7 +5,7 @@
 // session-fixation hole, so both ends stay on one configuration.
 import { supabase } from './supabaseclient';
 import { getErrorMessage } from './errors';
-import { findEmailCode, normalizeEmailCode, signInWithEmailCode } from './emailCode';
+import { SIGN_IN_WITH_CODE, findEmailCode, normalizeEmailCode, signInWithEmailCode } from './emailCode';
 
 // iPadOS reports itself as a Mac; touch support gives it away.
 function isIOS(): boolean {
@@ -19,9 +19,10 @@ const RESEND_SECONDS = 60;
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /**
- * Three steps on one page: the email address, the code from the email, and
- * "signed in". The email also carries a magic link; opening it in this
- * browser finishes sign-in through auth_handler.html instead.
+ * Three steps on one page: the email address, waiting for the email, and
+ * "signed in". In Chrome the magic link in the email finishes sign-in
+ * through auth_handler.html. Safari can't follow that link, so there the
+ * waiting step takes the code from the same email.
  */
 class SignIn {
   private emailForm = el<HTMLFormElement>('login-form');
@@ -58,6 +59,19 @@ class SignIn {
     window.addEventListener('message', (event) => {
       if (event.origin === window.location.origin && event.data === 'auth_success') closeThisTab();
     });
+    // That tab was opened from the mail client, not from here, so the message
+    // above rarely arrives. The stored session always does.
+    chrome.storage.onChanged.addListener((changes, area) => {
+      const session = changes.supabaseSession?.newValue;
+      if (area === 'local' && session?.access_token) this.showSignedIn(session.user?.email ?? null);
+    });
+
+    // Chrome signs in through the link in the email; only Safari, which
+    // can't follow it, asks for the code from the same email.
+    if (SIGN_IN_WITH_CODE) {
+      this.subheading.textContent = 'We’ll email you a sign-in code.';
+      el('code-entry').classList.remove('hidden');
+    }
 
     // First run: the background opens this page with ?welcome after install.
     if (new URLSearchParams(window.location.search).has('welcome')) {
@@ -153,13 +167,15 @@ class SignIn {
     this.emailInput.value = email;
     el('sent-email').textContent = email;
     this.heading.textContent = 'Check your email';
-    this.subheading.textContent = 'Enter the code we sent you.';
+    this.subheading.textContent = SIGN_IN_WITH_CODE
+      ? 'Enter the code we sent you.'
+      : 'Open the link in the email in this browser.';
     this.emailForm.classList.add('hidden');
     this.codeForm.classList.remove('hidden');
     // The Gmail shortcut only helps on a desktop; a phone has the Mail app.
     el('open-mail').classList.toggle('hidden', isIOS() || !email.endsWith('@gmail.com'));
     this.codeInput.value = '';
-    this.codeInput.focus();
+    if (SIGN_IN_WITH_CODE) this.codeInput.focus();
     this.startResendTimer();
   }
 
@@ -237,7 +253,7 @@ class SignIn {
     let seconds = RESEND_SECONDS;
     const render = () => {
       this.resendButton.disabled = seconds > 0;
-      this.resendButton.textContent = seconds > 0 ? `Resend code in ${seconds} s` : 'Resend code';
+      this.resendButton.textContent = seconds > 0 ? `Resend email in ${seconds} s` : 'Resend email';
     };
     render();
     this.resendTimer = window.setInterval(() => {

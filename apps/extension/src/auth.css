@@ -10,11 +10,9 @@
   --line-strong: rgba(0, 0, 0, 0.22);
   --accent: #4f46e5;
   --accent-pressed: #4338ca;
-  --accent-ring: rgba(79, 70, 229, 0.25);
   --on-accent: #ffffff;
   --success: #16a34a;
   --error: #c0262d;
-  --glow: rgba(99, 102, 241, 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,10 +25,8 @@
     --line-strong: rgba(255, 255, 255, 0.28);
     --accent: #6366f1;
     --accent-pressed: #4f46e5;
-    --accent-ring: rgba(129, 140, 248, 0.35);
     --success: #34d399;
     --error: #ff6b6b;
-    --glow: rgba(99, 102, 241, 0.22);
   }
 }
 
@@ -41,9 +37,7 @@ html { background: var(--bg); }
 body {
   min-height: 100vh;
   min-height: 100dvh;
-  background:
-    radial-gradient(120% 60% at 50% -10%, var(--glow), transparent 70%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -74,7 +68,7 @@ body {
   width: 64px;
   height: 64px;
   border-radius: 15px;
-  box-shadow: 0 6px 20px rgba(79, 70, 229, 0.25), 0 0 0 0.5px var(--line);
+  box-shadow: 0 0 0 0.5px var(--line);
 }
 
 /* Signed in: a check on the corner of the icon. */
@@ -112,6 +106,24 @@ body {
 
 .step { display: flex; flex-direction: column; }
 
+/* A field and its buttons share one outlined row; focusing the field turns
+   the outline indigo. */
+.row {
+  display: flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.row:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.code-entry { display: flex; flex-direction: column; }
+
 .label {
   margin: 0 0 8px 2px;
   font-size: 13px;
@@ -120,32 +132,23 @@ body {
 }
 
 .field {
-  width: 100%;
-  height: 52px;
-  padding: 0 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  background: var(--surface);
+  flex: 1;
+  min-width: 0;
+  height: 50px;
+  padding: 0 14px;
+  border: none;
+  background: transparent;
   color: var(--text);
   /* 16px or more, or Safari zooms in when the field is focused. */
   font: inherit;
   font-size: 17px;
-  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .field::placeholder { color: var(--text-2); opacity: 0.6; }
 
-.field:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-ring);
-}
-
-.code-row { display: flex; gap: 8px; }
+.field:focus { outline: none; }
 
 .code-field {
-  flex: 1;
-  min-width: 0;
   font-size: 24px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -159,39 +162,37 @@ button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparen
 
 .primary {
   position: relative;
-  height: 52px;
-  margin-top: 12px;
+  flex: none;
+  padding: 0 20px;
   border: none;
-  border-radius: 12px;
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   transition: background-color 0.15s, opacity 0.15s;
 }
 
 .primary:hover:not(:disabled),
 .primary:active:not(:disabled) { background: var(--accent-pressed); }
-.primary:focus-visible { outline: none; box-shadow: 0 0 0 4px var(--accent-ring); }
+.primary:focus-visible { outline: 2px solid var(--on-accent); outline-offset: -5px; }
 .primary:disabled { opacity: 0.55; cursor: default; }
 
+/* Paste, an icon inside the code row next to Sign in. */
 .secondary {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   flex: none;
-  height: 52px;
-  padding: 0 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  background: var(--surface);
+  padding: 0 14px;
+  border: none;
+  border-left: 1px solid var(--line);
+  background: none;
   color: var(--accent);
   font-size: 16px;
   font-weight: 600;
 }
 
 .secondary:active { background: var(--bg); }
-.secondary:focus-visible { outline: none; box-shadow: 0 0 0 4px var(--accent-ring); }
+.secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: -5px; }
 
 .link {
   border: none;
@@ -226,10 +227,7 @@ button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparen
 
 .sent-to {
   margin-bottom: 20px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line);
+  text-align: center;
   font-size: 15px;
   line-height: 1.4;
   color: var(--text-2);

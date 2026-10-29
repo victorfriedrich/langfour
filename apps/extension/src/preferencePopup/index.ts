@@ -6,7 +6,7 @@ import type { Session } from '@supabase/supabase-js';
 import { getErrorMessage } from '../errors';
 import { WEB_URL } from '../config';
 import { reviewLink } from '../reviewLink';
-import { normalizeEmailCode, signInWithEmailCode } from '../emailCode';
+import { SIGN_IN_WITH_CODE, normalizeEmailCode, signInWithEmailCode } from '../emailCode';
 import { cleanTitle, hostOf } from '../pageTitle';
 
 // --- DOM Elements for Logged In View ---
@@ -236,7 +236,7 @@ async function sendMagicLink(email: string) {
     sentEmailEl.textContent = email;
     showSent(true);
     startResendCountdown();
-    codeInput.focus();
+    if (SIGN_IN_WITH_CODE) codeInput.focus();
   } catch (err: unknown) {
     showSent(false);
     showLoginError(getErrorMessage(err, 'Something went wrong. Please try again.'));
@@ -265,11 +265,17 @@ resendBtn.addEventListener('click', () => {
 });
 
 // The sign-in email also carries a code. Typing it here is the only way to
-// sign in on Safari for iOS, where the link cannot reach the extension.
+// sign in on Safari for iOS, where the link cannot reach the extension, so
+// only the Safari build shows the code field.
 const codeForm = document.getElementById('codeForm') as HTMLFormElement;
 const codeInput = document.getElementById('codeInput') as HTMLInputElement;
 const codeBtn = document.getElementById('codeBtn') as HTMLButtonElement;
 const codeError = document.getElementById('codeError') as HTMLElement;
+
+if (SIGN_IN_WITH_CODE) {
+  codeForm.classList.remove('hidden');
+  (document.getElementById('sentHint') as HTMLElement).textContent = 'Enter the code from it below.';
+}
 
 function showCodeError(message: string | null) {
   codeError.textContent = message ?? '';

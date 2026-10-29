@@ -11,6 +11,12 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabaseclient';
 import { sendToBackground } from './messages';
 
+/**
+ * Whether sign-in asks for the code. Only the Safari build does; Chrome
+ * signs in through the link, so it never shows a code field.
+ */
+export const SIGN_IN_WITH_CODE = process.env.EXTENSION_TARGET === 'safari';
+
 /** Supabase's email OTP length is configurable from 6 to 10 digits. */
 export function normalizeEmailCode(raw: string): string | null {
   const digits = raw.replace(/\s+/g, '');
