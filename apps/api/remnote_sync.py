@@ -149,6 +149,9 @@ class LinkedWord(BaseModel):
     # The dictionary audit says it is not a word (a name, English, a typo).
     # The plugin deletes the Rem it made for one if it was never reviewed.
     invalid: bool = False
+    # The user knows it (userwords.status). The plugin turns off the Rem it
+    # made for one if it was never reviewed, and back on if that changes.
+    known: bool = False
 
 
 class LinkedResponse(BaseModel):
@@ -245,13 +248,14 @@ class SyncStore:
         ))
 
     def word_details(self, user_id: str) -> dict[int, dict]:
-        """word_id -> {language, added_at, invalid} for every word the user has."""
+        """word_id -> {language, added_at, invalid, known} for every word the user has."""
         rows = _select_all(lambda: (
-            self.db.table("userwords").select("word_id, created_at, words(language, status)")
+            self.db.table("userwords").select("word_id, status, created_at, words(language, status)")
             .eq("user_id", user_id).order("word_id")
         ))
         return {r["word_id"]: {"language": r["words"]["language"], "added_at": r["created_at"],
-                               "invalid": r["words"].get("status") == "invalid"}
+                               "invalid": r["words"].get("status") == "invalid",
+                               "known": r["status"] == "known"}
                 for r in rows if r.get("words")}
 
     def custom_translations(self, user_id: str) -> dict[int, str]:
@@ -509,8 +513,8 @@ def pending_words(store: SyncStore, user_id: str, limit: int) -> PendingResponse
 
 
 def linked_words(store: SyncStore, user_id: str) -> LinkedResponse:
-    """Language, save date and validity of every word that has a Rem. The
-    plugin keeps none of them on the Rem itself, so it asks here."""
+    """Language, save date, validity and whether it is known, for every word
+    that has a Rem. The plugin keeps none of them on the Rem, so it asks here."""
     details = store.word_details(user_id)
     return LinkedResponse(words=[
         LinkedWord(word_id=n["word_id"], **details[n["word_id"]])

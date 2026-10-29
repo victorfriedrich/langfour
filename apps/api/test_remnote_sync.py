@@ -80,8 +80,8 @@ class FakeStore:
 
     def word_details(self, user_id):
         return {w: {"language": lang, "added_at": f"2026-0{1 + w % 9}-01T00:00:00+00:00",
-                    "invalid": w in self.invalid}
-                for w, _, _, lang, _ in self.userwords}
+                    "invalid": w in self.invalid, "known": status == "known"}
+                for w, status, _, lang, _ in self.userwords}
 
     def relink_note(self, note_id, rem_id):
         note = next(n for n in self.notes if n["id"] == note_id)
@@ -815,6 +815,23 @@ def test_linked_words_say_which_are_invalid():
                                                NoteIn(word_id=2, rem_id="rem-b")]), now=NOW)
 
     assert [(w.word_id, w.invalid) for w in linked_words(store, USER).words] == [(1, False), (2, True)]
+
+
+def test_linked_words_say_which_are_known():
+    store = FakeStore(spanish(1) + spanish(2, status="known"))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-a"),
+                                               NoteIn(word_id=2, rem_id="rem-b")]), now=NOW)
+
+    assert [(w.word_id, w.known) for w in linked_words(store, USER).words] == [(1, False), (2, True)]
+
+
+def test_turning_off_a_known_words_rem_keeps_it_known():
+    store = FakeStore(spanish(1, status="known"))
+    apply_push(store, USER, PushRequest(notes=[NoteIn(word_id=1, rem_id="rem-a")]), now=NOW)
+
+    apply_push(store, USER, PushRequest(present_rem_ids=["rem-a"], disabled_rem_ids=["rem-a"]), now=NOW)
+
+    assert store.userwords[0][1] == "known"
 
 
 def test_pending_words_carry_their_save_date():
