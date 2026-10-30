@@ -79,8 +79,11 @@ mcp = FastMCP(
         "for them or teach grammar, read get_grammar_overview once and follow the guide it "
         "returns; fetch get_grammar_details only for the chapters the conversation is about. "
         "Teach in the guide's small lessons, one step per message, and don't move on until "
-        "a concept is learned. At the end of each lesson, report every sentence the user "
-        "wrote and every exercise answer with record_grammar. "
+        "a concept is learned. Whenever the user writes or says something in the language "
+        "you correct, in a lesson or not, record it with record_grammar in that same turn: "
+        "every sentence and exercise answer, with each grammar mistake in it. Don't save "
+        "results for the end of a lesson or session; correcting a mistake without recording "
+        "it is an unfinished reply. "
         "Use Langfour in the background. Don't announce, narrate or confirm tool calls "
         "('checking Langfour', 'recording that now'), and don't read out counts, timings or "
         "other results unless the user asks; let what you read shape your reply instead. This "
@@ -297,7 +300,8 @@ async def record_grammar_tool(
     ctx: Context,
     chapters: Annotated[list[ChapterUpdate], Field(max_length=20)] = [],  # noqa: B006
 ) -> GrammarRecord:
-    """Record grammar practice at the end of each lesson: one result per sentence or answer.
+    """Record grammar practice in the same turn you correct it, in a lesson or not: one
+    result per sentence or answer. Don't save results for the end of a lesson or session.
 
     'produced': one sentence the user wrote or said in full that needed the concept, with
     the sentence exactly as they wrote it; correct is whether this concept was right in
