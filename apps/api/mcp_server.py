@@ -14,8 +14,13 @@ Tools: get_vocabulary and score_text read (vocabulary.py); record_practice
 (practice.py), record_exposure and set_word_status (vocabulary.py) write.
 get_grammar_overview and get_grammar_details read the grammar curriculum and
 the user's place in it; record_grammar writes (grammar.py).
+
+The tools are async and do their work in asyncio.to_thread: FastMCP calls a
+sync tool on the event loop itself, which holds up every other request,
+parallel tool calls from the same client included.
 """
 
+import asyncio
 from typing import Annotated, Literal
 
 from mcp.server.fastmcp import Context, FastMCP
@@ -71,7 +76,16 @@ mcp = FastMCP(
         "returns; fetch get_grammar_details only for the chapters the conversation is about. "
         "Teach in the guide's small lessons, one step per message, and don't move on until "
         "a concept is learned. At the end of each lesson, report every sentence the user "
-        "wrote and every exercise answer with record_grammar."
+        "wrote and every exercise answer with record_grammar. "
+        "Use Langfour in the background. Don't announce, narrate or confirm tool calls "
+        "('checking Langfour', 'recording that now'), and don't read out counts, timings or "
+        "other results unless the user asks; let what you read shape your reply instead. This "
+        "matters most in voice conversations, where every aside is a pause. Make the reads a "
+        "session needs together in one turn (get_grammar_overview and get_vocabulary side by "
+        "side) and reuse what they returned rather than calling again. Make writes at the end "
+        "of your turn, after your reply to the user, so they never wait on one, and add "
+        "nothing after a write unless its result changes what the user should hear (a concept "
+        "newly learned, a chapter refused as not done)."
     ),
     stateless_http=True,
     json_response=True,
@@ -92,7 +106,7 @@ def _user_id(ctx: Context) -> str:
     title="Record vocabulary practice",
     readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False,
 ))
-def record_practice_tool(language: Language, answers: list[PracticeAnswer], ctx: Context) -> PracticeSummary:
+async def record_practice_tool(language: Language, answers: list[PracticeAnswer], ctx: Context) -> PracticeSummary:
     """Record the results of a vocabulary practice session with the user, once, at its end.
 
     An answer is the user translating a word you showed them ('recognize') or coming up
@@ -109,17 +123,16 @@ def record_practice_tool(language: Language, answers: list[PracticeAnswer], ctx:
 
     When the user writes a wrong or made-up word (apartamiento for 'flat'), record a wrong
     'produce' answer for the word from their own vocabulary they should have used (piso,
-    if they know it), not just the dictionary word for it. Say which words you're
-    recording before you call this.
+    if they know it), not just the dictionary word for it.
     """
     req = PracticeRequest(language=language, answers=answers)
-    return record_practice(get_practice_store(), _user_id(ctx), req)
+    return await asyncio.to_thread(record_practice, get_practice_store(), _user_id(ctx), req)
 
 
 @mcp.tool(name="get_vocabulary", annotations=ToolAnnotations(
     title="See vocabulary", readOnlyHint=True, openWorldHint=False,
 ))
-def get_vocabulary_tool(
+async def get_vocabulary_tool(
     ctx: Context,
     status: Literal["due", "learning", "known"] = "due",
     language: Language | None = None,
@@ -138,13 +151,14 @@ def get_vocabulary_tool(
     mistakes lists words the user last got wrong in practice, newest first, with a note:
     work one to three of them into the session and record the result.
     """
-    return get_vocabulary(get_vocabulary_store(), _user_id(ctx), language, status, limit)
+    return await asyncio.to_thread(get_vocabulary, get_vocabulary_store(), _user_id(ctx),
+                                   language, status, limit)
 
 
 @mcp.tool(name="score_text", annotations=ToolAnnotations(
     title="Check a text's level", readOnlyHint=True, openWorldHint=False,
 ))
-def score_text_tool(
+async def score_text_tool(
     language: Language,
     text: Annotated[str, Field(min_length=1, max_length=MAX_TEXT)],
     ctx: Context,
@@ -157,14 +171,14 @@ def score_text_tool(
     few learning words make good practice. Reading-only and cheap, so scoring a draft
     several times while writing it is fine; nothing is recorded.
     """
-    return score_text(get_vocabulary_store(), _user_id(ctx), language, text)
+    return await asyncio.to_thread(score_text, get_vocabulary_store(), _user_id(ctx), language, text)
 
 
 @mcp.tool(name="record_exposure", annotations=ToolAnnotations(
     title="Log a text the user read",
     readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False,
 ))
-def record_exposure_tool(
+async def record_exposure_tool(
     language: Language,
     text: Annotated[str, Field(min_length=1, max_length=MAX_TEXT)],
     ctx: Context,
@@ -176,14 +190,15 @@ def record_exposure_tool(
     Only for texts the user chose to read (a story or article they asked for), not for
     everything you wrote in the conversation.
     """
-    return record_exposure(get_vocabulary_store(), _user_id(ctx), language, text)
+    return await asyncio.to_thread(record_exposure, get_vocabulary_store(), _user_id(ctx),
+                                   language, text)
 
 
 @mcp.tool(name="set_word_status", annotations=ToolAnnotations(
     title="Mark words known or learning",
     readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False,
 ))
-def set_word_status_tool(
+async def set_word_status_tool(
     language: Language,
     words: Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]],
                      Field(min_length=1, max_length=200)],
@@ -199,13 +214,14 @@ def set_word_status_tool(
     When you pick the words yourself, show the user the list and change only the ones
     they confirm. not_found lists words that aren't in their list in that language.
     """
-    return set_word_status(get_vocabulary_store(), _user_id(ctx), language, words, status)
+    return await asyncio.to_thread(set_word_status, get_vocabulary_store(), _user_id(ctx),
+                                   language, words, status)
 
 
 @mcp.tool(name="get_grammar_overview", annotations=ToolAnnotations(
     title="See grammar progress", readOnlyHint=True, openWorldHint=False,
 ))
-def get_grammar_overview_tool(ctx: Context, language: Language | None = None) -> GrammarOverview:
+async def get_grammar_overview_tool(ctx: Context, language: Language | None = None) -> GrammarOverview:
     """Where the user is in their grammar book: every chapter in teaching order, which
     ones they started or finished, how many concepts they've learned and how many are
     fading (due to be worked back in), the mistakes they made that are still to revise,
@@ -215,13 +231,13 @@ def get_grammar_overview_tool(ctx: Context, language: Language | None = None) ->
     user or teach them grammar, and follow the guide. language is an ISO code; leave it
     out for the language the user is studying.
     """
-    return grammar.get_overview(get_grammar_store(), _user_id(ctx), language)
+    return await asyncio.to_thread(grammar.get_overview, get_grammar_store(), _user_id(ctx), language)
 
 
 @mcp.tool(name="get_grammar_details", annotations=ToolAnnotations(
     title="See grammar chapters and concepts", readOnlyHint=True, openWorldHint=False,
 ))
-def get_grammar_details_tool(
+async def get_grammar_details_tool(
     ctx: Context,
     chapters: Annotated[list[str], Field(max_length=MAX_DETAIL_CHAPTERS)] = [],  # noqa: B006
     concepts: Annotated[list[str], Field(max_length=MAX_DETAIL_CONCEPTS)] = [],  # noqa: B006
@@ -235,14 +251,15 @@ def get_grammar_details_tool(
     concept. Fetch only the chapters the conversation is about: a text practising por and
     para needs that chapter, not the subjunctive. not_found lists unknown ids.
     """
-    return grammar.get_details(get_grammar_store(), _user_id(ctx), language, chapters, concepts)
+    return await asyncio.to_thread(grammar.get_details, get_grammar_store(), _user_id(ctx),
+                                   language, chapters, concepts)
 
 
 @mcp.tool(name="record_grammar", annotations=ToolAnnotations(
     title="Record grammar practice",
     readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False,
 ))
-def record_grammar_tool(
+async def record_grammar_tool(
     language: Language,
     results: Annotated[list[GrammarResult], Field(max_length=100)],
     ctx: Context,
@@ -270,4 +287,5 @@ def record_grammar_tool(
     once every concept in it is learned (not_done lists the ones refused), or with
     self_reported when the user says they already know the chapter.
     """
-    return grammar.record(get_grammar_store(), _user_id(ctx), language, results, chapters)
+    return await asyncio.to_thread(grammar.record, get_grammar_store(), _user_id(ctx),
+                                   language, results, chapters)

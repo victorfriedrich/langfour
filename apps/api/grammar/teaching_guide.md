@@ -160,6 +160,8 @@ date and note. A mistake stays flagged until the learner next uses that concept 
 ## Recording with `record_grammar`
 
 Call it at the end of each lesson, and at the end of a session for anything since.
+Record quietly: correct the learner first, then call it at the end of your turn, without
+saying you're recording.
 
 - **`produced`:** one result per sentence the learner wrote or said in full that needed the
   concept, with the sentence exactly as they wrote it. `correct` is whether this concept was
