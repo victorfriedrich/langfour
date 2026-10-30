@@ -25,6 +25,7 @@ ES = grammar.load_curriculum("es")
 SER = ES.concept["es.ser.characteristics"]                   # medium: 14 days
 HARD = ES.concept["es.ser_estar_1.characteristic_vs_state"]  # hard: 7 days
 RECEPTIVE = ES.concept["es.objeto_doblado.leismo"]
+UV = ES.concept["es.indefinido_irregular.uv"]                # forms for tener, estar, andar
 
 
 class FakeStore:
@@ -48,9 +49,15 @@ class FakeStore:
         return len(events)
 
 
-def practised(concept):
-    """Progress after one correct use at NOW."""
-    return grammar.practise(Progress(), concept, "produced", True, NOW)
+def learned(concept, at=NOW):
+    """Progress once a concept meets the bar at `at`, using every form it lists."""
+    if concept.mode == "receptive":
+        return grammar.practise(Progress(), concept, "seen", None, at)
+    p, forms = Progress(), {f for _, fs in concept.forms for f in fs}
+    for _ in range(grammar.MIN_CORRECT):
+        p = grammar.practise(p, concept, "produced", True, at, forms)
+    assert p.learned_at == at
+    return p
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +75,8 @@ def test_a_broken_curriculum_lists_every_problem():
     levels = {"a1": {"chapters": [
         {"id": "es.one", "title": "One", "goal": "g", "concepts": [
             {"id": "a", "title": "A", "scope": "s", "later": ["es.nowhere.x"]},
-            {"id": "a", "title": "A again", "scope": "s", "difficulty": "brutal"},
+            {"id": "a", "title": "A again", "scope": "s", "difficulty": "brutal",
+             "forms": ["tuve", "tuvo"]},
         ]},
         {"id": "es.two", "title": "Two", "goal": "g", "continues": "es.three", "concepts": [
             {"id": "b", "title": "B", "scope": "s", "later": ["es.one.a"]},
@@ -79,7 +87,7 @@ def test_a_broken_curriculum_lists_every_problem():
     message = str(err.value)
     for problem in ("refers to unknown concept es.nowhere.x", "duplicate concept",
                     "difficulty is easy", "later points back to es.one.a",
-                    "continues es.three"):
+                    "continues es.three", "forms maps each verb"):
         assert problem in message
 
 
@@ -87,60 +95,106 @@ def test_a_broken_curriculum_lists_every_problem():
 # The refresh rule
 # ---------------------------------------------------------------------------
 
-def test_first_correct_use_sets_the_base_interval():
+def test_one_correct_sentence_isnt_enough_and_learning_sets_the_base_interval():
     p = grammar.practise(Progress(), HARD, "produced", True, NOW)
-    assert (p.interval_days, p.refresh_at, p.produced_count) == (7, NOW + 7 * DAY, 1)
-    assert grammar.state(p, "started", NOW) == "fresh"
-    assert grammar.state(p, "started", NOW + 8 * DAY) == "fading"
+    assert grammar.state(p, "started", NOW) == "studied"
+    assert (p.first_correct_at, p.correct_count, p.refresh_at) == (NOW, 1, None)
+    assert grammar.to_learn(p, HARD) == "1 more correct sentence written by the user."
+    p = grammar.practise(p, HARD, "produced", True, NOW + DAY)
+    assert (p.learned_at, p.interval_days, p.refresh_at) == (NOW + DAY, 7, NOW + 8 * DAY)
+    assert grammar.state(p, "started", NOW + DAY) == "fresh"
+    assert grammar.state(p, "started", NOW + 9 * DAY) == "fading"
+    assert grammar.to_learn(p, HARD) is None
+
+
+def test_a_concept_with_forms_needs_half_of_each_verbs_forms():
+    p = Progress()
+    for sentence in ("Ayer tuve un problema.", "Ella tuvo suerte.", "Estuve en casa."):
+        p = grammar.practise(p, UV, "produced", True, NOW, grammar.forms_in(sentence, UV))
+    assert p.learned_at is None and p.correct_count == 3
+    assert p.forms_produced == ("estuve", "tuve", "tuvo")
+    left = grammar.to_learn(p, UV)
+    assert "tener: 1 more of tuviste, tuvimos, tuvieron" in left
+    assert "estar: 2 more" in left and "andar: 2 more of anduve, anduvo, anduvieron" in left
+    assert "sentence" not in left
+    for sentence in ("Tuvimos tiempo y estuvimos bien.", "Estuvieron allí.",
+                     "Anduve mucho y él anduvo poco."):
+        p = grammar.practise(p, UV, "produced", True, NOW, grammar.forms_in(sentence, UV))
+    assert p.learned_at == NOW
+
+
+def test_wrong_sentences_dont_count_toward_the_bar():
+    p = grammar.practise(Progress(), UV, "produced", False, NOW, {"tuve"})
+    assert (p.correct_count, p.forms_produced, p.error_count) == (0, (), 1)
+
+
+def test_recognizing_a_form_isnt_using_it():
+    p = Progress()
+    for _ in range(5):
+        p = grammar.practise(p, SER, "recognized", True, NOW)
+    assert p == Progress()
+
+
+def test_a_self_report_learns_the_concept_at_once():
+    p = grammar.practise(Progress(), UV, "produced", True, NOW, self_reported=True)
+    assert p.learned_at == NOW and p.correct_count == 0
+
+
+def test_forms_match_whole_words_with_their_accents():
+    tu = ES.concept["es.imperativo_1.tu_irregular"]
+    assert grammar.forms_in("¡Hazlo ya y dímelo! Ve a casa.", tu) == {"haz", "di", "ve"}
+    ser = ES.concept["es.ser.forms"]
+    assert grammar.forms_in("Este es mi hermano; somos dos.", ser) == {"es", "somos"}
+    assert grammar.forms_in("Ayer tuvé un problema.", UV) == set()
 
 
 def test_using_a_rule_again_the_same_day_doesnt_grow_the_interval():
-    p = practised(SER)
+    p = learned(SER)
     for _ in range(5):
         p = grammar.practise(p, SER, "produced", True, NOW + timedelta(hours=1))
     assert p.interval_days == 14
-    assert p.produced_count == 6
+    assert p.produced_count == 7
     assert p.refresh_at == NOW + 14 * DAY
 
 
 def test_the_interval_doubles_once_half_has_passed_and_stops_at_180():
-    p = practised(SER)
+    p = learned(SER)
     p = grammar.practise(p, SER, "produced", True, NOW + 7 * DAY)
     assert (p.interval_days, p.refresh_at) == (28, NOW + 35 * DAY)
-    p = Progress(first_correct_at=NOW, interval_days=150, interval_grown_at=NOW,
+    p = Progress(first_correct_at=NOW, learned_at=NOW, interval_days=150, interval_grown_at=NOW,
                  refresh_at=NOW + 150 * DAY)
     p = grammar.practise(p, SER, "produced", True, NOW + 100 * DAY)
     assert p.interval_days == 180
 
 
 def test_a_wrong_use_halves_the_interval_and_brings_it_back_tomorrow():
-    p = grammar.practise(practised(SER), SER, "produced", False, NOW + 2 * DAY)
+    p = grammar.practise(learned(SER), SER, "produced", False, NOW + 2 * DAY)
     assert (p.interval_days, p.refresh_at, p.error_count) == (7, NOW + 3 * DAY, 1)
 
 
 def test_a_wrong_first_use_leaves_the_concept_studied():
     p = grammar.practise(Progress(), SER, "produced", False, NOW)
-    assert p.first_correct_at is None and p.error_count == 1
+    assert p.learned_at is None and p.error_count == 1
     assert grammar.state(p, "started", NOW) == "studied"
 
 
 def test_seeing_a_fading_concept_pushes_it_out_by_half_the_interval():
     fading = NOW + 20 * DAY
-    p = grammar.practise(practised(SER), SER, "seen", None, fading)
+    p = grammar.practise(learned(SER), SER, "seen", None, fading)
     assert p.refresh_at == fading + 7 * DAY
     assert p.interval_days == 14
-    fresh = grammar.practise(practised(SER), SER, "seen", None, NOW + DAY)
+    fresh = grammar.practise(learned(SER), SER, "seen", None, NOW + DAY)
     assert fresh.refresh_at == NOW + 14 * DAY
 
 
 def test_seeing_a_receptive_concept_counts_as_practice():
     p = grammar.practise(Progress(), RECEPTIVE, "seen", None, NOW)
-    assert p.first_correct_at == NOW
+    assert p.learned_at == NOW
     assert p.refresh_at == NOW + 30 * DAY  # easy
 
 
 def test_progress_survives_a_round_trip_through_a_row():
-    p = practised(SER)
+    p = grammar.practise(learned(SER), UV, "produced", True, NOW, {"tuve"})
     assert Progress.from_row(p.to_row()) == p
 
 
@@ -150,6 +204,7 @@ def test_progress_survives_a_round_trip_through_a_row():
 
 def row(concept_id, refresh_at, interval=14):
     return {"concept_id": concept_id, "first_correct_at": (NOW - 30 * DAY).isoformat(),
+            "learned_at": (NOW - 30 * DAY).isoformat(), "correct_count": 2,
             "interval_days": interval, "interval_grown_at": (NOW - 30 * DAY).isoformat(),
             "refresh_at": refresh_at.isoformat(), "produced_count": 1, "error_count": 0}
 
@@ -167,8 +222,8 @@ def test_the_overview_has_one_line_per_chapter_with_progress():
     lines = out.overview.splitlines()
     assert out.language == "es"
     assert "Started: es.ser. Done: 1. Fading concepts: 1." in lines[0]
-    assert "✓ es.pronombres_sujeto  Pronombres personales y tratamiento  0/3 practised" in lines
-    assert "→ es.ser  Ser  2/6 practised, 1 fading" in lines
+    assert "✓ es.pronombres_sujeto  Pronombres personales y tratamiento  0/3 learned" in lines
+    assert "→ es.ser  Ser  2/6 learned, 1 fading" in lines
     assert "· es.presente_regular  Presente: verbos regulares" in lines
     assert sum(line.startswith(("✓", "→", "·")) for line in lines) == len(ES.chapters)
     assert "teach" in out.guide
@@ -191,11 +246,26 @@ def test_details_list_a_chapter_or_concepts_in_full():
     states = {c.id: c.state for c in chapter.concepts}
     assert states[HARD.id] == "fresh"
     assert states["es.ser_estar_1.nouns_ser"] == "studied"
+    to_learn = {c.id: c.to_learn for c in chapter.concepts}
+    assert to_learn[HARD.id] is None
+    assert to_learn["es.ser_estar_1.nouns_ser"] == "2 more correct sentences written by the user."
     [concept] = out.concepts
     assert concept.difficulty == "hard"
     assert [r.id for r in concept.later] == list(HARD.later)
     assert concept.later[0].title
     assert out.not_found == ["es.nope", "es.ser.nope"]
+
+
+def test_details_show_which_forms_are_left():
+    p = grammar.practise(Progress(), UV, "produced", True, NOW, {"tuve"})
+    store = FakeStore(chapters=[{"chapter_id": UV.chapter_id, "status": "started",
+                                 "started_at": NOW.isoformat(), "finished_at": None}],
+                      concepts=[{"concept_id": UV.id, **p.to_row()}])
+    [concept] = grammar.get_details(store, USER, "es", [], [UV.id], NOW).concepts
+    assert concept.state == "studied" and concept.refresh_at is None
+    assert concept.forms["andar"] == ["anduve", "anduvo", "anduvieron"]
+    assert (concept.forms_produced, concept.correct_sentences) == (["tuve"], 1)
+    assert "tener: 2 more of tuviste" in concept.to_learn
 
 
 def test_details_take_at_most_three_chapters():
@@ -222,13 +292,14 @@ def test_record_writes_events_progress_and_opens_the_chapter():
     assert {e["concept_id"] for e in events} == {HARD.id, "es.ser.identity"}
     assert next(e for e in events if e["concept_id"] == HARD.id)["sentence"] == "Está cansado."
     by_id = {c["concept_id"]: c for c in concepts}
-    assert by_id[HARD.id]["refresh_at"] == (NOW + 7 * DAY).isoformat()
+    assert by_id[HARD.id]["correct_count"] == 1 and by_id[HARD.id]["learned_at"] is None
     assert by_id["es.ser.identity"]["first_correct_at"] is None
     assert {c["chapter_id"]: c["status"] for c in chapters} == {
         "es.ser": "started", "es.ser_estar_1": "started"}
     assert out.recorded == 2
     assert {(c.concept, c.before, c.after) for c in out.changed} == {
-        (HARD.id, "not yet", "fresh"), ("es.ser.identity", "not yet", "studied")}
+        (HARD.id, "not yet", "studied"), ("es.ser.identity", "not yet", "studied")}
+    assert out.to_learn[HARD.id] == "1 more correct sentence written by the user."
     assert sorted(out.chapters) == ["es.ser", "es.ser_estar_1"]
     assert out.not_found == ["es.nope", "es.ser.nope"]
 
@@ -237,7 +308,8 @@ def test_finishing_a_chapter_keeps_when_it_was_started_and_never_reopens():
     started = (NOW - 10 * DAY).isoformat()
     store = FakeStore(chapters=[{"chapter_id": "es.ser", "status": "started",
                                  "started_at": started, "finished_at": None}])
-    grammar.record(store, USER, "es", [], [ChapterUpdate(chapter="es.ser", status="done")], NOW)
+    grammar.record(store, USER, "es", [], [ChapterUpdate(chapter="es.ser", status="done",
+                                                         self_reported=True)], NOW)
     [chapter] = store.recorded[3]
     assert (chapter["status"], chapter["started_at"]) == ("done", started)
 
@@ -246,11 +318,46 @@ def test_finishing_a_chapter_keeps_when_it_was_started_and_never_reopens():
     assert done.recorded is None and out.chapters == []
 
 
-def test_produced_needs_correct_and_seen_must_not_have_it():
+def test_a_chapter_is_done_only_once_its_concepts_are_learned():
+    chapter = ES.chapter["es.indefinido_irregular"]
+    started = {"chapter_id": chapter.id, "status": "started",
+               "started_at": NOW.isoformat(), "finished_at": None}
+    almost = [{"concept_id": c.id, **learned(c).to_row()}
+              for c in chapter.concepts[:-1]]
+    store = FakeStore(chapters=[started], concepts=almost)
+    out = grammar.record(store, USER, "es", [], [ChapterUpdate(chapter=chapter.id, status="done")], NOW)
+    assert out.not_done == [chapter.id] and out.chapters == [] and store.recorded is None
+
+    last = chapter.concepts[-1]
+    out = grammar.record(store, USER, "es", [
+        GrammarResult(concept=last.id, kind="produced", correct=True, sentence=s)
+        for s in ("Hubo un accidente.", "Ayer hubo una fiesta.")
+    ], [ChapterUpdate(chapter=chapter.id, status="done")], NOW)
+    assert out.not_done == [] and out.chapters == [chapter.id]
+    assert store.recorded[3][0]["status"] == "done"
+
+
+def test_the_same_sentence_twice_counts_once():
+    store = FakeStore()
+    out = grammar.record(store, USER, "es", [
+        GrammarResult(concept=SER.id, kind="produced", correct=True, sentence=s)
+        for s in ("Es alto.", "es  alto.")
+    ], [], NOW)
+    assert out.recorded == 1 and store.recorded[2][0]["correct_count"] == 1
+
+
+def test_produced_needs_correct_and_a_sentence_and_seen_must_not_have_correct():
     with pytest.raises(ValidationError):
         GrammarResult(concept=HARD.id, kind="produced")
     with pytest.raises(ValidationError):
+        GrammarResult(concept=HARD.id, kind="produced", correct=True)
+    with pytest.raises(ValidationError):
         GrammarResult(concept=HARD.id, kind="seen", correct=True)
+    with pytest.raises(ValidationError):
+        GrammarResult(concept=HARD.id, kind="recognized")
+    with pytest.raises(ValidationError):
+        GrammarResult(concept=HARD.id, kind="recognized", correct=True, self_reported=True)
+    GrammarResult(concept=HARD.id, kind="produced", correct=True, self_reported=True)
 
 
 def test_record_refuses_a_language_without_a_curriculum():
@@ -260,17 +367,18 @@ def test_record_refuses_a_language_without_a_curriculum():
 
 @pytest.mark.parametrize("kind,correct", [("produced", True), ("seen", None)])
 def test_early_practice_keeps_tomorrows_refresh_after_an_error(kind, correct):
-    p = grammar.practise(practised(RECEPTIVE), RECEPTIVE, "produced", False, NOW + DAY)
+    p = grammar.practise(learned(RECEPTIVE), RECEPTIVE, "produced", False, NOW + DAY)
     after = grammar.practise(p, RECEPTIVE, kind, correct, NOW + DAY + timedelta(hours=1))
     assert after.refresh_at == p.refresh_at == NOW + 2 * DAY
     assert after.interval_days == p.interval_days
     assert after.interval_grown_at == p.interval_grown_at
 
 
-@pytest.mark.parametrize("previous", [None, practised(RECEPTIVE)])
+@pytest.mark.parametrize("previous", [None, learned(RECEPTIVE)])
 def test_receptive_exposure_doesnt_override_a_sessions_error_in_either_order(previous):
     seen = GrammarResult(concept=RECEPTIVE.id, kind="seen")
-    wrong = GrammarResult(concept=RECEPTIVE.id, kind="produced", correct=False)
+    wrong = GrammarResult(concept=RECEPTIVE.id, kind="produced", correct=False,
+                          sentence="Le vi ayer.")
     saved = []
     for results in ([seen, wrong], [wrong, seen]):
         store = FakeStore(concepts=[{"concept_id": RECEPTIVE.id, **previous.to_row()}]
@@ -295,7 +403,7 @@ def test_record_rereads_after_a_conflict_and_preserves_the_other_sessions_progre
                 assert chapters[0]["previous"] is None
                 # Another request produced the concept and finished its chapter
                 # between our read and our attempted write. The RPC wrote nothing.
-                self.concept_rows = [{"concept_id": SER.id, **practised(SER).to_row()}]
+                self.concept_rows = [{"concept_id": SER.id, **learned(SER).to_row()}]
                 self.chapter_rows = [{"chapter_id": SER.chapter_id, "status": "done",
                                       "started_at": NOW.isoformat(),
                                       "finished_at": NOW.isoformat()}]
@@ -309,8 +417,8 @@ def test_record_rereads_after_a_conflict_and_preserves_the_other_sessions_progre
     assert out.recorded == 1 and out.chapters == [] and out.changed == []
     _, events, [progress], chapters = store.recorded
     assert len(events) == 1 and chapters == []
-    assert progress["first_correct_at"] == NOW.isoformat()
-    assert progress["produced_count"] == 1
+    assert progress["learned_at"] == NOW.isoformat()
+    assert progress["produced_count"] == 2
     assert progress["refresh_at"] == (NOW + 14 * DAY).isoformat()
     assert progress["previous"] == store.concept_rows[0]
 

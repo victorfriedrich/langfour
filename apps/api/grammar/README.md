@@ -58,6 +58,12 @@ language).
     only the scope should be able to teach exactly that concept and nothing from a later one.
 12. **Pitfalls are the errors learners actually make**, stated as the wrong form and the right
     one. The teaching LLM adds pitfalls specific to the user's native language.
+13. **Forms set the bar for memorised forms.** A concept whose forms must be memorised (rule 3)
+    lists them under `forms`, by verb: yo, tú, él, nosotros, ellos, without vosotros, and only
+    the ones the concept is about (pidió, pidieron for e → i in the third person). It isn't
+    learned until the user has used half of each verb's forms correctly in sentences of their
+    own, so list the verbs that matter, not every verb the scope names. Every concept also
+    needs two correct sentences (`MIN_CORRECT` in `grammar.py`).
 
 ## File format
 
@@ -78,6 +84,9 @@ chapters:
         variety: spain            # optional; default both
         chunk: true               # optional; taught as a fixed phrase
         lemmas: [hacer]           # optional; verbs a per-verb concept is about (not used yet)
+        forms:                    # optional: the forms to cover, by verb (rule 13)
+          hacer: [hice, hiciste, hizo, hicimos, hicieron]
+        enclitic: true            # optional: the forms take attached pronouns (hazlo, dímelo)
         pitfall: "…"              # optional
         later: [es.ser_estar_2.event_location]   # optional: deferred refinements
         see: [es.estar_hay.location]             # optional: related concepts elsewhere

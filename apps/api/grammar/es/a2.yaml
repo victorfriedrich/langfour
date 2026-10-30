@@ -74,9 +74,17 @@ chapters:
         title: "busqué, llegué, empecé"
         scope: "-car, -gar, -zar verbs change spelling in yo only: buscar → busqué, llegar → llegué, empezar → empecé, pagar → pagué."
         see: [es.escritura.letters]
+        forms:
+          buscar: [busqué]
+          llegar: [llegué]
+          empezar: [empecé]
       - id: y_spelling
         title: "leyó, oyeron"
         scope: "-er/-ir verbs with a vowel before the ending take y in the third person: leer → leyó, leyeron; oír, creer, caer, construir. Other forms take an accent (leíste, leímos)."
+        forms:
+          leer: [leyó, leyeron]
+          oír: [oyó, oyeron]
+          creer: [creyó, creyeron]
       - id: completed
         title: "Completed actions at a finished time"
         scope: "Events in a time that is over: ayer, anoche, el lunes, la semana pasada, en 2010, hace dos años (Ayer cené con Ana)."
@@ -121,6 +129,8 @@ chapters:
         title: "fui: ser and ir"
         scope: "fui, fuiste, fue, fuimos, fuisteis, fueron is the preterite of both ser and ir; context tells which (Fue un día largo / Fue a Madrid)."
         lemmas: [ser, ir]
+        forms:
+          ser/ir: [fui, fuiste, fue, fuimos, fueron]
       - id: strong_endings
         title: "Endings of the strong preterites"
         scope: "Irregular stems take -e, -iste, -o, -imos, -isteis, -ieron with no written accent (tuve, tuvo, hice, hizo)."
@@ -130,49 +140,80 @@ chapters:
         title: "tener, estar, andar: -uv-"
         scope: "tuve, estuve, anduve (tuvo, estuvimos, anduvieron). Compounds follow: mantuve, obtuve."
         lemmas: [tener, estar, andar]
+        forms:
+          tener: [tuve, tuviste, tuvo, tuvimos, tuvieron]
+          estar: [estuve, estuviste, estuvo, estuvimos, estuvieron]
+          andar: [anduve, anduvo, anduvieron]
       - id: hacer
         title: "hacer: hice, hizo"
         scope: "hice, hiciste, hizo (z), hicimos, hicisteis, hicieron. Compounds follow (deshice)."
         lemmas: [hacer]
+        forms:
+          hacer: [hice, hiciste, hizo, hicimos, hicieron]
       - id: poder
         title: "poder: pude"
         scope: "pude, pudiste, pudo, pudimos…"
         lemmas: [poder]
+        forms:
+          poder: [pude, pudiste, pudo, pudimos, pudieron]
       - id: poner
         title: "poner: puse"
         scope: "puse, pusiste, puso… Compounds: propuse, supuse."
         lemmas: [poner]
+        forms:
+          poner: [puse, pusiste, puso, pusimos, pusieron]
       - id: saber
         title: "saber: supe"
         scope: "supe, supiste, supo… (it often means found out)."
         lemmas: [saber]
         later: [es.indefinido_imperfecto_2.meaning_change]
+        forms:
+          saber: [supe, supiste, supo, supimos, supieron]
       - id: querer
         title: "querer: quise"
         scope: "quise, quisiste, quiso…"
         lemmas: [querer]
+        forms:
+          querer: [quise, quisiste, quiso, quisimos, quisieron]
       - id: venir
         title: "venir: vine"
         scope: "vine, viniste, vino, vinimos, vinisteis, vinieron."
         lemmas: [venir]
+        forms:
+          venir: [vine, viniste, vino, vinimos, vinieron]
       - id: j_stems
         title: "decir, traer, -ducir: -j-"
         scope: "dije, traje, conduje, traduje, produje; after j the 3rd plural is -eron (dijeron, trajeron)."
         difficulty: hard
         lemmas: [decir, traer, conducir, traducir, producir]
         pitfall: "dijieron → dijeron"
+        forms:
+          decir: [dije, dijiste, dijo, dijimos, dijeron]
+          traer: [traje, trajiste, trajo, trajimos, trajeron]
+          conducir: [conduje, condujo, condujeron]
       - id: dar_ver
         title: "dar and ver"
         scope: "dar takes -er/-ir endings: di, diste, dio, dimos, disteis, dieron. ver: vi, viste, vio. No accents on di, dio, vi, vio."
         lemmas: [dar, ver]
+        forms:
+          dar: [di, diste, dio, dimos, dieron]
+          ver: [vi, viste, vio, vimos, vieron]
       - id: e_i_third
         title: "pidió, sintió: e → i in the third person"
         scope: "-ir stem-changing verbs change e → i only in él and ellos: pedir → pidió, pidieron; sentir, seguir, preferir, repetir, servir, vestirse, divertirse."
         difficulty: hard
+        forms:
+          pedir: [pidió, pidieron]
+          sentir: [sintió, sintieron]
+          seguir: [siguió, siguieron]
+          preferir: [prefirió, prefirieron]
       - id: o_u_third
         title: "durmió, murió"
         scope: "dormir and morir change o → u in él and ellos: durmió, durmieron, murió."
         lemmas: [dormir, morir]
+        forms:
+          dormir: [durmió, durmieron]
+          morir: [murió, murieron]
       - id: hubo
         title: "hubo"
         scope: "hubo = there was / there were, for an event that took place (Hubo un accidente)."
@@ -238,6 +279,10 @@ chapters:
         scope: "era, iba, veía (eras, íbamos, veían). Every other verb is regular in the imperfecto."
         difficulty: easy
         lemmas: [ser, ir, ver]
+        forms:
+          ser: [era, eras, éramos, eran]
+          ir: [iba, ibas, íbamos, iban]
+          ver: [veía, veías, veíamos, veían]
       - id: habitual
         title: "Habits in the past"
         scope: "What you used to do: antes, siempre, todos los días, de pequeño, cuando era niño (Antes vivía en Bonn, Siempre íbamos a la playa)."
@@ -370,6 +415,16 @@ chapters:
         scope: "Eight short irregular tú forms: decir → di, hacer → haz, ir → ve, poner → pon, salir → sal, ser → sé, tener → ten, venir → ven."
         difficulty: hard
         lemmas: [decir, hacer, ir, poner, salir, ser, tener, venir]
+        forms:
+          decir: [di]
+          hacer: [haz]
+          ir: [ve]
+          poner: [pon]
+          salir: [sal]
+          ser: [sé]
+          tener: [ten]
+          venir: [ven]
+        enclitic: true
       - id: usted
         title: "usted, ustedes"
         scope: "Formed from the yo stem with the opposite vowel: hable/hablen, coma/coman, tenga, haga, diga; irregular: sea, vaya, esté, dé, sepa. These are present-subjunctive forms, learned here as commands."
@@ -431,14 +486,27 @@ chapters:
         title: "podr-, sabr-, querr-, habr-, cabr-"
         scope: "poder, saber, querer, haber, caber drop the e of the infinitive (podré, sabrás, querrá, habrá)."
         lemmas: [poder, saber, querer, haber, caber]
+        forms:
+          poder: [podré, podrás, podrá, podremos, podrán]
+          saber: [sabré, sabrás, sabrá, sabremos, sabrán]
+          querer: [querré, querrás, querrá, querremos, querrán]
+          haber: [habrá]
       - id: stems_d
         title: "tendr-, pondr-, saldr-, vendr-, valdr-"
         scope: "tener, poner, salir, venir, valer replace the vowel with d (tendré, pondrás, saldremos, vendrán)."
         lemmas: [tener, poner, salir, venir, valer]
+        forms:
+          tener: [tendré, tendrás, tendrá, tendremos, tendrán]
+          poner: [pondré, pondrás, pondrá, pondremos, pondrán]
+          salir: [saldré, saldrás, saldrá, saldremos, saldrán]
+          venir: [vendré, vendrás, vendrá, vendremos, vendrán]
       - id: stems_hacer_decir
         title: "har-, dir-"
         scope: "hacer → haré, decir → diré."
         lemmas: [hacer, decir]
+        forms:
+          hacer: [haré, harás, hará, haremos, harán]
+          decir: [diré, dirás, dirá, diremos, dirán]
       - id: uses
         title: "futuro or ir a"
         scope: "futuro for predictions, promises and more distant or less certain future (Mañana lloverá, Te llamaré); ir a for intentions and what is clearly about to happen. In speech ir a is more common."

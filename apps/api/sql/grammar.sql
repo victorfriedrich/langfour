@@ -59,6 +59,22 @@ create table if not exists public.grammar_events (
     check ((kind = 'produced') = (correct is not null))
 );
 
+-- Since the learned bar (grammar.py): a concept is learned once enough
+-- correct sentences cover enough of its forms, not on its first correct one.
+-- learned_at is when that happened; state reads it, not first_correct_at.
+-- 'recognized' events are answers to choice and fill-in exercises.
+alter table public.user_grammar_concepts
+    add column if not exists learned_at     timestamptz,
+    add column if not exists correct_count  integer not null default 0,
+    add column if not exists forms_produced text[] not null default '{}';
+
+alter table public.grammar_events drop constraint if exists grammar_events_kind_check;
+alter table public.grammar_events add constraint grammar_events_kind_check
+    check (kind in ('seen', 'recognized', 'produced'));
+alter table public.grammar_events drop constraint if exists grammar_events_check;
+alter table public.grammar_events add constraint grammar_events_check
+    check ((kind in ('produced', 'recognized')) = (correct is not null));
+
 create index if not exists grammar_events_user_time on public.grammar_events (user_id, occurred_at);
 
 alter table public.user_grammar_chapters enable row level security;
@@ -106,6 +122,7 @@ declare
     v_row jsonb;
     v_current jsonb;
     v_previous jsonb;
+    v_concept public.user_grammar_concepts;
 begin
     perform pg_advisory_xact_lock(hashtextextended('grammar:' || p_user_id::text, 0));
 
@@ -129,12 +146,13 @@ begin
         if not (v_row ? 'previous') then
             raise exception 'grammar concept is missing previous state';
         end if;
-        select to_jsonb(c) - 'user_id' into v_current
+        select c.* into v_concept
         from public.user_grammar_concepts c
         where c.user_id = p_user_id and c.concept_id = v_row->>'concept_id';
+        v_current := case when found then to_jsonb(v_concept) - 'user_id' end;
+        -- Columns the API didn't send (an older API) compare as unchanged.
         v_previous := case when v_row->'previous' = 'null'::jsonb then null else
-            to_jsonb(jsonb_populate_record(null::public.user_grammar_concepts,
-                                          v_row->'previous')) - 'user_id' end;
+            to_jsonb(jsonb_populate_record(v_concept, v_row->'previous')) - 'user_id' end;
         if v_current is distinct from v_previous then
             return -1;
         end if;
@@ -150,17 +168,24 @@ begin
             finished_at = excluded.finished_at;
 
     insert into public.user_grammar_concepts (
-        user_id, concept_id, first_correct_at, last_seen_at, last_produced_at,
-        interval_days, interval_grown_at, refresh_at, produced_count, error_count)
-    select p_user_id, r.concept_id, r.first_correct_at, r.last_seen_at, r.last_produced_at,
-           r.interval_days, r.interval_grown_at, r.refresh_at, r.produced_count, r.error_count
+        user_id, concept_id, first_correct_at, learned_at, last_seen_at, last_produced_at,
+        interval_days, interval_grown_at, refresh_at, produced_count, error_count,
+        correct_count, forms_produced)
+    select p_user_id, r.concept_id, r.first_correct_at, r.learned_at, r.last_seen_at,
+           r.last_produced_at, r.interval_days, r.interval_grown_at, r.refresh_at,
+           r.produced_count, r.error_count, coalesce(r.correct_count, 0),
+           coalesce(r.forms_produced, '{}')
     from jsonb_to_recordset(p_concepts)
-         as r(concept_id text, first_correct_at timestamptz, last_seen_at timestamptz,
-              last_produced_at timestamptz, interval_days integer,
+         as r(concept_id text, first_correct_at timestamptz, learned_at timestamptz,
+              last_seen_at timestamptz, last_produced_at timestamptz, interval_days integer,
               interval_grown_at timestamptz, refresh_at timestamptz,
-              produced_count integer, error_count integer)
+              produced_count integer, error_count integer, correct_count integer,
+              forms_produced text[])
     on conflict (user_id, concept_id) do update
         set first_correct_at = excluded.first_correct_at,
+            learned_at = excluded.learned_at,
+            correct_count = excluded.correct_count,
+            forms_produced = excluded.forms_produced,
             last_seen_at = excluded.last_seen_at,
             last_produced_at = excluded.last_produced_at,
             interval_days = excluded.interval_days,

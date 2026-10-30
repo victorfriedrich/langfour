@@ -69,8 +69,9 @@ mcp = FastMCP(
         "Langfour also knows where the user is in their grammar book. Before you write a text "
         "for them or teach grammar, read get_grammar_overview once and follow the guide it "
         "returns; fetch get_grammar_details only for the chapters the conversation is about. "
-        "At the end, report what they produced, and the concepts you deliberately used in "
-        "texts they read, with record_grammar."
+        "Teach in the guide's small lessons, one step per message, and don't move on until "
+        "a concept is learned. At the end of each lesson, report every sentence the user "
+        "wrote and every exercise answer with record_grammar."
     ),
     stateless_http=True,
     json_response=True,
@@ -218,7 +219,7 @@ def get_grammar_details_tool(
 ) -> GrammarDetails:
     """The concepts of a few chapters with the user's state of each (chapter ids from
     get_grammar_overview), or a few concepts in full: pitfall, the refinements that come
-    later, related concepts.
+    later, related concepts, and the forms the user still has to produce.
 
     A concept's scope says exactly what it covers; teach that and nothing from a later
     concept. Fetch only the chapters the conversation is about: a text practising por and
@@ -237,16 +238,22 @@ def record_grammar_tool(
     ctx: Context,
     chapters: Annotated[list[ChapterUpdate], Field(max_length=20)] = [],  # noqa: B006
 ) -> GrammarRecord:
-    """Record a session's grammar, once, at its end: one result per concept and kind.
+    """Record grammar practice at the end of each lesson: one result per sentence or answer.
 
-    'produced': the user wrote or said something that needed the concept; correct is
-    false if they got it wrong anywhere in the session. Errors in other concepts don't
-    count against it. When the user says they know a concept, record it as produced and
-    correct with self_reported set. 'seen': a concept you used on purpose in a text the
-    user read (the one you taught, or a fading one you worked in), not every rule a text
-    happens to contain.
+    'produced': one sentence the user wrote or said in full that needed the concept, with
+    the sentence exactly as they wrote it; correct is whether this concept was right in
+    it. Errors in other concepts don't count against it. 'recognized': one answer to a
+    choice or fill-in exercise; it's logged but doesn't count toward learning. 'seen': a
+    concept you used on purpose in a text the user read (the one you taught, or a fading
+    one you worked in), not every rule a text happens to contain.
 
-    chapters marks a chapter 'started' when you begin teaching it and 'done' when the
-    user says they've finished it. Producing a concept starts its chapter anyway.
+    A concept is learned only after enough correct sentences covering enough of its
+    forms; to_learn says what each practised concept still needs. Never tell the user a
+    concept is learned or done unless changed shows it fresh. self_reported is only for
+    a user who tells you, without an exercise, that they already know the concept.
+
+    chapters marks a chapter 'started' when you begin teaching it. 'done' is accepted
+    once every concept in it is learned (not_done lists the ones refused), or with
+    self_reported when the user says they already know the chapter.
     """
     return grammar.record(get_grammar_store(), _user_id(ctx), language, results, chapters)
