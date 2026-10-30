@@ -20,3 +20,12 @@ export function hostOf(url: string | null | undefined): string | null {
     return null;
   }
 }
+
+// Lyrics read like articles to the extractor. Pages that declare their song
+// as schema.org data need no list; these are for the ones that do not.
+const LYRICS_HOSTS = ['genius.com', 'letras.com', 'letras.mus.br', 'musixmatch.com', 'azlyrics.com', 'lyrics.com', 'songtexte.com', 'paroles.net', 'testitesti.org', 'angolotesti.it'];
+
+export function isLyricsPage(url: string | null | undefined): boolean {
+  const host = hostOf(url);
+  return Boolean(host && LYRICS_HOSTS.some((h) => host === h || host.endsWith(`.${h}`)));
+}

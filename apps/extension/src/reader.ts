@@ -165,7 +165,8 @@ function renderArticle(container: HTMLElement, article: StoredArticle): void {
   const wordCount = (contentDiv.textContent || '').split(/\s+/).filter(Boolean).length;
   const metaParts: string[] = [];
   if (article.byline) metaParts.push(article.byline);
-  metaParts.push(`${Math.max(1, Math.round(wordCount / WORDS_PER_MINUTE))} min read`);
+  // A song is listened to, not read in minutes.
+  if (article.kind !== 'song') metaParts.push(`${Math.max(1, Math.round(wordCount / WORDS_PER_MINUTE))} min read`);
   const setMeta = (extra?: string) => {
     meta.textContent = [...metaParts, ...(extra ? [extra] : [])].join(' · ');
   };

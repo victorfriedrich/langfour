@@ -177,3 +177,55 @@ describe('extractArticle', () => {
     expect(text).toContain('bibliotecas de la ciudad');
   });
 });
+
+describe('extractArticle on lyrics pages', () => {
+  /** Made-up lyrics, two stanzas of four lines. */
+  const STANZAS = [
+    ['Salgo a la calle cuando cae la tarde', 'Las luces del barrio me vuelven a llamar', 'Muchas noches', 'Y nadie me espera para cenar'],
+    ['Baila conmigo hasta que salga el sol', 'Que la música no se acabe jamás', 'Baila conmigo, no pienses en el reloj', 'Mañana ya veremos qué más da'],
+  ];
+  const RECORDING = { '@context': 'https://schema.org', '@type': 'MusicRecording', name: 'Calle de noche', byArtist: { '@type': 'MusicGroup', name: 'Los Ejemplos' } };
+
+  function songPage(body: string, { url = 'https://www.lyrics-example.com/los-ejemplos/calle', title = 'Letra de Los Ejemplos - Calle de noche | Ejemplo', data = true } = {}) {
+    const head = data ? `<script type="application/ld+json">${JSON.stringify(RECORDING)}</script>` : '';
+    const doc = new DOMParser().parseFromString(`<!doctype html><html lang="es"><head><title>${title}</title>${head}</head><body><main>${body}</main></body></html>`, 'text/html');
+    const article = extractArticle(doc, { url });
+    expect(article).not.toBeNull();
+    const content = new DOMParser().parseFromString(`<div>${article!.content}</div>`, 'text/html').body;
+    const stanzas = Array.from(content.querySelectorAll('p')).map((p) => p.innerHTML.split('<br>').map((line) => line.trim()));
+    return { article: article!, content, stanzas };
+  }
+
+  it('takes the song and artist from its schema.org data', () => {
+    const { article } = songPage(STANZAS.map((lines) => `<p>${lines.join('<br>')}</p>`).join(''));
+    expect(article).toMatchObject({ title: 'Calle de noche', byline: 'Los Ejemplos', kind: 'song' });
+  });
+
+  it('joins a block per line into stanzas by section, without labels or who sings them', () => {
+    // Musixmatch: a heading and the singer, then each line in its own box.
+    const section = (label: string, lines: string[]) =>
+      `<div><div><h3>${label}</h3><div><div>Los Ejemplos</div></div></div>${lines.map((line) => `<div><div><div>${line}</div></div></div>`).join('')}</div>`;
+    const { content, stanzas } = songPage(`<div><h2>Letra de Calle de noche de Los Ejemplos</h2>${section('verse', STANZAS[0])}${section('chorus', STANZAS[1])}</div>`);
+    expect(stanzas).toEqual(STANZAS);
+    expect(content.querySelector('h1, h2, h3')).toBeNull();
+  });
+
+  it('drops bracketed section labels and keeps annotated lines', () => {
+    // Genius: a <br> per line, labels in brackets, annotations as links.
+    const [first, second] = STANZAS;
+    const { stanzas } = songPage(`<div data-lyrics-container="true">[Letra de "Calle de noche"]<br><br>[Verso 1: Los Ejemplos]<br>${first.join('<br>')}<br><br>[Coro: Los Ejemplos &amp; <i>Otra</i>]<br><a href="/123/annotation"><span>${second[0]}<br>${second[1]}</span></a><br>${second.slice(2).join('<br>')}</div>`);
+    expect(stanzas.map((lines) => lines.join(' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())).toEqual(STANZAS.map((lines) => lines.join(' ')));
+  });
+
+  it('reads the song from the title on a known lyrics site without data', () => {
+    const { article } = songPage(STANZAS.map((lines) => `<p>${lines.join('<br>')}</p>`).join(''), {
+      url: 'https://www.azlyrics.com/lyrics/losejemplos/calle.html', title: 'Los Ejemplos - Letra de "Calle de noche" | Lyrics at AZLyrics.com', data: false,
+    });
+    expect(article).toMatchObject({ title: 'Calle de noche', byline: 'Los Ejemplos', kind: 'song' });
+  });
+
+  it('leaves articles alone', () => {
+    const doc = new DOMParser().parseFromString(`<!doctype html><html><head><title>Noticia - Diario</title></head><body><main><article>${PROSE.map((line) => `<p>${line}</p>`).join('')}</article></main></body></html>`, 'text/html');
+    expect(extractArticle(doc, { url: URL_ })).toMatchObject({ kind: 'article' });
+  });
+});

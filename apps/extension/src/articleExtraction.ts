@@ -22,7 +22,7 @@
 import { Readability } from '@mozilla/readability';
 import DOMPurify from 'dompurify';
 import type { ArticleData } from './messages';
-import { cleanTitle, hostOf } from './pageTitle';
+import { cleanTitle, hostOf, isLyricsPage } from './pageTitle';
 
 export type ExtractOptions = {
   /** The page's address: the article's source, and the base for links. */
@@ -109,13 +109,16 @@ function cloneWithoutLayoutFurniture(doc: Document, layout?: (element: Element) 
   const live = doc.body.getElementsByTagName('*');
   const copy = clone.body.getElementsByTagName('*');
   // Some single-page apps put everything in one fixed container; an overlay
-  // floats over the page, it does not hold most of it.
-  const pageText = (doc.body.textContent || '').length;
+  // floats over the page, it does not hold most of it. Measured in text that
+  // shows: Cookiebot's dialog (AZLyrics) holds a megabyte of collapsed
+  // vendor lists. innerText needs layout, so jsdom falls back to all text.
+  const shownText = (el: Element) => ((el as HTMLElement).innerText ?? el.textContent ?? '').length;
+  const pageText = shownText(doc.body);
   const furniture: Element[] = [];
   for (let i = 0; i < live.length && i < copy.length; i++) {
     const verdict = layout(live[i]);
     if (verdict === 'hidden' || verdict === 'screen-reader-only') furniture.push(copy[i]);
-    if (verdict === 'overlay' && (live[i].textContent || '').length < pageText / 2) furniture.push(copy[i]);
+    if (verdict === 'overlay' && shownText(live[i]) < pageText / 2) furniture.push(copy[i]);
   }
   furniture.forEach((el) => el.remove());
   return clone;
@@ -403,7 +406,7 @@ function trimEdges(root: ParentNode): void {
   }
 }
 
-function normalize(html: string, title: string | null): string {
+function normalize(html: string, title: string | null, song: boolean): string {
   const clean = DOMPurify.sanitize(html, {
     ALLOWED_TAGS: READING_TAGS,
     ALLOWED_ATTR: [...READING_ATTRIBUTES, PROMOTION_MARK],
@@ -413,6 +416,9 @@ function normalize(html: string, title: string | null): string {
     RETURN_DOM_FRAGMENT: true,
   }) as DocumentFragment;
 
+  // Before the rules below, which are written for prose: one short line
+  // of a song on its own would go as a stray label or an edge fragment.
+  if (song) shapeLyrics(clean);
   removeReferenceMarkers(clean);
   removeEndnoteLists(clean);
   // Edges first, while closing promotions still have their links: the
@@ -437,16 +443,11 @@ function normalize(html: string, title: string | null): string {
 }
 
 // ---------------------------------------------------------------------------
-// Recipes
+// Structured data
 // ---------------------------------------------------------------------------
 
-/**
- * Readability drops recipe ingredient boxes: a block of short list items
- * scores like navigation. Recipe pages declare their ingredients as
- * schema.org Recipe data (what search engines read), so they come from
- * there when the extracted text lacks them.
- */
-function recipeIngredients(doc: Document): string[] {
+/** The first schema.org item of a type that the page declares as JSON-LD (what search engines read). */
+function declared(doc: Document, type: string): Record<string, unknown> | null {
   for (const script of Array.from(doc.querySelectorAll('script[type="application/ld+json"]'))) {
     let data: unknown;
     try {
@@ -463,16 +464,29 @@ function recipeIngredients(doc: Document): string[] {
       }
       if (!item || typeof item !== 'object') continue;
       const record = item as Record<string, unknown>;
-      const types = ([] as unknown[]).concat(record['@type']);
-      if (types.includes('Recipe') && Array.isArray(record.recipeIngredient)) {
-        return record.recipeIngredient
-          .filter((ingredient): ingredient is string => typeof ingredient === 'string' && Boolean(ingredient.trim()))
-          .map((ingredient) => ingredient.trim());
-      }
+      if (([] as unknown[]).concat(record['@type']).includes(type)) return record;
       if (record['@graph']) pending.push(record['@graph']);
     }
   }
-  return [];
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Recipes
+// ---------------------------------------------------------------------------
+
+/**
+ * Readability drops recipe ingredient boxes: a block of short list items
+ * scores like navigation. Recipe pages declare their ingredients as
+ * schema.org Recipe data (what search engines read), so they come from
+ * there when the extracted text lacks them.
+ */
+function recipeIngredients(doc: Document): string[] {
+  const recipe = declared(doc, 'Recipe');
+  if (!recipe || !Array.isArray(recipe.recipeIngredient)) return [];
+  return recipe.recipeIngredient
+    .filter((ingredient): ingredient is string => typeof ingredient === 'string' && Boolean(ingredient.trim()))
+    .map((ingredient) => ingredient.trim());
 }
 
 const INGREDIENTS_HEADING: Record<string, string> = {
@@ -506,6 +520,126 @@ function withIngredients(content: string, ingredients: string[], doc: Document):
 }
 
 // ---------------------------------------------------------------------------
+// Songs
+// ---------------------------------------------------------------------------
+
+type Song = { name: string | null; artist: string | null };
+
+const nameOf = (value: unknown): string | null =>
+  value && typeof value === 'object' && typeof (value as { name?: unknown }).name === 'string'
+    ? (value as { name: string }).name.trim() || null
+    : null;
+
+/**
+ * Lyrics sites (Genius, Musixmatch, Letras) declare the song as schema.org
+ * MusicRecording data, with its plain name and artist. Their page titles
+ * carry both plus "Letra de", "Lyrics" and the site, in every order.
+ */
+function declaredSong(doc: Document): Song | null {
+  const recording = declared(doc, 'MusicRecording');
+  if (!recording) return null;
+  return { name: nameOf(recording), artist: nameOf(([] as unknown[]).concat(recording.byArtist)[0]) };
+}
+
+const LYRICS_WORDS = /\b(lyrics|letras?|testo|paroles|songtext)( (de|di|von|by)\b)?/gi;
+
+/**
+ * A lyrics page without that data has only its title to go on:
+ * 'Bad Bunny - Letra de "Tití Me Preguntó"' (AZLyrics). A quoted part is
+ * the song and the rest the artist; otherwise the title loses its "Lyrics".
+ */
+function songFromTitle(title: string | null): Song {
+  const strip = (text: string) => text.replace(LYRICS_WORDS, '').replace(/\s+/g, ' ').trim();
+  if (!title) return { name: null, artist: null };
+  const quoted = title.match(/["“«]([^"”»]+)["”»]/);
+  if (!quoted) return { name: strip(title) || title, artist: null };
+  const artist = title.split(/\s+[-–—|]\s+/).find((part) => !part.includes(quoted[0]));
+  return { name: quoted[1].trim(), artist: (artist && strip(artist)) || null };
+}
+
+/** Longer than this, a one-line paragraph on a lyrics page is prose, not a line. */
+const MAX_LINE_WORDS = 20;
+
+/** "verse", plus who sings it: "Bad Bunny & Jhay Cortez". */
+const MAX_LABEL_WORDS = 8;
+
+/** Genius's section labels, a line of their own: "[Coro: Bad Bunny]". */
+const SECTION_LABEL = /^\[[^\]]*\]$/;
+
+/**
+ * Lyrics come as one paragraph per stanza with a <br> per line (Letras,
+ * Genius, AZLyrics), or as one block per line grouped by section
+ * (Musixmatch), which reads as a paragraph per line. Makes every song the
+ * first kind, and drops what labels the sections ("verse", "[Coro]") and
+ * any heading: the gaps between stanzas show the sections, and the reader
+ * shows the title.
+ */
+function shapeLyrics(root: ParentNode): void {
+  // Links in lyrics are annotations (Genius), and a stanza that is all
+  // annotation would go as a list of links.
+  root.querySelectorAll('a').forEach((a) => a.replaceWith(...Array.from(a.childNodes)));
+  // A heading names a section or repeats the title. Musixmatch puts the
+  // section's singer beside its label, so the small box around it goes too.
+  root.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((heading) => {
+    let label: Element = heading;
+    while (label.parentElement && wordsIn(label.parentElement.textContent || '') <= MAX_LABEL_WORDS) label = label.parentElement;
+    label.remove();
+  });
+  joinLinesIntoStanzas(root);
+  root.querySelectorAll('p').forEach(removeLabelLines);
+}
+
+/**
+ * Joins runs of one-line paragraphs into one paragraph per stanza. A run
+ * ends at any other block (a heading, a stanza, an empty paragraph) and
+ * where the section changes: the nearest ancestor holding other paragraphs.
+ */
+function joinLinesIntoStanzas(root: ParentNode): void {
+  const sectionOf = (p: Element) => {
+    let el = p.parentElement;
+    while (el && el.querySelectorAll('p').length < 2) el = el.parentElement;
+    return el;
+  };
+  const isLine = (p: Element) => {
+    const words = wordsIn(p.textContent || '');
+    return p.tagName === 'P' && !p.querySelector('br') && words > 0 && words <= MAX_LINE_WORDS;
+  };
+  let stanza: Element | null = null;
+  let section: Element | null = null;
+  for (const block of Array.from(root.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, figure, table'))) {
+    if (!root.contains(block)) continue;
+    if (!isLine(block)) {
+      stanza = null;
+      continue;
+    }
+    const blockSection = sectionOf(block);
+    if (stanza && blockSection === section) {
+      stanza.append(block.ownerDocument.createElement('br'), ...Array.from(block.childNodes));
+      block.remove();
+    } else {
+      stanza = block;
+      section = blockSection;
+    }
+  }
+}
+
+function removeLabelLines(stanza: Element): void {
+  let line: ChildNode[] = [];
+  const endLine = (br: ChildNode | null) => {
+    if (SECTION_LABEL.test(line.map((node) => node.textContent).join('').trim())) {
+      line.forEach((node) => node.remove());
+      br?.remove();
+    }
+    line = [];
+  };
+  for (const node of Array.from(stanza.childNodes)) {
+    if (node.nodeName === 'BR') endLine(node);
+    else line.push(node);
+  }
+  endLine(null);
+}
+
+// ---------------------------------------------------------------------------
 // Pipeline
 // ---------------------------------------------------------------------------
 
@@ -527,8 +661,10 @@ export function extractArticle(doc: Document, options: ExtractOptions): ArticleD
   if (!parsed?.content) return null;
 
   const siteName = parsed.siteName || null;
-  const title = cleanTitle(parsed.title, siteName || hostOf(options.url));
-  const content = withIngredients(normalize(parsed.content, title), recipeIngredients(doc), doc);
+  const pageTitle = cleanTitle(parsed.title, siteName || hostOf(options.url));
+  const song = declaredSong(doc) ?? (isLyricsPage(options.url) ? songFromTitle(pageTitle) : null);
+  const title = song?.name || pageTitle;
+  const content = withIngredients(normalize(parsed.content, title, Boolean(song)), recipeIngredients(doc), doc);
   const probe = doc.createElement('template');
   probe.innerHTML = content;
   if (wordsIn(probe.content.textContent || '') < MIN_ARTICLE_WORDS) return null;
@@ -536,9 +672,10 @@ export function extractArticle(doc: Document, options: ExtractOptions): ArticleD
   return {
     title,
     content,
-    byline: parsed.byline || null,
+    byline: (song ? song.artist : null) || parsed.byline || null,
     siteName,
     url: options.url,
+    kind: song ? 'song' : 'article',
   };
 }
 
