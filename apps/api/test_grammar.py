@@ -48,6 +48,10 @@ class FakeStore:
     def events(self, user_id, since):
         return [e for e in self.event_rows if datetime.fromisoformat(e["occurred_at"]) >= since]
 
+    def topic_events(self, user_id, language):
+        return sorted((e for e in self.event_rows if e.get("topic")),
+                      key=lambda e: e["occurred_at"], reverse=True)
+
     def record(self, user_id, events, concepts, chapters):
         self.recorded = (user_id, events, concepts, chapters)
         return len(events)
@@ -646,3 +650,71 @@ def test_the_book_and_the_overview_name_the_chapters_worth_revisiting():
     overview = grammar.get_overview(store, USER, "es", NOW).overview
     assert f"Worth revisiting: es.indefinido_irregular (slips most: {UV.id})" in overview
     assert "Worth revisiting" not in grammar.get_overview(FakeStore(), USER, "es", NOW).overview
+
+
+# ---------------------------------------------------------------------------
+# Several concepts on one result, and mistakes no concept covers
+# ---------------------------------------------------------------------------
+
+PRETERITE = "es.indefinido_irregular.uv"
+
+
+def test_one_result_can_name_several_concepts():
+    store = FakeStore()
+    sentence = "El hotel tuve una azotea, pero fue vacía."
+    out = grammar.record(store, USER, "es", [
+        GrammarResult(concept=HARD.id, concepts=[PRETERITE, HARD.id, "es.nope"],
+                      kind="produced", correct=False, sentence=sentence,
+                      note="tuve for tenía; fue vacía for estaba vacía"),
+    ], [], NOW)
+    _, events, concepts, _ = store.recorded
+    assert [e["concept_id"] for e in events] == [HARD.id, PRETERITE]
+    assert {e["sentence"] for e in events} == {sentence}
+    assert {c["concept_id"]: c["mistake_note"] for c in concepts} == {
+        HARD.id: "tuve for tenía; fue vacía for estaba vacía",
+        PRETERITE: "tuve for tenía; fue vacía for estaba vacía"}
+    assert out.recorded == 2 and out.not_found == ["es.nope"]
+
+
+def test_a_mistake_no_concept_covers_is_filed_under_a_topic():
+    store = FakeStore()
+    out = grammar.record(store, USER, "es", [
+        GrammarResult(topic="  Gender of nouns in  -MA ", kind="produced", correct=False,
+                      sentence="La problema es grande.", note="la problema for el problema"),
+        GrammarResult(concept=SER.id, topic="gender of nouns in -ma", kind="produced",
+                      correct=False, sentence="Es el tema muy difícil.", note="es for está"),
+    ], [], NOW)
+    _, events, concepts, chapters = store.recorded
+    topic = [e for e in events if e["topic"]]
+    assert [(e["concept_id"], e["topic"], e["language"]) for e in topic] == [
+        (None, "gender of nouns in -ma", "es")] * 2
+    assert [c["concept_id"] for c in concepts] == [SER.id] and chapters == []
+    assert out.topics == ["gender of nouns in -ma"] and out.recorded == 3
+
+
+def test_the_overview_lists_open_topics_and_every_topic_for_reuse():
+    def event(topic, correct, at, note=None):
+        return {"concept_id": None, "topic": topic, "kind": "produced", "correct": correct,
+                "note": note, "occurred_at": at.isoformat()}
+    store = FakeStore(events=[
+        event("gender of nouns in -ma", False, NOW - 3 * DAY, "la tema"),
+        event("gender of nouns in -ma", False, NOW - DAY, "la problema for el problema"),
+        event("personal a", False, NOW - 2 * DAY, "veo Juan"),
+        event("personal a", True, NOW),  # put right since
+    ])
+    lines = grammar.get_overview(store, USER, "es", NOW).overview.splitlines()
+    assert "Mistakes to revise: 1." in lines[0]
+    assert ("topic 'gender of nouns in -ma'  2026-10-28: la problema for el problema"
+            "  (no concept, 2 mistakes)") in lines
+    assert not any(line.startswith("topic 'personal a'") for line in lines)
+    assert ("Topics for mistakes no concept covers (reuse one that fits): "
+            "'personal a'; 'gender of nouns in -ma'") in lines
+
+
+def test_a_result_needs_a_concept_or_a_topic_and_seen_takes_no_topic():
+    with pytest.raises(ValidationError):
+        GrammarResult(kind="produced", correct=False, sentence="La problema.")
+    with pytest.raises(ValidationError):
+        GrammarResult(topic="gender of nouns in -ma", kind="seen")
+    with pytest.raises(ValidationError):
+        GrammarResult(concepts=[SER.id] * 6, kind="seen")
