@@ -151,3 +151,56 @@ it('says to sign in when there is no session', async () => {
   await vi.waitFor(() => expect(toggle().getAttribute('aria-label')).toBe('Langfour: Sign in to Langfour first'));
   expect(toggle().getAttribute('aria-pressed')).toBe('false');
 });
+
+// The language check (userdata.chatgpt_language_check): the API says, per
+// paragraph, which of the words to mark are Spanish in that spot.
+function answerChecks(check: (request: { path: string; method: string; body?: unknown }) => { status: number; body: unknown }) {
+  const requests: { path: string; method: string; body?: unknown }[] = [];
+  const classify = vi.mocked(chrome.runtime.sendMessage).getMockImplementation()!;
+  vi.mocked(chrome.runtime.sendMessage).mockImplementation(((message: BackgroundMessage, callback: (value: unknown) => void) => {
+    if (message.type === 'BACKEND_FETCH' && message.path === '/api/language-check') {
+      requests.push(message);
+      const { status, body } = check(message);
+      callback({ ok: status === 200, status, statusText: String(status), body: JSON.stringify(body) });
+      return;
+    }
+    return (classify as unknown as (m: BackgroundMessage, c: (value: unknown) => void) => void)(message, callback);
+  }) as unknown as typeof chrome.runtime.sendMessage);
+  return requests;
+}
+
+it('leaves words the language check calls English unmarked, once the paragraph stops changing', async () => {
+  const requests = answerChecks((request) => request.method === 'GET'
+    ? { status: 200, body: { enabled: true } }
+    : { status: 200, body: { blocks: [{ in_language: [false, true] }] } });
+  await import('./chatgptHighlight');
+  toggle().click();
+  await vi.waitFor(() => expect(marked('langfour-learning')).toEqual(['corre']), { timeout: 3000 });
+  expect(marked('langfour-new')).toEqual([]);
+
+  const posts = requests.filter((r) => r.method === 'POST');
+  expect(posts).toHaveLength(1);
+  expect(posts[0].body).toEqual({
+    language: 'es',
+    blocks: [{ text: 'El perro corre rápido.', before: '', after: '', words: [[3, 8], [9, 14]] }],
+  });
+});
+
+it('marks as before when the account has the language check off', async () => {
+  const requests = answerChecks(() => ({ status: 200, body: { enabled: false } }));
+  await import('./chatgptHighlight');
+  toggle().click();
+  await vi.waitFor(() => expect(marked('langfour-new')).toEqual(['perro']));
+  expect(requests.map((r) => r.method)).toEqual(['GET']);
+});
+
+it('marks as before when the language check fails', async () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  answerChecks((request) => request.method === 'GET'
+    ? { status: 200, body: { enabled: true } }
+    : { status: 502, body: {} });
+  await import('./chatgptHighlight');
+  toggle().click();
+  await vi.waitFor(() => expect(marked('langfour-new')).toEqual(['perro']), { timeout: 3000 });
+  expect(marked('langfour-learning')).toEqual(['corre']);
+});
