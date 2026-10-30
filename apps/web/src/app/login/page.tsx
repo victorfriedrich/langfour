@@ -98,7 +98,7 @@ function Login() {
                 type="email"
                 autoComplete="email"
                 required
-                className="flex-grow appearance-none rounded-l-md px-3 py-2 border border-r-0 border-gray-300 placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-white"
+                className="flex-grow min-w-0 appearance-none rounded-l-md px-3 py-2 border border-r-0 border-gray-300 placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-white"
                 placeholder="Enter your email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
