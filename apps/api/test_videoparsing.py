@@ -252,7 +252,7 @@ def test_a_proxy_that_refuses_pauses_captions(captions):
 def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(vp, "CAPTION_PROXY_URL", None)      # whatever .env says
-    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False: {
+    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False, proxy=None: {
         "url": url, "title": "t", "channel": "a", "view_count": 1, "duration": 60})
     processed = []
     monkeypatch.setattr(vp, "process_transcription",
@@ -260,11 +260,11 @@ def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp
     download = []
     monkeypatch.setattr(vp, "download_video", lambda info: download.append(info["url"]))
 
-    monkeypatch.setattr(vp, "caption_text", lambda vid, lang, proxied=None: "hola mundo")
+    monkeypatch.setattr(vp, "caption_text", lambda vid, lang, proxied=None, proxy=None: "hola mundo")
     vp.main("https://www.youtube.com/watch?v=abc", "es")
     assert processed == ["hola mundo"] and download == []
 
-    monkeypatch.setattr(vp, "caption_text", lambda vid, lang, proxied=None: None)
+    monkeypatch.setattr(vp, "caption_text", lambda vid, lang, proxied=None, proxy=None: None)
     vp.main("https://www.youtube.com/watch?v=def", "es")
     assert download == ["https://www.youtube.com/watch?v=def"]
 
@@ -318,9 +318,9 @@ def test_a_failed_download_from_proxied_info_rereads_on_our_own_ip(monkeypatch, 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
     reads = []
-    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False: (
+    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False, proxy=None: (
         reads.append(proxied), {"url": url, "proxied": proxied})[1])
-    monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None: None)
+    monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None, proxy=None: None)
     downloads = []
     monkeypatch.setattr(vp, "download_video",
                         lambda info: (downloads.append(info["proxied"]), None)[1])
@@ -353,11 +353,68 @@ def test_use_proxy_false_keeps_a_caption_video_on_our_own_ip(monkeypatch, tmp_pa
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
     seen = []
-    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False: (
+    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False, proxy=None: (
         seen.append(("read", proxied)), {"url": url})[1])
-    monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None: (
+    monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None, proxy=None: (
         seen.append(("captions", proxied)), "hola")[1])
     monkeypatch.setattr(vp, "process_transcription", lambda *a: None)
     vp.main("https://www.youtube.com/watch?v=abc", "es", use_proxy=False)
     vp.main("https://www.youtube.com/watch?v=def", "es")
     assert seen == [("read", False), ("captions", False), ("read", True), ("captions", True)]
+
+
+PROXY = "http://user-x-session-{session}:pw@proxy:1"
+
+
+def test_a_proxied_videos_metadata_and_captions_share_one_session(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(vp, "CAPTION_PROXY_URL", PROXY)
+    used = []
+    monkeypatch.setattr(vp, "video_info", lambda url, proxied=False, proxy=None: (
+        used.append(proxy), {"url": url})[1])
+    monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None, proxy=None: (
+        used.append(proxy), "hola")[1])
+    monkeypatch.setattr(vp, "process_transcription", lambda *a: None)
+    vp.main("https://www.youtube.com/watch?v=a", "es")
+    vp.main("https://www.youtube.com/watch?v=b", "es")
+    assert used[0] == used[1] and used[2] == used[3] and used[0] != used[2]
+    assert "{session}" not in used[0]
+
+
+def test_a_bot_check_on_the_proxy_retries_on_a_new_ip(monkeypatch):
+    monkeypatch.setattr(vp, "CAPTION_PROXY_URL", PROXY)
+    tried = []
+
+    def video_info(url, proxied=False, proxy=None):
+        tried.append(proxy)
+        if len(tried) == 1:
+            raise RuntimeError("ERROR: [youtube] x: Sign in to confirm you\u2019re not a bot.")
+        return {"id": "x"}
+
+    monkeypatch.setattr(vp, "video_info", video_info)
+    info, session = vp.read_info("u", proxied=True)
+    assert info == {"id": "x"} and len(tried) == 2 and tried[0] != tried[1] == session
+
+
+def test_other_metadata_errors_and_own_ip_reads_are_not_retried(monkeypatch):
+    monkeypatch.setattr(vp, "CAPTION_PROXY_URL", PROXY)
+    tried = []
+
+    def video_info(url, proxied=False, proxy=None):
+        tried.append(proxied)
+        raise RuntimeError("ERROR: [youtube] x: Video unavailable" if proxied
+                           else "ERROR: [youtube] x: Sign in to confirm you're not a bot")
+
+    monkeypatch.setattr(vp, "video_info", video_info)
+    for proxied in (True, False):
+        with pytest.raises(RuntimeError):
+            vp.read_info("u", proxied=proxied)
+    assert tried == [True, False]
+
+
+def test_the_caption_retry_after_a_block_takes_a_new_ip(captions):
+    captions.setattr(vp, "CAPTION_PROXY_URL", PROXY)
+    calls = []
+    captions.setattr(vp, "fetch_transcript", blocking(calls, failures=1))
+    assert vp.caption_text({"id": "v1"}, "es", proxied=True, proxy="http://given:1") == SPANISH
+    assert calls[0][1] == "http://given:1" and calls[1][1] != "http://given:1"
