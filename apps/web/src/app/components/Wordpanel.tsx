@@ -28,7 +28,12 @@ interface MissingWord {
 const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, variant = 'panel', transcript = [], eyebrow = 'Episode vocabulary', source = 'videos' }) => {
   const [selectedWords, setSelectedWords] = useState<number[]>([]);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
-  const { recommendedWords, flaggedWords, isLoading, error } = useMissingWords(videoId, source);
+  const missing = useMissingWords(videoId, source);
+  const { isLoading, error } = missing;
+  // Beside the text, the list follows it: each word where it first appears.
+  const firstSeen = useMemo(() => firstAppearance(transcript), [transcript]);
+  const recommendedWords = useMemo(() => inTextOrder(missing.recommendedWords, firstSeen), [missing.recommendedWords, firstSeen]);
+  const flaggedWords = useMemo(() => inTextOrder(missing.flaggedWords, firstSeen), [missing.flaggedWords, firstSeen]);
   const allWords = useMemo(() => [...recommendedWords, ...flaggedWords], [recommendedWords, flaggedWords]);
   const { addWordsToUserwords } = useUpdateUserwords();
   const { seenVideos, markVideoAsSeen } = useSeenVideos(0);
@@ -101,16 +106,19 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
     <WordGroup label="Recommended" words={recommendedWords} startIndex={0} selectedWords={selectedWords} fullPage={fullPage} toggleGroup={() => toggleWordGroup(recommendedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />
     {flaggedWords.length > 0 && <WordGroup label="Flagged" words={flaggedWords} startIndex={recommendedWords.length} selectedWords={selectedWords} fullPage={fullPage} collapsible toggleGroup={() => toggleWordGroup(flaggedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
   </>;
+  const header = <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={allWords.length} fullPage={fullPage} wide={showText} onClose={onClose} />;
+  // Beside the text, the list is a column of its own: it starts level with the
+  // page's top, stays put while the text scrolls and scrolls on its own,
+  // down to the window's bottom edge.
   const body = !showText
-    ? <div className={fullPage ? 'mx-auto max-w-3xl flex-1 space-y-10 px-4 pb-32 sm:px-8' : 'flex-1 space-y-4 overflow-y-auto'}>{list}</div>
-    : <div className="mx-auto max-w-[70rem] px-4 pb-32 sm:px-8 lg:grid lg:grid-cols-[minmax(0,42rem)_20rem] lg:items-start lg:gap-16">
-      <MediaText chunks={transcript} newIds={newIds} selectedIds={selectedWords} onWordClick={toggleWordSelection} />
-      <aside className="mt-12 space-y-10 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">{list}</aside>
+    ? <>{header}<div className={fullPage ? 'mx-auto max-w-3xl flex-1 space-y-10 px-4 pb-32 sm:px-8' : 'flex-1 space-y-4 overflow-y-auto'}>{list}</div></>
+    : <div className="mx-auto max-w-[70rem] px-4 sm:px-8 lg:grid lg:grid-cols-[minmax(0,42rem)_20rem] lg:items-start lg:gap-16">
+      <div className="pb-12 lg:pb-32">{header}<MediaText chunks={transcript} newIds={newIds} selectedIds={selectedWords} onWordClick={toggleWordSelection} /></div>
+      <aside className="space-y-10 pb-32 lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto lg:pb-10 lg:pt-10">{list}</aside>
     </div>;
 
   return (
     <div className={`${shell} ${isShiftPressed ? 'select-none' : ''}`} onClick={(event) => event.stopPropagation()}>
-      <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={allWords.length} fullPage={fullPage} wide={showText} onClose={onClose} />
       {body}
       {/* The page uses the app's floating selection pill; the panel keeps its bar for the Seen button. */}
       {fullPage
@@ -122,9 +130,26 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
 
 function Header({ videoTitle, eyebrow, wordCount, fullPage, wide = false, onClose }: { videoTitle: string; eyebrow: string; wordCount: number; fullPage: boolean; wide?: boolean; onClose: (count: number) => void }) {
   if (fullPage) {
-    return <header className={`mx-auto ${wide ? 'max-w-[70rem]' : 'max-w-3xl'} px-4 pb-8 pt-10 sm:px-8`}><div className={wide ? 'max-w-[42rem]' : undefined}><button onClick={() => onClose(0)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900"><ArrowLeft size={16}/>Back to Media</button><h1 className="text-2xl font-semibold text-gray-900">{videoTitle}</h1><p className="mt-1 text-sm text-gray-500">{eyebrow}{wordCount > 0 && ` · ${wordCount} new ${wordCount === 1 ? 'word' : 'words'}`}</p></div></header>;
+    // Wide, it sits in the text's column, which already has the page gutter.
+    return <header className={`${wide ? '' : 'mx-auto max-w-3xl px-4 sm:px-8'} pb-8 pt-10`}><button onClick={() => onClose(0)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900"><ArrowLeft size={16}/>Back to Media</button><h1 className="text-2xl font-semibold text-gray-900">{videoTitle}</h1><p className="mt-1 text-sm text-gray-500">{eyebrow}{wordCount > 0 && ` · ${wordCount} new ${wordCount === 1 ? 'word' : 'words'}`}</p></header>;
   }
   return <header className="border-b p-4"><div className="flex items-center justify-between"><button onClick={() => onClose(0)} aria-label="Close" className="order-2 text-gray-500 hover:text-gray-700"><X size={24}/></button><div className="min-w-0 flex-1"><h1 className="text-lg font-semibold">{videoTitle}</h1></div></div></header>;
+}
+
+/** Each word id's first place in the text, as [chunk, offset]. */
+function firstAppearance(chunks: TranscriptChunk[]): Map<number, [number, number]> {
+  const seen = new Map<number, [number, number]>();
+  chunks.forEach((chunk, index) => {
+    for (const [start, , id] of chunk.words ?? []) if (!seen.has(id)) seen.set(id, [index, start]);
+  });
+  return seen;
+}
+
+/** Words in the order they first appear; any the text doesn't mark keep their order, after the rest. */
+function inTextOrder(words: MissingWord[], seen: Map<number, [number, number]>): MissingWord[] {
+  if (seen.size === 0) return words;
+  const at = (word: MissingWord) => seen.get(word.id) ?? [Infinity, 0];
+  return [...words].sort((a, b) => at(a)[0] - at(b)[0] || at(a)[1] - at(b)[1]);
 }
 
 // Every word is already in the learner's vocabulary (or there were none).
