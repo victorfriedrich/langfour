@@ -32,7 +32,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-gray-100 flex flex-col md:flex-row`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased h-dvh bg-gray-100 flex flex-col md:flex-row`}>
         <UserProvider>
           <TutorialProvider>
             <ConditionalSidebar />
