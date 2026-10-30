@@ -240,3 +240,17 @@ def test_import_rejects_mixed_timestamps_and_missing_titles():
 
 def test_make_media_id_includes_episode_coordinates():
     assert make_media_id("Élite!", 3, 7) == "elite-s03-e07"
+
+
+def test_items_imported_without_word_spans_are_marked_on_read():
+    store = FakeStore()
+    result, _ = run(store, episode(), words=[{"content": "otra cosa", "id": 9}])
+    assert all("words" not in chunk for chunk in result["chunks"])
+
+    def tokenize(text, language):
+        assert language == "es"
+        return [{"content": "Hola", "id": 1}, {"content": " "}, {"content": "mundo", "id": 2},
+                {"content": ".\n"}, {"content": "Hasta", "id": None}, {"content": " "}, {"content": "luego", "id": 3}, {"content": "."}]
+
+    chunks = get_media(store, ALICE, result["id"], "es", tokenize)["chunks"]
+    assert [chunk["words"] for chunk in chunks] == [[[0, 4, 1], [5, 10, 2]], [[6, 11, 3]]]
