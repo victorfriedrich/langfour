@@ -29,9 +29,10 @@ UV = ES.concept["es.indefinido_irregular.uv"]                # forms for tener, 
 
 
 class FakeStore:
-    def __init__(self, chapters=(), concepts=(), default_language="es"):
+    def __init__(self, chapters=(), concepts=(), default_language="es", events=()):
         self.chapter_rows = list(chapters)
         self.concept_rows = list(concepts)
+        self.event_rows = list(events)
         self.default = default_language
         self.recorded = None
 
@@ -43,6 +44,9 @@ class FakeStore:
 
     def concepts(self, user_id):
         return self.concept_rows
+
+    def events(self, user_id, since):
+        return [e for e in self.event_rows if datetime.fromisoformat(e["occurred_at"]) >= since]
 
     def record(self, user_id, events, concepts, chapters):
         self.recorded = (user_id, events, concepts, chapters)
@@ -539,3 +543,96 @@ def test_a_note_is_for_wrong_results_only():
     with pytest.raises(ValidationError):
         GrammarResult(concept=LO.id, kind="produced", correct=True, sentence="La busqué.",
                       note="fine")
+
+
+# ---------------------------------------------------------------------------
+# Chapters worth revisiting
+# ---------------------------------------------------------------------------
+
+STARTED_PRETERITE = {"es.indefinido_irregular": {"status": "started"}}  # chapter 30, A2
+
+
+def used(concept_id, days_ago, correct=True, kind="produced", self_reported=False):
+    return {"concept_id": concept_id, "kind": kind, "correct": correct,
+            "self_reported": self_reported, "occurred_at": (NOW - days_ago * DAY).isoformat()}
+
+
+def slipping(concept_id):
+    """Used on four days, wrong on two of them."""
+    return [used(concept_id, 9, False), used(concept_id, 6), used(concept_id, 4, False),
+            used(concept_id, 4), used(concept_id, 1)]
+
+
+def worth(events, chapters=STARTED_PRETERITE, progress=None):
+    """The chapter ids worth revisiting."""
+    return [w.chapter for w in
+            grammar.worth_revisiting(ES, chapters, progress or {}, events, NOW)]
+
+
+def test_a_chapter_used_often_and_slipping_on_several_days_is_worth_revisiting():
+    assert worth(slipping(UV.id)) == ["es.indefinido_irregular"]
+
+
+def test_slips_on_a_single_day_are_just_learning_it():
+    events = [used(UV.id, 1, False), used(UV.id, 1, False, "recognized"),
+              used(UV.id, 5), used(UV.id, 8)]
+    assert worth(events) == []
+
+
+def test_a_chapter_used_on_too_few_days_is_left_alone():
+    assert worth([used(UV.id, 9, False), used(UV.id, 4, False)]) == []
+
+
+def test_only_chapters_near_the_users_level_count():
+    a1 = "es.presente_regular.ir"                             # one level below: counts
+    b2 = "es.pasiva.ser_participle"                           # far ahead
+    later_a2 = ES.chapter["es.indefinidos"].concepts[0].id    # same level, 9 chapters on
+    assert worth(slipping(a1) + slipping(b2) + slipping(later_a2)) == ["es.presente_regular"]
+    assert worth(slipping(UV.id), chapters={}) == []          # nothing reached yet
+
+
+def test_a_learned_concept_counts_as_reaching_its_chapter():
+    progress = {UV.id: learned(UV, NOW - 20 * DAY)}
+    assert worth(slipping(UV.id), chapters={}, progress=progress) == ["es.indefinido_irregular"]
+
+
+def test_correct_use_on_later_days_settles_it():
+    events = [*slipping(UV.id), used(UV.id, 0)]
+    assert worth(events) == []  # correct on days 1 and 0 after the last slip on day 4
+
+
+def test_old_events_and_self_reports_dont_count():
+    old = [used(UV.id, 40, False), used(UV.id, 35, False), used(UV.id, 33)]
+    assert worth(old) == []
+    reported = [used(UV.id, d, self_reported=True) for d in (2, 3, 5)]
+    assert worth([used(UV.id, 9, False), used(UV.id, 4, False), *reported]) == []
+
+
+def test_at_most_two_chapters_with_the_most_slip_days_first():
+    imperfecto = ES.chapter["es.imperfecto"].concepts[0].id
+    a1 = "es.presente_regular.ir"
+    more = [*slipping(imperfecto), used(imperfecto, 2, False)]
+    assert worth(slipping(UV.id) + slipping(a1) + more)[0] == "es.imperfecto"
+    assert len(worth(slipping(UV.id) + slipping(a1) + more)) == grammar.WORTH_MAX
+
+
+def test_the_rules_that_slip_often_come_with_their_chapter():
+    ser_ir = "es.indefinido_irregular.ser_ir"
+    events = [*slipping(UV.id), used(ser_ir, 7, False), used(ser_ir, 5)]
+    [w] = grammar.worth_revisiting(ES, STARTED_PRETERITE, {}, events, NOW)
+    assert w.concepts == [UV.id]  # ser/ir slipped once, so it isn't marked
+    events += [used(UV.id, 0)]    # wrong on day 4, right on days 1 and 0: settled
+    events += [used(ser_ir, 1, False), used(ser_ir, 0, False)]
+    [w] = grammar.worth_revisiting(ES, STARTED_PRETERITE, {}, events, NOW)
+    assert w.concepts == [ser_ir]
+
+
+def test_the_book_and_the_overview_name_the_chapters_worth_revisiting():
+    store = FakeStore(chapters=[{"chapter_id": "es.indefinido_irregular", "status": "started",
+                                 "started_at": NOW.isoformat(), "finished_at": None}],
+                      events=slipping(UV.id))
+    [w] = grammar.get_book(store, USER, "es", NOW).worth_revisiting
+    assert (w.chapter, w.concepts) == ("es.indefinido_irregular", [UV.id])
+    overview = grammar.get_overview(store, USER, "es", NOW).overview
+    assert f"Worth revisiting: es.indefinido_irregular (slips most: {UV.id})" in overview
+    assert "Worth revisiting" not in grammar.get_overview(FakeStore(), USER, "es", NOW).overview

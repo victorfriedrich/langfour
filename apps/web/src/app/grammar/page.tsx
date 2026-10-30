@@ -1,17 +1,17 @@
 "use client";
 
-import React, { useContext, useMemo } from "react";
+import React, { useContext, useMemo, useState } from "react";
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { Check, X } from "lucide-react";
 
 import { UserContext } from "@/context/UserContext";
 import ProtectedRoute from "../components/ProtectedRoute";
 import { useGrammarBook, type BookChapter } from "../hooks/useGrammar";
-import { ConceptStrip, LEVEL_NAMES, Legend, chapterSlug, countStates } from "./grammarUi";
+import { ConceptStrip, LEVEL_NAMES, Legend, SLIPPING, chapterSlug, countStates } from "./grammarUi";
 
 /** Where the user is in the grammar book. Read only: the chat teaches and
  *  records over MCP; this page shows the progress it leaves behind. */
-function ChapterRow({ chapter }: { chapter: BookChapter }) {
+function ChapterRow({ chapter, slipping }: { chapter: BookChapter; slipping?: string[] }) {
   return (
     <li>
       <Link
@@ -27,7 +27,10 @@ function ChapterRow({ chapter }: { chapter: BookChapter }) {
           <span className="hidden text-gray-400 sm:inline"> · {chapter.description}</span>
         </span>
         <span className="flex w-24 shrink-0">
-          <ConceptStrip states={chapter.concepts.map((c) => c.state)} />
+          <ConceptStrip
+            states={chapter.concepts.map((c) => c.state)}
+            slipping={slipping && chapter.concepts.map((c) => slipping.includes(c.id))}
+          />
         </span>
         <span className="w-4 shrink-0">
           {chapter.status === "done" && <Check size={14} className="text-indigo-600" aria-label="Done" />}
@@ -37,9 +40,69 @@ function ChapterRow({ chapter }: { chapter: BookChapter }) {
   );
 }
 
+const HIDDEN_KEY = "grammar-worth-revisiting-hidden";
+
+/** A chapter or two the user uses a lot that hasn't settled yet. Nothing to
+ *  do here: the chat offers the refresher. Closing it hides this suggestion
+ *  until a different one comes up. It only renders once the book has loaded
+ *  in the browser, so reading localStorage on the first render is safe. */
+function WorthRevisiting({ chapters }: { chapters: { chapter: BookChapter; slipping: string[] }[] }) {
+  const key = chapters.map((w) => w.chapter.id).join(",");
+  const [hidden, setHidden] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(HIDDEN_KEY);
+    } catch {
+      return null;
+    }
+  });
+
+  if (chapters.length === 0 || hidden === key) return null;
+
+  const hide = () => {
+    setHidden(key);
+    try {
+      localStorage.setItem(HIDDEN_KEY, key);
+    } catch {
+      // Hidden for this visit only.
+    }
+  };
+
+  return (
+    <section className="mb-8">
+      <h2 className="flex items-center gap-2 border-b border-gray-100 pb-1.5 text-sm font-semibold text-gray-900">
+        Worth revisiting
+        <button
+          type="button"
+          onClick={hide}
+          aria-label="Hide this suggestion"
+          title="Hide"
+          className="-mr-1 ml-auto rounded p-1 text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+        >
+          <X size={14} />
+        </button>
+      </h2>
+      <p className="pt-2 text-sm text-gray-500">
+        {chapters.length > 1 ? "These come" : "This comes"} up often in what you write and
+        {chapters.length > 1 ? " haven't" : " hasn't"} quite settled yet.
+        {chapters.some((w) => w.slipping.length > 0) && (
+          <span className="ml-3 inline-flex items-center gap-1.5 text-gray-400">
+            {SLIPPING.label}
+            <i className="h-2 w-2" style={{ backgroundColor: SLIPPING.color }} />
+          </span>
+        )}
+      </p>
+      <ul className="py-1">
+        {chapters.map((w) => (
+          <ChapterRow key={w.chapter.id} chapter={w.chapter} slipping={w.slipping} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 const GrammarPage = () => {
   const { language } = useContext(UserContext);
-  const { chapters, error } = useGrammarBook(language?.code);
+  const { chapters, worthRevisiting, error } = useGrammarBook(language?.code);
 
   const levels = useMemo(() => {
     const byLevel = new Map<string, BookChapter[]>();
@@ -48,6 +111,14 @@ const GrammarPage = () => {
   }, [chapters]);
 
   const counts = useMemo(() => countStates((chapters ?? []).flatMap((ch) => ch.concepts.map((c) => c.state))), [chapters]);
+  const worth = useMemo(
+    () =>
+      worthRevisiting.flatMap((w) => {
+        const chapter = chapters?.find((ch) => ch.id === w.chapter);
+        return chapter ? [{ chapter, slipping: w.concepts }] : [];
+      }),
+    [chapters, worthRevisiting],
+  );
   const done = chapters?.filter((ch) => ch.status === "done").length ?? 0;
   const started = chapters?.filter((ch) => ch.status === "started").length ?? 0;
 
@@ -79,6 +150,8 @@ const GrammarPage = () => {
                 </p>
                 <Legend counts={counts} />
               </section>
+
+              <WorthRevisiting chapters={worth} />
 
               {levels.map(([level, list]) => (
                 <section key={level} className="mb-6">

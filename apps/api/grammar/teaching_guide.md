@@ -143,6 +143,14 @@ date and note. A mistake stays flagged until the learner next uses that concept 
 - A flagged concept in a chapter not started yet: when it comes up, give the correct form in
   a sentence and have the learner use it once. When its chapter is taught, start from the note.
 
+## Chapters worth revisiting
+
+The overview's "Worth revisiting" line names a chapter or two near the learner's level that they
+use often but that hasn't settled yet. The Langfour site shows the same chapter. When the learner
+asks what to practise, or a session has room, offer it in a sentence: say it comes up a lot in what
+they write and a short refresher would help. Don't push it, and don't list their mistakes. If they
+want it, go over the chapter's concepts as a short review rather than a first lesson.
+
 ## Refreshing fading concepts
 
 - Work one to three fading concepts into texts, examples and your own replies where they fit
