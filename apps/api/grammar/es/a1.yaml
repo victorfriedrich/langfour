@@ -27,6 +27,8 @@ chapters:
         scope: "soy, eres, es, somos, sois, son."
         difficulty: easy
         lemmas: [ser]
+        forms:
+          ser: [soy, eres, es, somos, son]
       - id: identity
         title: "ser for identity and definitions"
         image: ser-identity.svg
@@ -214,6 +216,8 @@ chapters:
         scope: "estoy, estás, está, estamos, estáis, están (accents on all but estoy and estamos)."
         difficulty: easy
         lemmas: [estar]
+        forms:
+          estar: [estoy, estás, está, estamos, están]
       - id: location
         title: "estar for where something is"
         scope: "Where specific people and things are (Madrid está en España, ¿Dónde está el baño?, Estoy en casa)."
@@ -358,21 +362,39 @@ chapters:
       - id: e_ie
         title: "e → ie"
         scope: "querer, pensar, empezar, preferir, entender, cerrar, perder, sentir (quiero, piensas, empieza)."
+        forms:
+          querer: [quiero, quieres, quiere, quieren]
+          pensar: [pienso, piensas, piensa, piensan]
+          empezar: [empiezo, empiezas, empieza, empiezan]
       - id: o_ue
         title: "o → ue"
         scope: "poder, volver, dormir, costar, encontrar, recordar, contar, morir (puedo, vuelves, cuesta)."
+        forms:
+          poder: [puedo, puedes, puede, pueden]
+          volver: [vuelvo, vuelves, vuelve, vuelven]
+          dormir: [duermo, duermes, duerme, duermen]
       - id: u_ue_jugar
         title: "jugar: u → ue"
         scope: "jugar is the only verb with u → ue (juego, juegas, jugamos)."
         difficulty: easy
         lemmas: [jugar]
+        forms:
+          jugar: [juego, juegas, juega, juegan]
       - id: e_i
         title: "e → i (-ir verbs only)"
         scope: "pedir, repetir, servir, seguir, vestir, elegir (pido, repites, sirve)."
+        forms:
+          pedir: [pido, pides, pide, piden]
+          repetir: [repito, repites, repite, repiten]
+          servir: [sirvo, sirves, sirve, sirven]
       - id: spelling
         title: "Spelling changes in yo"
         scope: "To keep the sound: escoger → escojo, recoger → recojo, elegir → elijo, seguir → sigo. (coger, common in Spain, is vulgar in much of Latin America; use tomar or agarrar there.)"
         see: [es.escritura.letters]
+        forms:
+          escoger: [escojo]
+          elegir: [elijo]
+          seguir: [sigo]
 
   - id: es.presente_irregular_2
     title: "Presente: verbos irregulares en yo y muy irregulares"
@@ -381,24 +403,43 @@ chapters:
       - id: go_verbs
         title: "-go in yo"
         scope: "hacer → hago, poner → pongo, salir → salgo, traer → traigo, caer → caigo, valer → valgo. Other forms regular."
+        forms:
+          hacer: [hago]
+          poner: [pongo]
+          salir: [salgo]
+          traer: [traigo]
       - id: go_plus_stem
         title: "tener, venir, decir: -go plus a stem change"
         scope: "tengo, tienes, tiene, tenemos…; vengo, vienes…; digo, dices, dice, decimos…"
         difficulty: hard
         lemmas: [tener, venir, decir]
+        forms:
+          tener: [tengo, tienes, tiene, tenemos, tienen]
+          venir: [vengo, vienes, viene, venimos, vienen]
+          decir: [digo, dices, dice, decimos, dicen]
       - id: zco
         title: "-zco in yo"
         scope: "-cer and -cir after a vowel: conocer → conozco, parecer → parezco, conducir → conduzco, traducir → traduzco, ofrecer → ofrezco."
+        forms:
+          conocer: [conozco]
+          parecer: [parezco]
+          conducir: [conduzco]
       - id: ir
         title: "ir"
         scope: "voy, vas, va, vamos, vais, van."
         difficulty: easy
         lemmas: [ir]
+        forms:
+          ir: [voy, vas, va, vamos, van]
       - id: only_yo
         title: "doy, sé, veo: only yo is irregular"
         scope: "dar → doy, saber → sé, ver → veo; the other forms are regular (das, sabes, ves)."
         difficulty: easy
         lemmas: [dar, saber, ver]
+        forms:
+          dar: [doy]
+          saber: [sé]
+          ver: [veo]
       - id: saber_conocer
         title: "saber or conocer"
         scope: "saber for facts and information (Sé dónde vive, No sé su nombre) and, + infinitive, skills; conocer for people, places and things you're familiar with (Conozco a Ana, ¿Conoces Lima?)."
@@ -414,10 +455,15 @@ chapters:
       - id: uir
         title: "-uir: y in stressed forms"
         scope: "construir, destruir, incluir, huir: construyo, construyes, construye, construimos, construís, construyen."
+        forms:
+          construir: [construyo, construyes, construye, construyen]
+          incluir: [incluyo, incluyes, incluye, incluyen]
       - id: oir
         title: "oír"
         scope: "oigo, oyes, oye, oímos, oís, oyen."
         lemmas: [oír]
+        forms:
+          oír: [oigo, oyes, oye, oímos, oyen]
 
   - id: es.perifrasis_1
     title: "Perífrasis I: planes, obligaciones y capacidad"
