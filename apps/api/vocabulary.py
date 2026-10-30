@@ -18,6 +18,10 @@ what it reports back about texts the user read with it.
   - set_word_status: move words of the user's list between learning and
     known, as the web app's "Move to known" does. Back to learning, the
     userwords trigger gives the word a Langfour card again.
+  - add_words: put dictionary words the user asks for into their list as
+    learning or known, as the web app's move_words_to_userwords does. Words
+    already in the list keep their row, except learning ones asked for as
+    known; a known word never goes back to learning here.
 
 The API runs these with the service role on behalf of the OAuth user, so every
 query names the user explicitly.
@@ -26,6 +30,7 @@ query names the user explicitly.
 import re
 from collections import Counter
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -108,6 +113,12 @@ class StatusChange(BaseModel):
     not_found: list[str]  # not in the user's list in that language, or turned off
 
 
+class WordsAdded(BaseModel):
+    added: list[str]      # now in the user's list in the requested status
+    already: list[str]    # in their list already and left as it was
+    not_found: list[str]  # not in the dictionary in that language
+
+
 # ---------------------------------------------------------------------------
 # Storage. Like practice.PracticeStore: everything that touches Supabase is
 # here, so the logic below runs against an in-memory stand-in in tests.
@@ -181,6 +192,25 @@ class VocabularyStore:
         # so the userwords trigger doesn't touch their cards.
         (self.db.table("userwords").update({"status": status})
          .eq("user_id", user_id).in_("word_id", word_ids).neq("status", status).execute())
+
+    def statuses(self, user_id: str, word_ids: list[int]) -> dict[int, str]:
+        """word_id -> status for the words in the user's list, turned-off ones included."""
+        res = (self.db.table("userwords").select("word_id, status").eq("user_id", user_id)
+               .in_("word_id", word_ids).execute())
+        return {r["word_id"]: r["status"] for r in res.data or []}
+
+    def add_words(self, user_id: str, word_ids: list[int], status: str) -> None:
+        # As move_words_to_userwords, which works on auth.uid(): a row added
+        # meanwhile is kept, and the user's known-words timestamp moves.
+        (self.db.table("userwords")
+         .upsert([{"user_id": user_id, "word_id": w, "status": status, "source": SOURCE}
+                  for w in word_ids], on_conflict="user_id,word_id", ignore_duplicates=True)
+         .execute())
+        self.touch(user_id)
+
+    def touch(self, user_id: str) -> None:
+        (self.db.table("userdata").update({"known_words_updated_at": datetime.now(UTC).isoformat()})
+         .eq("user_id", user_id).execute())
 
 
 def get_vocabulary_store() -> VocabularyStore:
@@ -272,3 +302,25 @@ def set_word_status(store: VocabularyStore, user_id: str, language: str, words: 
         store.set_status(user_id, sorted(ids), status)
     return StatusChange(changed=[w for w in asked if w in found],
                         not_found=[w for w in asked if w not in found])
+
+
+def add_words(store: VocabularyStore, user_id: str, language: str, words: list[str],
+              status: Literal["known", "learning"]) -> WordsAdded:
+    asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
+    ids = store.resolve_words(language, asked)
+    current = store.statuses(user_id, sorted(set(ids.values()))) if ids else {}
+    new = sorted({w for w in ids.values() if w not in current})
+    # The user's word wins over learning, but nothing goes back from known,
+    # and turned-off words stay as the RemNote sync left them.
+    upgrade = sorted({w for w in ids.values()
+                      if status == "known" and current.get(w) == "learning"})
+    if new:
+        store.add_words(user_id, new, status)
+    if upgrade:
+        store.set_status(user_id, upgrade, status)
+        if not new:
+            store.touch(user_id)
+    moved = set(new) | set(upgrade)
+    return WordsAdded(added=[w for w in asked if ids.get(w) in moved],
+                      already=[w for w in asked if w in ids and ids[w] not in moved],
+                      not_found=[w for w in asked if w not in ids])

@@ -54,6 +54,7 @@ def test_record_practice_over_http_as_the_signed_in_user(monkeypatch):
         read_only = {t["name"]: t["annotations"]["readOnlyHint"] for t in tools["result"]["tools"]}
         assert read_only == {"record_practice": False, "record_exposure": False,
                              "set_word_status": False, "record_grammar": False,
+                             "add_words": False,
                              "get_vocabulary": True, "score_text": True,
                              "get_grammar_overview": True, "get_grammar_details": True}
 
@@ -64,6 +65,15 @@ def test_record_practice_over_http_as_the_signed_in_user(monkeypatch):
         }).json()["result"]
         assert not marked.get("isError"), marked
         assert ("set_status", USER, [7, 8], "known") in vocab_store.calls
+        vocab_store.calls.clear()
+
+        added = client.post("/mcp", headers=HEADERS, json={
+            "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+            "params": {"name": "add_words",
+                       "arguments": {"language": "es", "words": ["comer"], "status": "learning"}},
+        }).json()["result"]
+        assert not added.get("isError"), added
+        assert vocab_store.calls == [("add_words", USER, [3], "learning")]
         vocab_store.calls.clear()
 
         vocab = client.post("/mcp", headers=HEADERS, json={
