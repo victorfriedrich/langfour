@@ -33,6 +33,13 @@ use the concept correctly. The overview lists the flagged concepts to revise,
 and up to two chapters worth revisiting (worth_revisiting() below), which the
 web app shows too.
 
+A mistake no concept covers is recorded under a topic, a short label the AI
+app chooses (open_topics() below). Its events have no concept; a topic is open
+while its latest result is wrong, and the overview lists the open ones with
+every topic used so far, so the AI app files the next one under the same label.
+One result can name several concepts and a topic: a sentence with a tense, an
+article and a preposition error is one result, with one event per concept.
+
 The refresh rule (practise() below):
   - once learned: the interval is the concept's base (30, 14 or 7 days for
     easy, medium, hard), and the refresh date that far out;
@@ -69,6 +76,10 @@ MIN_CORRECT = 2  # correct sentences before a concept counts as learned
 MAX_DETAIL_CHAPTERS = 3
 MAX_DETAIL_CONCEPTS = 10
 MAX_REVISE = 10  # flagged mistakes the overview lists, newest first
+MAX_CONCEPTS = 5  # concepts one result can name
+MAX_TOPIC = 60    # characters in a topic label
+MAX_TOPICS_LISTED = 40  # topics the overview names for reuse, most recent first
+_TOPIC_SCAN = 1000      # topic events read to find them
 
 # A chapter worth revisiting (worth_revisiting() below): near the user's place
 # in the book, used often, and still slipping on more than one day.
@@ -485,8 +496,19 @@ class GrammarDetails(BaseModel):
 
 
 class GrammarResult(BaseModel):
-    concept: str = Field(..., min_length=1, max_length=120,
-                         description="A concept id, e.g. 'es.ser_estar_1.characteristic_vs_state'")
+    concept: str | None = Field(
+        None, min_length=1, max_length=120,
+        description="A concept id, e.g. 'es.ser_estar_1.characteristic_vs_state'")
+    concepts: list[str] = Field(
+        [], max_length=MAX_CONCEPTS,
+        description="More concept ids for the same sentence or answer, when one verdict and "
+                    "note cover them all, e.g. a sentence with a tense, an article and a "
+                    "preposition error. Each gets its own result.")
+    topic: str | None = Field(
+        None, min_length=1, max_length=MAX_TOPIC,
+        description="For a grammar mistake no concept covers: a short label for the kind "
+                    "of mistake, e.g. 'gender of nouns in -ma'. Reuse a topic the overview "
+                    "lists when the mistake is of the same kind.")
     kind: Kind = Field(
         ..., description="'produced': one sentence the user wrote or said in full that needed "
                          "the concept. 'recognized': one answer to a choice or fill-in exercise. "
@@ -508,6 +530,12 @@ class GrammarResult(BaseModel):
 
     @model_validator(mode="after")
     def _check(self):
+        if not (self.concept or self.concepts or self.topic):
+            raise ValueError("a result needs a concept, concepts or a topic")
+        if self.topic and self.kind == "seen":
+            raise ValueError("a topic is for a sentence or answer, not 'seen'")
+        if self.topic and self.self_reported:
+            raise ValueError("self_reported is for concepts only")
         if (self.kind != "seen") != (self.correct is not None):
             raise ValueError("correct is required for 'produced' and 'recognized', and only for them")
         if self.self_reported and not (self.kind == "produced" and self.correct):
@@ -517,6 +545,10 @@ class GrammarResult(BaseModel):
         if self.note and self.correct is not False:
             raise ValueError("note is for a wrong result only")
         return self
+
+    @property
+    def concept_ids(self) -> list[str]:
+        return list(dict.fromkeys(([self.concept] if self.concept else []) + self.concepts))
 
 
 class ChapterUpdate(BaseModel):
@@ -534,12 +566,13 @@ class ConceptChange(BaseModel):
 
 
 class GrammarRecord(BaseModel):
-    recorded: int                # results logged as events
+    recorded: int                # events logged: one per concept or topic of each result
     changed: list[ConceptChange]  # concepts whose state moved
     to_learn: dict[str, str]     # concepts practised but not learned yet, and what's left
     chapters: list[str]          # chapters whose status changed
     not_done: list[str]          # chapters asked to be done with concepts still to learn
     not_found: list[str]         # ids not in the curriculum, so not recorded
+    topics: list[str] = []       # topics recorded, as stored (trimmed, lowercase)
 
 
 class BookConcept(BaseModel):
@@ -657,6 +690,13 @@ class GrammarStore:
                 return rows
             start += page
 
+    def topic_events(self, user_id: str, language: str) -> list[dict]:
+        """The user's results filed under a topic in a language, newest first."""
+        return (self.db.table("grammar_events")
+                .select("topic, correct, note, occurred_at")
+                .eq("user_id", user_id).eq("language", language).not_.is_("topic", "null")
+                .order("occurred_at", desc=True).limit(_TOPIC_SCAN).execute().data or [])
+
     def record(self, user_id: str, events: list[dict], concepts: list[dict],
                chapters: list[dict]) -> int:
         """Write atomically; -1 means a previous-row check failed, with nothing written."""
@@ -701,6 +741,32 @@ def _user_state(store: GrammarStore, user_id: str, cur: Curriculum
 def _status(chapters: dict[str, dict], chapter_id: str) -> ChapterStatus:
     row = chapters.get(chapter_id)
     return row["status"] if row else "not started"
+
+
+def topic_key(topic: str) -> str:
+    """A topic as stored, so 'Gender of  -ma nouns' and 'gender of -ma nouns' group."""
+    return " ".join(topic.split()).lower()
+
+
+@dataclass(frozen=True)
+class OpenTopic:
+    topic: str
+    mistake_at: datetime
+    note: str | None
+    mistakes: int  # wrong results under the topic
+
+
+def open_topics(events: list[dict]) -> tuple[list[OpenTopic], list[str]]:
+    """From topic events, newest first: the topics whose latest result is wrong,
+    newest first, and every topic used, most recent first."""
+    latest: dict[str, dict] = {}
+    wrong: dict[str, int] = {}
+    for e in events:
+        latest.setdefault(e["topic"], e)
+        wrong[e["topic"]] = wrong.get(e["topic"], 0) + (e["correct"] is False)
+    open_ = [OpenTopic(t, datetime.fromisoformat(e["occurred_at"]), e.get("note"), wrong[t])
+             for t, e in latest.items() if e["correct"] is False]
+    return open_, list(latest)
 
 
 def worth_revisiting(cur: Curriculum, chapters: dict[str, dict], progress: dict[str, Progress],
@@ -782,6 +848,7 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
     mark = {"done": "✓", "started": "→", "not started": "·"}
     lines, level, fading_total = [], None, 0
     flagged = sorted(((p.mistake_at, i) for i, p in progress.items() if p.mistake_at), reverse=True)
+    topics_open, topics_used = open_topics(store.topic_events(user_id, language))
     for ch in cur.chapters:
         if ch.level != level:
             level = ch.level
@@ -805,7 +872,8 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
         f"{LANGUAGE_NAMES.get(language, language)} grammar, {levels}, "
         f"{len(cur.chapters)} chapters in teaching order. "
         f"Started: {', '.join(c.id for c in started) or 'none'}. Done: {done}. "
-        f"Fading concepts: {fading_total}. Mistakes to revise: {len(flagged)}.",
+        f"Fading concepts: {fading_total}. "
+        f"Mistakes to revise: {len(flagged) + len(topics_open)}.",
         "Key: ✓ done, → started, · not started. 'learned' counts concepts that met the bar "
         "(the guide's 'When a concept is learned'); fading ones are due to be worked back in. "
         "get_grammar_details lists a chapter's concepts and what each still needs.",
@@ -814,12 +882,19 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
         named = [w.chapter + (f" (slips most: {', '.join(w.concepts)})" if w.concepts else "")
                  for w in worth]
         head.append(f"Worth revisiting: {'; '.join(named)} (the guide's 'Chapters worth revisiting').")
-    if flagged:
+    if flagged or topics_open:
         head += ["", "TO REVISE (the user's mistakes, newest first; the guide's 'Revising mistakes')"]
         for _, i in flagged[:MAX_REVISE]:
             c = cur.concept[i]
             reached = "" if _status(chapters, c.chapter_id) != "not started" else "  (chapter not started)"
             head.append(f"{i}  {progress[i].mistake}{reached}")
+        for t in topics_open[:MAX_REVISE]:
+            times = f", {t.mistakes} mistakes" if t.mistakes > 1 else ""
+            head.append(f"topic '{t.topic}'  {t.mistake_at.date().isoformat()}: "
+                        f"{t.note or 'no note'}  (no concept{times})")
+    if topics_used:
+        head += ["", "Topics for mistakes no concept covers (reuse one that fits): "
+                 + "; ".join(f"'{t}'" for t in topics_used[:MAX_TOPICS_LISTED])]
     return GrammarOverview(language=language, overview="\n".join(head + lines),
                            guide=teaching_guide())
 
@@ -906,19 +981,18 @@ def _record_once(store: GrammarStore, user_id: str, language: str, results: list
         elif u.status == "started" or u.self_reported:
             set_chapter(u.chapter, u.status)
 
-    events, before, touched, counted = [], {}, {}, set()
-    # Results summarize a session, not a timeline. Apply exposure first so a
-    # production error wins even when a receptive concept was also seen.
-    for r in sorted(results, key=lambda r: r.kind == "produced"):
-        c = cur.concept.get(r.concept)
-        if c is None:
-            not_found.append(r.concept)
-            continue
-        if r.kind == "produced" and r.sentence:
-            key = (c.id, " ".join(r.sentence.lower().split()))
-            if key in counted:  # the same sentence twice counts once
-                continue
-            counted.add(key)
+    events, before, touched, counted, topics = [], {}, {}, set(), []
+
+    def first_time(subject: str, r: GrammarResult) -> bool:
+        if r.kind != "produced" or not r.sentence:
+            return True
+        key = (subject, " ".join(r.sentence.lower().split()))
+        if key in counted:  # the same sentence twice counts once
+            return False
+        counted.add(key)
+        return True
+
+    def practise_one(c: Concept, r: GrammarResult) -> None:
         before.setdefault(c.id, state(progress.get(c.id), old_status[c.chapter_id], now))
         if r.kind == "produced" and r.correct:
             # Using a concept means its chapter is open, whatever the app said. A
@@ -927,9 +1001,25 @@ def _record_once(store: GrammarStore, user_id: str, language: str, results: list
         touched[c.id] = practise(touched.get(c.id) or progress.get(c.id) or Progress(),
                                  c, r.kind, r.correct, now, forms_in(r.sentence, c),
                                  r.self_reported, r.note)
-        events.append({"concept_id": c.id, "kind": r.kind, "correct": r.correct,
+        events.append({"concept_id": c.id, "topic": None, "language": language,
+                       "kind": r.kind, "correct": r.correct,
                        "self_reported": r.self_reported, "sentence": r.sentence,
                        "note": r.note})
+
+    # Results summarize a session, not a timeline. Apply exposure first so a
+    # production error wins even when a receptive concept was also seen.
+    for r in sorted(results, key=lambda r: r.kind == "produced"):
+        for concept_id in r.concept_ids:
+            c = cur.concept.get(concept_id)
+            if c is None:
+                not_found.append(concept_id)
+            elif first_time(c.id, r):
+                practise_one(c, r)
+        if r.topic and first_time(" topic " + (t := topic_key(r.topic)), r):
+            topics.append(t)
+            events.append({"concept_id": None, "topic": t, "language": language,
+                           "kind": r.kind, "correct": r.correct, "self_reported": False,
+                           "sentence": r.sentence, "note": r.note})
 
     # A chapter is done once every concept that counts is learned, or the user says so.
     not_done = []
@@ -963,6 +1053,7 @@ def _record_once(store: GrammarStore, user_id: str, language: str, results: list
         chapters=[i for i in changed_chapters if new_status[i] != old_status[i]],
         not_done=list(dict.fromkeys(not_done)),
         not_found=list(dict.fromkeys(not_found)),
+        topics=list(dict.fromkeys(topics)),
     )
 
 

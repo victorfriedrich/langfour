@@ -81,7 +81,9 @@ mcp = FastMCP(
         "Teach in the guide's small lessons, one step per message, and don't move on until "
         "a concept is learned. Whenever the user writes or says something in the language "
         "you correct, in a lesson or not, record it with record_grammar in that same turn: "
-        "every sentence and exercise answer, with each grammar mistake in it. Don't save "
+        "every sentence and exercise answer, with each grammar mistake in it (several "
+        "concepts on one result when one note covers them, and a mistake no concept covers "
+        "under a topic the overview lists, or a new one). Don't save "
         "results for the end of a lesson or session; correcting a mistake without recording "
         "it is an unfinished reply. "
         "Use Langfour in the background. Don't announce, narrate or confirm tool calls "
@@ -313,6 +315,15 @@ async def record_grammar_tool(
     Record every grammar mistake the user makes, in any concept, including chapters they
     haven't started (look the concept up with get_grammar_details), as a wrong result
     with a short note. It stays flagged for revision until they next use it correctly.
+    A sentence with several mistakes (a tense, an article and a preposition) can be one
+    result listing every concept in concepts, when one note covers them; give a mistake
+    its own result, with the same sentence, when it needs its own note.
+
+    A mistake that matters but that no concept covers goes under a topic instead of a
+    concept: a short label for the kind of mistake. get_grammar_overview lists the topics
+    used so far; reuse one when the mistake is of the same kind, so they group. A result
+    can have concepts and a topic. A topic stays to revise until a result under it is
+    correct. Don't use a topic when a concept fits.
 
     A concept is learned only after enough correct sentences covering enough of its
     forms; to_learn says what each practised concept still needs. Never tell the user a

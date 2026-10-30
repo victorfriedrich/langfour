@@ -121,8 +121,16 @@ mistake without recording it leaves the reply unfinished.
 - **Grammar:** one wrong `produced` result per error, on the concept it belongs to, with a
   `note`. That includes concepts in chapters the learner hasn't started (a wrong lo/la while
   practising the preterite goes on `es.objeto_directo.forms`). The overview lists chapter
-  ids; fetch a chapter with `get_grammar_details` to find the concept. If none fits exactly,
-  take the closest one.
+  ids; fetch a chapter with `get_grammar_details` to find the concept.
+  - **Several mistakes in one sentence** (a tense, an article and a preposition): list every
+    concept in one result's `concepts` when one note covers them all ("tuve for tenía,
+    imperfect; fue for estaba, estar"). Give a mistake its own result, with the same
+    sentence, when it needs its own note.
+  - **No concept covers it:** if a concept fits closely, use it. If none does and the mistake
+    matters, record it under a `topic` instead of a concept: a short label for the kind of
+    mistake ("gender of nouns in -ma", "personal a"). The overview lists the topics used so
+    far; reuse one when the mistake is of the same kind, so they group, and make a new one
+    only when none fits. A result can name concepts and a topic.
 - **Accents and spelling that a rule decides** (tenia → tenía, pedieron → pidieron) are grammar
   too: record them on the rule's concept.
 - **Words:** a wrong or made-up word is a vocabulary mistake. Record a wrong `produce` answer
@@ -140,6 +148,9 @@ mistake without recording it leaves the reply unfinished.
 Words the learner got wrong are under `mistakes` in `get_vocabulary`; use one or two of them in
 your examples and sentences, and record the result. The overview's TO REVISE list holds the mistakes not yet put right, newest first, each with its
 date and note. A mistake stays flagged until the learner next uses that concept correctly.
+Mistakes filed under a topic are there too (`topic '…'`): they stay until a result under the
+topic is correct, so record a correct `produced` result with the topic once the learner gets
+it right.
 
 - At the start of a session, pick one to three flagged concepts from started chapters. Give
   the learner a sentence or two that needs each one, early on, before the new lesson. Say
