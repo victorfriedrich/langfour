@@ -57,11 +57,11 @@ def _space_ytdlp() -> None:
         _ytdlp_next_at = time.monotonic() + YTDLP_MIN_INTERVAL_S
 
 
-def video_info(url, proxied: bool = False) -> dict:
+def video_info(url, proxied: bool = False, proxy: str | None = None) -> dict:
     """Metadata and the selected audio format, from one page load.
 
-    proxied=True sends the read through a fresh proxy session when
-    CAPTION_PROXY_URL is set: ~1.8 MB of proxy traffic and 3-4 s per video
+    proxied=True sends the read through `proxy` (a proxy_url() session),
+    or a fresh one, when CAPTION_PROXY_URL is set: ~1.8 MB of proxy traffic and 3-4 s per video
     (measured on three videos), against a limit of roughly 300 videos an hour
     for one signed-out IP. Audio downloads never use the proxy: ~2-5 MB each
     is too much traffic to pay for, and the googlevideo URL a proxied read
@@ -69,11 +69,34 @@ def video_info(url, proxied: bool = False) -> dict:
     import yt_dlp
     opts = dict(YDL_OPTS)
     if proxied and CAPTION_PROXY_URL:
-        opts["proxy"] = proxy_url()
+        opts["proxy"] = proxy or proxy_url()
     else:
         _space_ytdlp()
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
+
+
+def _proxy_turned_away(exc: Exception) -> bool:
+    """YouTube's bot check, or the proxy failing to connect: worth one more
+    try on a new IP. A shared residential IP can arrive already flagged."""
+    text = str(exc).lower()
+    return "confirm you" in text or "not a bot" in text or "proxy" in text
+
+
+def read_info(url: str, proxied: bool) -> tuple[dict, str | None]:
+    """video_info() and the proxy session it used, so the video's caption
+    request can come from the same IP. A proxied read YouTube turns away is
+    retried once on a new session; a read on our own IP is not retried."""
+    session = proxy_url() if proxied else None
+    try:
+        return video_info(url, proxied=proxied, proxy=session), session
+    except Exception as exc:
+        if not proxied or not _proxy_turned_away(exc):
+            raise
+        print(f"Metadata read turned away on the proxy "
+              f"({(str(exc).splitlines() or [''])[0][:90]}); retrying on a new IP")
+        session = proxy_url()
+        return video_info(url, proxied=True, proxy=session), session
 
 
 def download_video(info):
@@ -155,8 +178,11 @@ def whisper(audio_file: str, language: str) -> str:
             with open(audio_file, "rb") as fh:
                 result = transcription_client().audio.transcriptions.create(
                     model=MODEL_TRANSCRIBE, file=fh, response_format="text", language=language)
-            # A bare string on OpenAI; DeepInfra may return an object instead.
-            return (result if isinstance(result, str) else result.text).strip()
+            # A bare string on OpenAI; DeepInfra may return an object instead,
+            # and a piece that is only a number ("15", in a video counting to
+            # 100) comes back parsed as an int.
+            return str(result if isinstance(result, str | int | float)
+                       else result.text).strip()
         except Exception:
             if attempt == 2:
                 raise
@@ -329,13 +355,13 @@ def proxy_url() -> str:
     return CAPTION_PROXY_URL.replace("{session}", uuid.uuid4().hex[:12])
 
 
-def caption_session(proxied: bool | None = None) -> requests.Session:
-    """A fresh session (no cookies) for one video; on its own proxy session
-    when proxied (by default, whenever CAPTION_PROXY_URL is set)."""
+def caption_session(proxied: bool | None = None, proxy: str | None = None) -> requests.Session:
+    """A fresh session (no cookies) for one video; when proxied (by default,
+    whenever CAPTION_PROXY_URL is set) on `proxy`, or a new proxy session."""
     proxied = _route(proxied)
     session = _ThrottledSession(proxied)
     if proxied:
-        url = proxy_url()
+        url = proxy or proxy_url()
         session.proxies = {"http": url, "https": url}
     return session
 
@@ -356,10 +382,13 @@ def _pause_captions(reason: str, proxied: bool) -> None:
           f"those videos go to Whisper")
 
 
-def caption_text(info: dict, language: str, proxied: bool | None = None) -> str | None:
+def caption_text(info: dict, language: str, proxied: bool | None = None,
+                 proxy: str | None = None) -> str | None:
     """The video's caption text, or None when there is no usable track, the
     track reads as another language, or YouTube is blocking caption requests
-    on this route. proxied=None means the proxy whenever one is configured."""
+    on this route. proxied=None means the proxy whenever one is configured.
+    `proxy` is the session the metadata read used, so both requests share an
+    IP; a retry after a block takes a new one."""
     global _proxy_strikes
     proxied = _route(proxied)
     if time.monotonic() < _captions_blocked_until[proxied]:
@@ -369,7 +398,8 @@ def caption_text(info: dict, language: str, proxied: bool | None = None) -> str 
     for attempt in range(attempts):
         try:
             start_time = time.time()
-            text = fetch_transcript(info, language, caption_session(proxied))
+            text = fetch_transcript(info, language,
+                                    caption_session(proxied, proxy if attempt == 0 else None))
             print(f"Transcript fetched in {time.time() - start_time:.2f} seconds")
             _proxy_strikes = 0
             break
@@ -486,8 +516,10 @@ def main(url, language: str, use_captions=True, use_proxy=True):
     try:
         # Whisper-only runs read on our own IP: they download from it anyway.
         # use_proxy=False keeps a caption video on our own IP too.
+        # One proxy session per video: its metadata read and caption track
+        # come from the same IP.
         proxied = use_captions and _route(use_proxy)
-        info = video_info(url, proxied=proxied)
+        info, session = read_info(url, proxied)
         title = info.get("title")
         creator = info.get("channel") or info.get("uploader")
         tags = info.get("tags") or []
@@ -509,7 +541,7 @@ def main(url, language: str, use_captions=True, use_proxy=True):
     # video. Manual tracks are punctuated, ASR tracks mostly are not, which
     # parse() doesn't need.
     if use_captions:
-        text = caption_text(info, language, proxied)
+        text = caption_text(info, language, proxied, session)
         if text:
             with open(txt_filename, "w", encoding='utf-8') as txt_file:
                 txt_file.write(text)
