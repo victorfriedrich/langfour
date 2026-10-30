@@ -93,8 +93,10 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
 
   return (
     <>
-      {/* Mobile Header */}
-      <div className="md:hidden bg-indigo-700 text-white fixed top-0 left-0 right-0 z-50 flex items-center">
+      {/* Mobile Header. In the page's flow, not fixed: iOS Safari places fixed
+          elements against a different top edge than the page, and the content
+          below slid under the header. */}
+      <div className="md:hidden bg-indigo-700 text-white relative z-50 flex shrink-0 items-center">
         <button
           onClick={toggleSidebar}
           className="pl-3 py-3 rounded-md focus:outline-none"

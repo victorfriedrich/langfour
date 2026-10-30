@@ -7,7 +7,7 @@ import DemoAccountHeader from '@/app/components/DemoAccountHeader';
 import Sidebar from '@/app/components/Sidebar'; // Import the client Sidebar
 import { TutorialProvider } from "@/context/TutorialContext";
 import { Analytics } from "@vercel/analytics/react"
-import ConditionalSidebar, { AppMain } from "./components/ConditionalSidebar";
+import ConditionalSidebar from "./components/ConditionalSidebar";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -37,11 +37,14 @@ export default function RootLayout({
           <TutorialProvider>
             <ConditionalSidebar />
 
-            <AppMain>
+            {/* The scroll container. Below md it fills what the sidebar's
+                header leaves of the column; min-h-0 stops it growing to its
+                content, which would make the document scroll instead. */}
+            <main className="flex-1 min-h-0 overflow-y-auto h-dvh">
               <DemoAccountHeader />
               {children}
               <Analytics />
-            </AppMain>
+            </main>
           </TutorialProvider>
         </UserProvider>
       </body>
