@@ -3,7 +3,9 @@ What an AI app connected over MCP can learn about the user's vocabulary, and
 what it reports back about texts the user read with it.
 
   - get_vocabulary: counts and a list of known, learning or due words
-    (mcp_vocabulary in sql/mcp_vocabulary.sql).
+    (mcp_vocabulary in sql/mcp_vocabulary.sql), plus the words whose last
+    practice answer was wrong, with the AI app's note: the mistakes to revise,
+    known words included, since those have no card to bring back.
   - score_text: how much of a text the user would understand, and which of its
     words they're learning or haven't met. Words are classified with the
     reader's rules (classify_words_for in sql/classify_words.sql): names,
@@ -43,6 +45,8 @@ _WORD = re.compile(r"[^\W\d_]+")
 
 _CLASSIFY_CHUNK = 1000  # tokens per classify_words_for call, as in the extension
 _IN_CHUNK = 200
+MAX_MISTAKES = 10    # words to revise listed, newest first
+_RECALL_SCAN = 1000  # practice answers read to find them
 
 
 def _chunks(items: list, size: int) -> Iterable[list]:
@@ -67,10 +71,17 @@ class VocabularyWord(BaseModel):
     due: bool
 
 
+class WordMistake(BaseModel):
+    word: str
+    date: str          # of the wrong answer, YYYY-MM-DD
+    note: str | None   # what the user got wrong, from the AI app that recorded it
+
+
 class Vocabulary(BaseModel):
     language: str | None  # None: no language given and the user has no default
     counts: VocabularyCounts
     words: list[VocabularyWord]
+    mistakes: list[WordMistake] = []  # last answer wrong, newest first
 
 
 class TextWord(BaseModel):
@@ -111,6 +122,15 @@ class VocabularyStore:
             "p_user_id": user_id, "p_language": language,
             "p_status": status, "p_limit": limit,
         }).execute().data
+
+    def recall_events(self, user_id: str, language: str) -> list[dict]:
+        """The user's latest practice answers in a language, newest first."""
+        return (self.db.table("word_events")
+                .select("word_id, kind, occurred_at, context, words!inner(root, language)")
+                .eq("user_id", user_id).eq("source", SOURCE)
+                .in_("kind", ["recall_correct", "recall_wrong"])
+                .eq("words.language", language)
+                .order("occurred_at", desc=True).limit(_RECALL_SCAN).execute().data or [])
 
     def classify(self, user_id: str, language: str, tokens: list[str]) -> dict[str, tuple[int, str]]:
         """token -> (word_id, status) for the tokens that are vocabulary."""
@@ -173,7 +193,21 @@ def get_vocabulary_store() -> VocabularyStore:
 
 def get_vocabulary(store: VocabularyStore, user_id: str, language: str | None,
                    status: Literal["due", "learning", "known"], limit: int) -> Vocabulary:
-    return Vocabulary.model_validate(store.vocabulary(user_id, language, status, limit))
+    vocab = Vocabulary.model_validate(store.vocabulary(user_id, language, status, limit))
+    if vocab.language:
+        vocab.mistakes = _mistakes(store.recall_events(user_id, vocab.language))
+    return vocab
+
+
+def _mistakes(events: list[dict]) -> list[WordMistake]:
+    """Words whose newest answer is wrong; a right answer since clears one."""
+    latest: dict[int, dict] = {}
+    for e in events:  # newest first
+        latest.setdefault(e["word_id"], e)
+    wrong = [e for e in latest.values() if e["kind"] == "recall_wrong"]
+    return [WordMistake(word=e["words"]["root"], date=e["occurred_at"][:10],
+                        note=(e.get("context") or {}).get("note"))
+            for e in wrong[:MAX_MISTAKES]]
 
 
 def _classified(store: VocabularyStore, user_id: str, language: str,

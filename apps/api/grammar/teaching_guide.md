@@ -121,9 +121,11 @@ so a later lesson can revise it. Check each sentence they write for all of its e
   take the closest one.
 - **Accents and spelling that a rule decides** (tenia → tenía, pedieron → pidieron) are grammar
   too: record them on the rule's concept.
-- **Words:** a wrong or made-up word (apartamiento → apartamento, demandé for "asked for" →
-  pidió) is a vocabulary mistake. Record a wrong `produce` answer for the right word with
-  `record_practice`, which brings its card back sooner.
+- **Words:** a wrong or made-up word is a vocabulary mistake. Record a wrong `produce` answer
+  with `record_practice`, with a note, for the word from the learner's own vocabulary they
+  should have used: apartamiento → el piso when they know piso, not el apartamento;
+  demandé for "asked for" → pedir. The word is then listed under `mistakes` in
+  `get_vocabulary` until they get it right, known words included.
 - **The note** is for whoever revises it later, maybe in another chat: what the learner wrote
   and what was right, in a few words. "lo busqué for la factura: the pronoun agrees with the
   feminine noun". "fui allí for being there: estar, estuve".
@@ -131,7 +133,8 @@ so a later lesson can revise it. Check each sentence they write for all of its e
 
 ## Revising mistakes
 
-The overview's TO REVISE list holds the mistakes not yet put right, newest first, each with its
+Words the learner got wrong are under `mistakes` in `get_vocabulary`; use one or two of them in
+your examples and sentences, and record the result. The overview's TO REVISE list holds the mistakes not yet put right, newest first, each with its
 date and note. A mistake stays flagged until the learner next uses that concept correctly.
 
 - At the start of a session, pick one to three flagged concepts from started chapters. Give

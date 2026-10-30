@@ -71,7 +71,8 @@ def test_record_practice_over_http_as_the_signed_in_user(monkeypatch):
             "params": {"name": "get_vocabulary", "arguments": {}},
         }).json()["result"]
         assert not vocab.get("isError"), vocab
-        assert vocab_store.calls == [("vocabulary", USER, None, "due", 50)]
+        assert vocab_store.calls == [("vocabulary", USER, None, "due", 50),
+                                     ("recall_events", USER, "es")]
 
         overview = client.post("/mcp", headers=HEADERS, json={
             "jsonrpc": "2.0", "id": 6, "method": "tools/call",

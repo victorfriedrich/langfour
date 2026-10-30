@@ -22,15 +22,20 @@ WORDS = {1: "el", 2: "el perro", 3: "comer", 4: "la", 5: "la manzana", 6: "la ca
 
 
 class FakeStore:
-    def __init__(self):
+    def __init__(self, recalls=()):
         self.calls = []
         self.events = []
+        self.recalls = list(recalls)
 
     def vocabulary(self, user_id, language, status, limit):
         self.calls.append(("vocabulary", user_id, language, status, limit))
         return {"language": "es", "counts": {"known": 2, "learning": 1, "due": 1},
                 "words": [{"word": "el perro", "translation": "dog",
                            "status": "learning", "due": True}]}
+
+    def recall_events(self, user_id, language):
+        self.calls.append(("recall_events", user_id, language))
+        return self.recalls
 
     def classify(self, user_id, language, tokens):
         self.calls.append(("classify", user_id, language, tokens))
@@ -66,7 +71,7 @@ class FakeStore:
 def test_get_vocabulary_passes_the_user_and_parses_the_answer():
     store = FakeStore()
     vocab = vocabulary.get_vocabulary(store, USER, None, "due", 20)
-    assert store.calls == [("vocabulary", USER, None, "due", 20)]
+    assert store.calls == [("vocabulary", USER, None, "due", 20), ("recall_events", USER, "es")]
     assert vocab.counts.due == 1
     assert vocab.words[0].word == "el perro"
 
@@ -127,3 +132,22 @@ def test_set_word_status_with_nothing_found_updates_nothing():
     change = vocabulary.set_word_status(store, USER, "es", ["casa"], "learning")
     assert not any(c[0] == "set_status" for c in store.calls)
     assert change.not_found == ["casa"]
+
+
+def recall(word_id, root, kind, at, note=None):
+    return {"word_id": word_id, "kind": kind, "occurred_at": at,
+            "context": {"direction": "produce", **({"note": note} if note else {})},
+            "words": {"root": root, "language": "es"}}
+
+
+def test_get_vocabulary_lists_words_last_answered_wrong_newest_first():
+    store = FakeStore(recalls=[  # newest first, as recall_events returns them
+        recall(1, "el piso", "recall_wrong", "2026-10-30T10:00:00+00:00", "wrote apartamiento"),
+        recall(3, "comer", "recall_correct", "2026-10-30T09:00:00+00:00"),
+        recall(5, "la manzana", "recall_wrong", "2026-10-29T09:00:00+00:00"),
+        recall(3, "comer", "recall_wrong", "2026-10-28T09:00:00+00:00", "comí for como"),
+        recall(1, "el piso", "recall_correct", "2026-10-27T09:00:00+00:00"),
+    ])
+    mistakes = vocabulary.get_vocabulary(store, USER, None, "due", 20).mistakes
+    assert [(m.word, m.date, m.note) for m in mistakes] == [
+        ("el piso", "2026-10-30", "wrote apartamiento"), ("la manzana", "2026-10-29", None)]

@@ -103,8 +103,14 @@ def record_practice_tool(language: Language, answers: list[PracticeAnswer], ctx:
     es, de, it or fr.
 
     Results move flashcard reviews: wrong answers bring a card back sooner; right answers
-    only count for cards that are due anyway. Say which words you're recording before you
-    call this.
+    only count for cards that are due anyway. A wrong answer also lists the word under
+    mistakes in get_vocabulary until the user gets it right, known words included; give it
+    a note saying what they wrote instead.
+
+    When the user writes a wrong or made-up word (apartamiento for 'flat'), record a wrong
+    'produce' answer for the word from their own vocabulary they should have used (piso,
+    if they know it), not just the dictionary word for it. Say which words you're
+    recording before you call this.
     """
     req = PracticeRequest(language=language, answers=answers)
     return record_practice(get_practice_store(), _user_id(ctx), req)
@@ -128,6 +134,9 @@ def get_vocabulary_tool(
     it or fr); leave it out for the language the user is studying. Pass words to
     record_practice exactly as listed here (with the article, e.g. 'la casa'). limit has
     no maximum; counts says how many words there are, at about 90 bytes per word listed.
+
+    mistakes lists words the user last got wrong in practice, newest first, with a note:
+    work one to three of them into the session and record the result.
     """
     return get_vocabulary(get_vocabulary_store(), _user_id(ctx), language, status, limit)
 
