@@ -2,11 +2,13 @@ import asyncio
 import logging
 import os
 from contextlib import AsyncExitStack
+from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, confloat, conint
 
 from auth import AuthMiddleware, get_current_user
@@ -264,6 +266,18 @@ async def parse_text(request: TextRequest):
 def health_check():
     print("/health_check received!")
     return {"status": "ok"}
+
+
+ICON = Path(__file__).parent / "static" / "langfour-icon.png"
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+@app.get("/favicon.png", include_in_schema=False)
+def favicon():
+    """The Langfour logo, for clients that show the server's icon, such as
+    ChatGPT's connector list. A PNG under both names; .ico only by path."""
+    return FileResponse(ICON, media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/recommendations/words/", response_model=WordRecommendationResponse)

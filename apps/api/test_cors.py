@@ -50,3 +50,12 @@ def test_unknown_origin_is_refused():
 def test_lookalike_safari_origin_is_refused():
     response = preflight("safari-web-extension://abc.evil.example")
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_the_logo_is_served_without_a_token():
+    # ChatGPT shows a connector's icon from the server; a 401 there is a broken image.
+    for path in ("/favicon.ico", "/favicon.png"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content.startswith(b"\x89PNG")

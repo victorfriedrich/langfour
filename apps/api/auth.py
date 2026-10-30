@@ -41,6 +41,8 @@ PUBLIC_PATHS = {
     "/docs",
     "/redoc",
     "/openapi.json",
+    "/favicon.ico",   # the logo, for clients that show the server's icon (ChatGPT)
+    "/favicon.png",
     # RemNote pairing (remnote_sync.py). `start` hands out nothing but a code
     # and a secret; `claim` is authenticated by that secret, and only returns
     # a token after a signed-in user approved the code.
