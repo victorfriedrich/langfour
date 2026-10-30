@@ -133,7 +133,7 @@ const PracticePage = () => {
     <ProtectedRoute>
       <div className="min-h-screen bg-white">
         {/* Flat: no cards. Sections are separated by space and a hairline. */}
-        <div className="max-w-3xl px-4 py-10 sm:px-8">
+        <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
           <header className="mb-10 flex min-h-9 flex-wrap items-center justify-between gap-3">
             <h1 className="text-2xl font-semibold text-gray-900">Practice</h1>
             {revealed && provider && (

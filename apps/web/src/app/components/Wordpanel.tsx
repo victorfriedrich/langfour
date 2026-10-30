@@ -97,7 +97,7 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
         {!fullPage && <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={0} fullPage={false} onClose={onClose} />}
         {isLoading
           ? <div className={`flex flex-1 items-center justify-center ${fullPage ? 'min-h-[70vh]' : ''}`}><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
-          : <p className={fullPage ? 'max-w-3xl px-4 py-10 text-sm text-red-600 sm:px-8' : 'mx-auto mt-8 max-w-xl rounded-xl border border-red-200 bg-red-50 p-5 text-center text-red-700'}>{error}</p>}
+          : <p className={fullPage ? 'mx-auto max-w-3xl px-4 py-10 text-sm text-red-600 sm:px-8' : 'mx-auto mt-8 max-w-xl rounded-xl border border-red-200 bg-red-50 p-5 text-center text-red-700'}>{error}</p>}
       </div>
     );
   }
@@ -111,8 +111,8 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   // page's top, stays put while the text scrolls and scrolls on its own,
   // down to the window's bottom edge.
   const body = !showText
-    ? <>{header}<div className={fullPage ? 'max-w-3xl flex-1 space-y-10 px-4 pb-32 sm:px-8' : 'flex-1 space-y-4 overflow-y-auto'}>{list}</div></>
-    : <div className="px-4 sm:px-8 lg:grid lg:grid-cols-[minmax(0,42rem)_20rem] lg:items-start lg:gap-16">
+    ? <>{header}<div className={fullPage ? 'mx-auto max-w-3xl flex-1 space-y-10 px-4 pb-32 sm:px-8' : 'flex-1 space-y-4 overflow-y-auto'}>{list}</div></>
+    : <div className="mx-auto max-w-[70rem] px-4 sm:px-8 lg:grid lg:grid-cols-[minmax(0,42rem)_20rem] lg:items-start lg:gap-16">
       <div className="pb-12 lg:pb-32">{header}<MediaText chunks={transcript} newIds={newIds} selectedIds={selectedWords} onWordClick={toggleWordSelection} /></div>
       <aside className="space-y-10 pb-32 lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto lg:pb-10 lg:pt-10">{list}</aside>
     </div>;
@@ -131,7 +131,7 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
 function Header({ videoTitle, eyebrow, wordCount, fullPage, wide = false, onClose }: { videoTitle: string; eyebrow: string; wordCount: number; fullPage: boolean; wide?: boolean; onClose: (count: number) => void }) {
   if (fullPage) {
     // Wide, it sits in the text's column, which already has the page gutter.
-    return <header className={`${wide ? '' : 'max-w-3xl px-4 sm:px-8'} pb-8 pt-10`}><button onClick={() => onClose(0)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900"><ArrowLeft size={16}/>Back to Media</button><h1 className="text-2xl font-semibold text-gray-900">{videoTitle}</h1><p className="mt-1 text-sm text-gray-500">{eyebrow}{wordCount > 0 && ` · ${wordCount} new ${wordCount === 1 ? 'word' : 'words'}`}</p></header>;
+    return <header className={`${wide ? '' : 'mx-auto max-w-3xl px-4 sm:px-8'} pb-8 pt-10`}><button onClick={() => onClose(0)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900"><ArrowLeft size={16}/>Back to Media</button><h1 className="text-2xl font-semibold text-gray-900">{videoTitle}</h1><p className="mt-1 text-sm text-gray-500">{eyebrow}{wordCount > 0 && ` · ${wordCount} new ${wordCount === 1 ? 'word' : 'words'}`}</p></header>;
   }
   return <header className="border-b p-4"><div className="flex items-center justify-between"><button onClick={() => onClose(0)} aria-label="Close" className="order-2 text-gray-500 hover:text-gray-700"><X size={24}/></button><div className="min-w-0 flex-1"><h1 className="text-lg font-semibold">{videoTitle}</h1></div></div></header>;
 }
