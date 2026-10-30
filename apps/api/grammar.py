@@ -29,7 +29,9 @@ it's seen in a text, and one the user says they know, at once.
 
 Every mistake is kept: a wrong answer flags its concept with the date and the
 AI app's short note, also in chapters the user hasn't reached, until they next
-use the concept correctly. The overview lists the flagged concepts to revise.
+use the concept correctly. The overview lists the flagged concepts to revise,
+and up to two chapters worth revisiting (worth_revisiting() below), which the
+web app shows too.
 
 The refresh rule (practise() below):
   - once learned: the interval is the concept's base (30, 14 or 7 days for
@@ -67,6 +69,15 @@ MIN_CORRECT = 2  # correct sentences before a concept counts as learned
 MAX_DETAIL_CHAPTERS = 3
 MAX_DETAIL_CONCEPTS = 10
 MAX_REVISE = 10  # flagged mistakes the overview lists, newest first
+
+# A chapter worth revisiting (worth_revisiting() below): near the user's place
+# in the book, used often, and still slipping on more than one day.
+WORTH_WINDOW = 30      # days of events it looks at
+WORTH_USE_DAYS = 3     # days the user used the chapter's grammar
+WORTH_SLIP_DAYS = 2    # days with a wrong answer in it
+WORTH_SETTLED_DAYS = 2  # days of correct use after the last slip that settle it
+WORTH_AHEAD = 3        # chapters past the furthest one reached that still count
+WORTH_MAX = 2
 
 State = Literal["not yet", "studied", "fresh", "fading"]
 ChapterStatus = Literal["not started", "started", "done"]
@@ -550,6 +561,7 @@ class GrammarBook(BaseModel):
     """The web app's table of contents; no chapters without a curriculum."""
     language: str
     chapters: list[BookChapter]
+    worth_revisiting: list[str] = []  # chapter ids, best first (worth_revisiting())
 
 
 class ChapterRef(BaseModel):
@@ -624,6 +636,20 @@ class GrammarStore:
         return (self.db.table("user_grammar_concepts").select("*")
                 .eq("user_id", user_id).execute().data or [])
 
+    def events(self, user_id: str, since: datetime) -> list[dict]:
+        """The user's exercise and sentence results since a time, oldest first."""
+        rows, start, page = [], 0, 1000
+        while True:
+            batch = (self.db.table("grammar_events")
+                     .select("concept_id, kind, correct, self_reported, occurred_at")
+                     .eq("user_id", user_id).in_("kind", ["produced", "recognized"])
+                     .gte("occurred_at", since.isoformat()).order("occurred_at")
+                     .range(start, start + page - 1).execute().data or [])
+            rows += batch
+            if len(batch) < page:
+                return rows
+            start += page
+
     def record(self, user_id: str, events: list[dict], concepts: list[dict],
                chapters: list[dict]) -> int:
         """Write atomically; -1 means a previous-row check failed, with nothing written."""
@@ -670,6 +696,60 @@ def _status(chapters: dict[str, dict], chapter_id: str) -> ChapterStatus:
     return row["status"] if row else "not started"
 
 
+def worth_revisiting(cur: Curriculum, chapters: dict[str, dict], progress: dict[str, Progress],
+                     events: list[dict], now: datetime) -> list[str]:
+    """The chapters worth a friendly nudge, best first: at most WORTH_MAX.
+
+    A chapter qualifies when it's near the user's place in the book (its level
+    or the one below that of the furthest chapter reached, and no more than
+    WORTH_AHEAD chapters past it), the user used its grammar on WORTH_USE_DAYS
+    days of the last WORTH_WINDOW, and got it wrong on WORTH_SLIP_DAYS of them.
+    Slips on one day are just learning it; slips on several mean it isn't
+    settling. Using it correctly on WORTH_SETTLED_DAYS later days settles it."""
+    reached = [i for i, ch in enumerate(cur.chapters)
+               if _status(chapters, ch.id) != "not started"
+               or any(progress.get(c.id) and progress[c.id].learned_at for c in ch.concepts)]
+    if not reached:
+        return []
+    frontier = cur.chapters[reached[-1]]
+    lowest = max(0, LEVELS.index(frontier.level) - 1)
+    position = {ch.id: i for i, ch in enumerate(cur.chapters)}
+
+    used: dict[str, set] = {}
+    slips: dict[str, list[datetime]] = {}
+    correct: dict[str, list[datetime]] = {}
+    since = now - timedelta(days=WORTH_WINDOW)
+    for e in events:
+        c = cur.concept.get(e["concept_id"])
+        at = datetime.fromisoformat(e["occurred_at"])
+        if c is None or e["kind"] == "seen" or e.get("self_reported") or at < since:
+            continue
+        used.setdefault(c.chapter_id, set()).add(at.date())
+        (slips if e["correct"] is False else correct).setdefault(c.chapter_id, []).append(at)
+
+    ranked = []
+    for chapter_id, days in used.items():
+        ch = cur.chapter[chapter_id]
+        if (LEVELS.index(ch.level) < lowest or position[chapter_id] > reached[-1] + WORTH_AHEAD
+                or len(days) < WORTH_USE_DAYS):
+            continue
+        slip_days = {t.date() for t in slips.get(chapter_id, [])}
+        if len(slip_days) < WORTH_SLIP_DAYS:
+            continue
+        last = max(slip_days)
+        if len({t.date() for t in correct.get(chapter_id, []) if t.date() > last}) >= WORTH_SETTLED_DAYS:
+            continue
+        ranked.append((len(slip_days), last, chapter_id))
+    return [i for *_, i in sorted(ranked, reverse=True)[:WORTH_MAX]]
+
+
+def _worth_revisiting(store: GrammarStore, user_id: str, cur: Curriculum,
+                      chapters: dict[str, dict], progress: dict[str, Progress],
+                      now: datetime) -> list[str]:
+    events = store.events(user_id, now - timedelta(days=WORTH_WINDOW))
+    return worth_revisiting(cur, chapters, progress, events, now)
+
+
 def get_overview(store: GrammarStore, user_id: str, language: str | None,
                  now: datetime | None = None) -> GrammarOverview:
     now = now or _now()
@@ -713,6 +793,8 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
         "(the guide's 'When a concept is learned'); fading ones are due to be worked back in. "
         "get_grammar_details lists a chapter's concepts and what each still needs.",
     ]
+    if worth := _worth_revisiting(store, user_id, cur, chapters, progress, now):
+        head.append(f"Worth revisiting: {', '.join(worth)} (the guide's 'Chapters worth revisiting').")
     if flagged:
         head += ["", "TO REVISE (the user's mistakes, newest first; the guide's 'Revising mistakes')"]
         for _, i in flagged[:MAX_REVISE]:
@@ -887,7 +969,8 @@ def get_book(store: GrammarStore, user_id: str, language: str,
             concepts=[BookConcept(id=c.id, title=copy(c.id).title,
                                   state=state(progress.get(c.id), status, now))
                       for c in ch.concepts]))
-    return GrammarBook(language=language, chapters=out)
+    return GrammarBook(language=language, chapters=out,
+                       worth_revisiting=_worth_revisiting(store, user_id, cur, chapters, progress, now))
 
 
 def get_lesson(store: GrammarStore, user_id: str, language: str, chapter_id: str,

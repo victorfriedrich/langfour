@@ -71,10 +71,12 @@ async function readJson<T>(response: Response): Promise<T> {
   return response.json();
 }
 
-/** Every chapter of the grammar book with the user's progress; null while loading. */
+/** Every chapter of the grammar book with the user's progress; null while
+ *  loading. Also the chapter ids worth revisiting, best first. */
 export const useGrammarBook = (language: string | undefined) => {
   const { fetchWithAuth } = useContext(UserContext);
   const [chapters, setChapters] = useState<BookChapter[] | null>(null);
+  const [worthRevisiting, setWorthRevisiting] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -82,15 +84,19 @@ export const useGrammarBook = (language: string | undefined) => {
     let cancelled = false;
     setChapters(null);
     fetchWithAuth(`${API_URL}/api/grammar?language=${language}`)
-      .then((r) => readJson<{ chapters: BookChapter[] }>(r))
-      .then((book) => !cancelled && setChapters(book.chapters))
+      .then((r) => readJson<{ chapters: BookChapter[]; worth_revisiting?: string[] }>(r))
+      .then((book) => {
+        if (cancelled) return;
+        setChapters(book.chapters);
+        setWorthRevisiting(book.worth_revisiting ?? []);
+      })
       .catch((err) => !cancelled && setError(err instanceof Error ? err.message : 'Could not load grammar'));
     return () => {
       cancelled = true;
     };
   }, [language, fetchWithAuth]);
 
-  return { chapters, error };
+  return { chapters, worthRevisiting, error };
 };
 
 /** One chapter in full. */
