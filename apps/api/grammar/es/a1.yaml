@@ -23,7 +23,6 @@ chapters:
     concepts:
       - id: forms
         title: "Forms of ser"
-        image: ser-forms.svg
         scope: "soy, eres, es, somos, sois, son."
         difficulty: easy
         lemmas: [ser]
@@ -31,28 +30,23 @@ chapters:
           ser: [soy, eres, es, somos, son]
       - id: identity
         title: "ser for identity and definitions"
-        image: ser-identity.svg
         scope: "Who or what someone or something is: names (Soy Ana; Me llamo Ana as a fixed phrase), relationships (Es mi hermano), definitions (Es una mesa)."
         difficulty: easy
         see: [es.ser_estar_1.nouns_ser]
       - id: origin
         title: "ser de for origin, ser + nationality"
-        image: ser-origin.svg
         scope: "ser de + place for origin (Soy de Hamburgo, ¿De dónde eres?), ser + nationality adjective (Es mexicana)."
         difficulty: easy
       - id: profession
         title: "ser + profession, no article"
-        image: ser-profession.svg
         scope: "Soy profesora, Es médico, Soy alemán: no article before a bare profession, nationality or religion. With an adjective the article comes back (Es una médica muy buena)."
         pitfall: "Soy un profesor → Soy profesor"
       - id: characteristics
         title: "ser for what someone or something is like"
-        image: ser-characteristics.svg
         scope: "Describing inherent qualities: appearance, personality, size, price level (Es alto, Es simpática, La casa es grande, Es caro)."
         later: [es.ser_estar_1.characteristic_vs_state, es.ser_estar_2.perceived_change]
       - id: possession_material
         title: "ser de for owner and material"
-        image: ser-possession_material.svg
         scope: "Es de María (it's María's), La mesa es de madera (made of wood)."
         difficulty: easy
 
