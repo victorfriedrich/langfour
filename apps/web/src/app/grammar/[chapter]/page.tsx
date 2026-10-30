@@ -3,12 +3,12 @@
 import React, { useContext } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import { UserContext } from "@/context/UserContext";
 import ProtectedRoute from "../../components/ProtectedRoute";
 import { useLesson, type ChapterRef, type LessonConcept, type LessonRef } from "../../hooks/useGrammar";
-import { ConceptStrip, LEVEL_NAMES, STATES, chapterSlug, countStates } from "../grammarUi";
+import { ConceptStrip, LEVEL_NAMES, Legend, STATES, chapterSlug, countStates } from "../grammarUi";
 
 const DAY_MS = 86_400_000;
 
@@ -23,20 +23,12 @@ const dateLabel = (iso: string) => new Date(iso).toLocaleDateString(undefined, {
 
 const VARIETY: Record<string, string> = { spain: "Spain only", latam: "Latin America only" };
 
-/** "Soy un profesor → Soy profesor": the learner's mistake, then the fix. */
+/** The mistake learners typically make with the rule, as the curriculum
+ *  states it ("Soy un profesor → Soy profesor"). */
 function Pitfall({ text }: { text: string }) {
-  const [wrong, right] = text.split(/\s*→\s*/, 2);
-  if (right === undefined) return <p className="mt-1.5 text-gray-600">{text}</p>;
   return (
-    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="inline-flex items-center gap-1 text-gray-400">
-        <X size={14} className="text-red-400" aria-label="Not" />
-        <s>{wrong}</s>
-      </span>
-      <span className="inline-flex items-center gap-1 text-gray-800">
-        <Check size={14} className="text-indigo-600" aria-label="But" />
-        {right}
-      </span>
+    <p className="mt-1.5 text-gray-500">
+      Common mistake: <span className="text-gray-700">{text}</span>
     </p>
   );
 }
@@ -65,8 +57,8 @@ function Usage({ concept }: { concept: LessonConcept }) {
     parts.push(`Used ${concept.used} ${concept.used === 1 ? "time" : "times"}`);
     if (concept.mistakes > 0) parts.push(`${concept.mistakes} ${concept.mistakes === 1 ? "mistake" : "mistakes"}`);
   }
-  if (concept.state === "fading") parts.push("comes back in your next chats");
-  else if (concept.state === "fresh" && concept.refresh_at) parts.push(`refresh ${inDays(concept.refresh_at)}`);
+  if (concept.state === "fading") parts.push("due for review in your next chats");
+  else if (concept.state === "fresh" && concept.refresh_at) parts.push(`next review ${inDays(concept.refresh_at)}`);
   if (parts.length === 0) return null;
   return <p className="mt-1.5 text-xs text-gray-400">{parts.join(" · ")}</p>;
 }
@@ -134,7 +126,6 @@ const LessonPage = () => {
 
   const states = lesson?.concepts.map((c) => c.state) ?? [];
   const counts = countStates(states);
-  const inUse = (counts.fresh ?? 0) + (counts.fading ?? 0);
 
   return (
     <ProtectedRoute>
@@ -174,14 +165,10 @@ const LessonPage = () => {
                   {lesson.status === "done" && (lesson.finished_at ? ` · done ${dateLabel(lesson.finished_at)}` : " · done")}
                 </p>
                 <p className="mt-3 text-gray-700">{lesson.description}</p>
-                <p className="mt-3 flex items-center gap-3 text-sm text-gray-500">
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
                   <ConceptStrip states={states} size="md" />
-                  <span>
-                    <span className="tabular-nums text-gray-700">{inUse}</span> of{" "}
-                    <span className="tabular-nums">{states.length}</span> rules in use
-                    {counts.fading ? `, ${counts.fading} to refresh` : ""}
-                  </span>
-                </p>
+                  <Legend counts={counts} />
+                </div>
               </header>
 
               <section>

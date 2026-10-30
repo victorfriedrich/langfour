@@ -1,12 +1,12 @@
 import type { ConceptState } from '../hooks/useGrammar';
 
-// The Practice page's indigo for rules in use, a lighter step for rules
-// studied but not used yet, amber for rules due to be worked back in.
+// The Practice page's indigo for learned rules, a lighter step for rules
+// introduced but not used yet, amber for rules due to be worked back in.
 export const STATES: Record<ConceptState, { label: string; hint: string; color: string }> = {
-  fresh: { label: 'in use', hint: 'You have used this rule correctly', color: '#4f46e5' },
-  fading: { label: 'to refresh', hint: 'Due to come back in your next texts and chats', color: '#f59e0b' },
-  studied: { label: 'studied', hint: 'In a chapter you started, not used correctly yet', color: '#c7d2fe' },
-  'not yet': { label: 'not yet', hint: 'In a chapter you have not started', color: '#e5e7eb' },
+  fresh: { label: 'learned', hint: 'You have used this rule correctly', color: '#4f46e5' },
+  fading: { label: 'due for review', hint: 'Your next chats will work this rule back in', color: '#f59e0b' },
+  studied: { label: 'introduced', hint: 'In a chapter you have started; not used correctly yet', color: '#c7d2fe' },
+  'not yet': { label: 'not started', hint: 'In a chapter you have not started', color: '#e5e7eb' },
 };
 
 export const LEGEND: ConceptState[] = ['fresh', 'fading', 'studied', 'not yet'];
@@ -35,11 +35,12 @@ export function ConceptStrip({ states, size = 'sm' }: { states: ConceptState[]; 
   );
 }
 
-/** The four states, each label followed by its square. */
+/** The states, each label followed by its square; with counts, only the
+ *  states that have any. */
 export function Legend({ counts }: { counts?: Partial<Record<ConceptState, number>> }) {
   return (
     <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-400">
-      {LEGEND.map((s) => (
+      {LEGEND.filter((s) => !counts || counts[s]).map((s) => (
         <span key={s} className="inline-flex cursor-help items-center gap-1.5" title={STATES[s].hint}>
           {counts && <span className="tabular-nums text-gray-600">{(counts[s] ?? 0).toLocaleString()}</span>}
           {STATES[s].label}
