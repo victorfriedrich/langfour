@@ -433,3 +433,22 @@ def test_whisper_accepts_every_shape_the_transcription_reply_takes(monkeypatch, 
     client.audio.transcriptions = type("T", (), {"create": staticmethod(lambda **k: reply)})()
     monkeypatch.setattr(vp, "transcription_client", lambda: client)
     assert vp.whisper(str(audio), "es") == expected
+
+
+def test_a_passing_proxy_error_retries_on_a_new_ip_without_pausing(captions):
+    """Decodo answers 522 now and then. That is one bad exit, not an empty
+    account, so it must not stop proxy captions for an hour."""
+    captions.setattr(vp, "CAPTION_PROXY_URL", PROXY)
+    calls = []
+
+    def flaky(info, language, session):
+        calls.append((info["id"], session.proxies["https"]))
+        if len(calls) in (1, 3, 4):
+            raise vp.requests.exceptions.ProxyError("Tunnel connection failed: 522 Server Error")
+        return SPANISH
+
+    captions.setattr(vp, "fetch_transcript", flaky)
+    assert vp.caption_text({"id": "v1"}, "es", proxied=True) == SPANISH     # retried
+    assert calls[0][1] != calls[1][1]
+    assert vp.caption_text({"id": "v2"}, "es", proxied=True) is None        # failed twice
+    assert vp.caption_text({"id": "v3"}, "es", proxied=True) == SPANISH     # not paused

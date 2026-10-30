@@ -405,7 +405,17 @@ def caption_text(info: dict, language: str, proxied: bool | None = None,
             break
         except requests.exceptions.ProxyError as e:
             reason = str(e).rsplit("failed: ", 1)[-1].split("'")[0][:80]
-            _pause_captions(f"The caption proxy refused the request ({reason})", proxied)
+            # 407 is the account (out of traffic, bad credentials): pause. Any
+            # other proxy failure -- Decodo answers 522 now and then -- is one
+            # bad exit, so retry on a new IP and, failing that, give only this
+            # video to Whisper.
+            if "407" in reason:
+                _pause_captions(f"The caption proxy refused the request ({reason})", proxied)
+                return None
+            if attempt + 1 < attempts:
+                print(f"Caption proxy failed for {video_id} ({reason}); retrying on a new IP")
+                continue
+            print(f"Caption proxy failed for {video_id} again ({reason}); Whisper for this video")
             return None
         except CaptionsBlocked:
             if attempt + 1 < attempts:
