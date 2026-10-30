@@ -49,3 +49,11 @@ lyrics-musixmatch es https://www.musixmatch.com/es/letras/Bad-Bunny/Titi-Me-Preg
 lyrics-genius es https://genius.com/Bad-bunny-titi-me-pregunto-lyrics
 lyrics-letras es https://www.letras.com/bad-bunny/titi-me-pregunto/
 lyrics-azlyrics es https://www.azlyrics.com/lyrics/badbunny/titimepregunto.html
+# Songs that broke it: Genius's About text winning over the lyrics, Genius
+# ads between sections, Musixmatch credits and tracking pixel, a Musixmatch
+# page with notes but no lyrics, and Letras' list of the artist's songs.
+lyrics-genius-ads es https://genius.com/Bizarrap-and-shakira-shakira-bzrp-music-sessions-vol-53-66-lyrics
+lyrics-genius-about es https://genius.com/Rosalia-despecha-lyrics
+lyrics-musixmatch-credits es https://www.musixmatch.com/lyrics/Bad-Bunny-Bomba-Est%C3%A9reo/Ojitos-Lindos
+lyrics-musixmatch-missing es https://www.musixmatch.com/lyrics/Bizarrap-Shakira/Shakira-Bzrp-Music-Sessions-Vol-53 none
+lyrics-letras-others es https://www.letras.com/luis-miguel/108666/

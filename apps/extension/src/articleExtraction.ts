@@ -538,7 +538,9 @@ const nameOf = (value: unknown): string | null =>
 function declaredSong(doc: Document): Song | null {
   const recording = declared(doc, 'MusicRecording');
   if (!recording) return null;
-  return { name: nameOf(recording), artist: nameOf(([] as unknown[]).concat(recording.byArtist)[0]) };
+  // Genius lists every artist of a duet or a feature.
+  const artists = ([] as unknown[]).concat(recording.byArtist).map(nameOf).filter(Boolean);
+  return { name: nameOf(recording), artist: artists.join(' & ') || null };
 }
 
 const LYRICS_WORDS = /\b(lyrics|letras?|testo|paroles|songtext)( (de|di|von|by)\b)?/gi;
@@ -559,9 +561,14 @@ function songFromTitle(title: string | null): Song {
 
 /** Longer than this, a one-line paragraph on a lyrics page is prose, not a line. */
 const MAX_LINE_WORDS = 20;
+/** A line this long that ends with a full stop is a sentence. */
+const MIN_SENTENCE_WORDS = 8;
 
 /** "verse", plus who sings it: "Bad Bunny & Jhay Cortez". */
 const MAX_LABEL_WORDS = 8;
+
+/** Credit lines, which Musixmatch puts after the lyrics: "Writer(s): …". */
+const CREDITS = /^(writer\(s\)|writers?|written by|songwriters?|composers?|escrit[ao]s? por|compuest[ao]s? por|compositor(es)?|autor(es)?)\s*:/i;
 
 /** Genius's section labels, a line of their own: "[Coro: Bad Bunny]". */
 const SECTION_LABEL = /^\[[^\]]*\]$/;
@@ -576,8 +583,12 @@ const SECTION_LABEL = /^\[[^\]]*\]$/;
  */
 function shapeLyrics(root: ParentNode): void {
   // Links in lyrics are annotations (Genius), and a stanza that is all
-  // annotation would go as a list of links.
-  root.querySelectorAll('a').forEach((a) => a.replaceWith(...Array.from(a.childNodes)));
+  // annotation would go as a list of links. Links elsewhere stay, so a list
+  // of the artist's other songs still goes as one.
+  root.querySelectorAll('p a').forEach((a) => a.replaceWith(...Array.from(a.childNodes)));
+  // Lyrics are never lists, tables or pictures: those are other songs,
+  // credits, album covers and tracking pixels.
+  root.querySelectorAll('ul, ol, dl, table, figure, picture, img').forEach((el) => el.remove());
   // A heading names a section or repeats the title. Musixmatch puts the
   // section's singer beside its label, so the small box around it goes too.
   root.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((heading) => {
@@ -586,7 +597,62 @@ function shapeLyrics(root: ParentNode): void {
     label.remove();
   });
   joinLinesIntoStanzas(root);
-  root.querySelectorAll('p').forEach(removeLabelLines);
+  root.querySelectorAll('p').forEach((p) => {
+    if (CREDITS.test((p.textContent || '').trim())) p.remove();
+    else removeLabelLines(p);
+  });
+}
+
+/**
+ * Words in stanzas (paragraphs of two lines or more) against all words.
+ * Low when the page had no lyrics or the extractor took its prose instead,
+ * such as Genius's "About" section.
+ */
+function stanzaShare(root: ParentNode): number {
+  const all = wordsIn(root.textContent || '');
+  if (all === 0) return 0;
+  const inStanzas = Array.from(root.querySelectorAll('p'))
+    .filter((p) => p.querySelector('br'))
+    .reduce((sum, p) => sum + wordsIn(p.textContent || ''), 0);
+  return inStanzas / all;
+}
+
+const MIN_STANZA_SHARE = 0.5;
+
+/**
+ * The page's lyrics as lines: every element that splits its text into three
+ * lines or more with <br>s, outermost only. A stanza ends at a blank line or
+ * at a block between lines: Genius puts its header in the first such block,
+ * and an ad between sections instead of a blank line.
+ */
+function lineBlocks(doc: Document): string {
+  if (!doc.body) return '';
+  const container = doc.createElement('div');
+  const blocks = Array.from(doc.body.getElementsByTagName('*'))
+    .filter((el) => Array.from(el.children).filter((child) => child.tagName === 'BR').length >= 2);
+  for (const block of blocks.filter((el) => !blocks.some((other) => other !== el && other.contains(el)))) {
+    let stanza = doc.createElement('p');
+    let lineEnded = false;
+    const endStanza = () => {
+      if (stanza.hasChildNodes()) container.append(stanza);
+      stanza = doc.createElement('p');
+      lineEnded = false;
+    };
+    for (const node of Array.from(block.childNodes)) {
+      if (node.nodeName === 'BR') {
+        if (lineEnded) endStanza();
+        else lineEnded = true;
+      } else if (node.nodeType === 1 && (node as Element).matches(BLOCKS)) {
+        endStanza();
+      } else if (node.nodeType !== 3 || node.textContent?.trim()) {
+        if (lineEnded && stanza.hasChildNodes()) stanza.append(doc.createElement('br'));
+        lineEnded = false;
+        stanza.append(node.cloneNode(true));
+      }
+    }
+    endStanza();
+  }
+  return container.innerHTML;
 }
 
 /**
@@ -601,8 +667,11 @@ function joinLinesIntoStanzas(root: ParentNode): void {
     return el;
   };
   const isLine = (p: Element) => {
-    const words = wordsIn(p.textContent || '');
-    return p.tagName === 'P' && !p.querySelector('br') && words > 0 && words <= MAX_LINE_WORDS;
+    const text = (p.textContent || '').trim();
+    const words = wordsIn(text);
+    if (p.tagName !== 'P' || p.querySelector('br') || words === 0 || words > MAX_LINE_WORDS) return false;
+    // A sentence, as in notes about the song, ends with a full stop.
+    return !(words >= MIN_SENTENCE_WORDS && /[^.]\.$/.test(text));
   };
   let stanza: Element | null = null;
   let section: Element | null = null;
@@ -623,12 +692,23 @@ function joinLinesIntoStanzas(root: ParentNode): void {
   }
 }
 
+/** Removes label lines. One inside a stanza starts a new stanza there. */
 function removeLabelLines(stanza: Element): void {
   let line: ChildNode[] = [];
+  let before: ChildNode[] = [];
   const endLine = (br: ChildNode | null) => {
     if (SECTION_LABEL.test(line.map((node) => node.textContent).join('').trim())) {
       line.forEach((node) => node.remove());
       br?.remove();
+      if (before.some((node) => node.textContent?.trim())) {
+        if (before[before.length - 1].nodeName === 'BR') before.pop()?.remove();
+        const previous = stanza.ownerDocument.createElement('p');
+        previous.append(...before);
+        stanza.before(previous);
+      }
+      before = [];
+    } else {
+      before.push(...line, ...(br ? [br] : []));
     }
     line = [];
   };
@@ -656,17 +736,27 @@ export function extractArticle(doc: Document, options: ExtractOptions): ArticleD
   const clone = cloneWithoutLayoutFurniture(doc, options.layout);
   prune(clone);
   markPromotions(clone);
+  const isSong = Boolean(declared(doc, 'MusicRecording')) || isLyricsPage(options.url);
+  // Taken before Readability, which changes the document it reads.
+  const lines = isSong ? lineBlocks(clone) : '';
 
   const parsed = new Readability(clone, { charThreshold: MIN_ARTICLE_CHARS }).parse();
   if (!parsed?.content) return null;
 
   const siteName = parsed.siteName || null;
   const pageTitle = cleanTitle(parsed.title, siteName || hostOf(options.url));
-  const song = declaredSong(doc) ?? (isLyricsPage(options.url) ? songFromTitle(pageTitle) : null);
+  const song = isSong ? declaredSong(doc) ?? songFromTitle(pageTitle) : null;
   const title = song?.name || pageTitle;
-  const content = withIngredients(normalize(parsed.content, title, Boolean(song)), recipeIngredients(doc), doc);
   const probe = doc.createElement('template');
+  let content = withIngredients(normalize(parsed.content, title, isSong), recipeIngredients(doc), doc);
   probe.innerHTML = content;
+  if (isSong && stanzaShare(probe.content) < MIN_STANZA_SHARE) {
+    // Prose instead of lyrics: the page's lines, or no song at all (a page
+    // whose lyrics are missing, with only notes about them).
+    content = normalize(lines, title, true);
+    probe.innerHTML = content;
+    if (stanzaShare(probe.content) < MIN_STANZA_SHARE) return null;
+  }
   if (wordsIn(probe.content.textContent || '') < MIN_ARTICLE_WORDS) return null;
 
   return {
@@ -675,7 +765,7 @@ export function extractArticle(doc: Document, options: ExtractOptions): ArticleD
     byline: (song ? song.artist : null) || parsed.byline || null,
     siteName,
     url: options.url,
-    kind: song ? 'song' : 'article',
+    kind: isSong ? 'song' : 'article',
   };
 }
 

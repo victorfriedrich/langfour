@@ -186,10 +186,15 @@ describe('extractArticle on lyrics pages', () => {
   ];
   const RECORDING = { '@context': 'https://schema.org', '@type': 'MusicRecording', name: 'Calle de noche', byArtist: { '@type': 'MusicGroup', name: 'Los Ejemplos' } };
 
-  function songPage(body: string, { url = 'https://www.lyrics-example.com/los-ejemplos/calle', title = 'Letra de Los Ejemplos - Calle de noche | Ejemplo', data = true } = {}) {
-    const head = data ? `<script type="application/ld+json">${JSON.stringify(RECORDING)}</script>` : '';
-    const doc = new DOMParser().parseFromString(`<!doctype html><html lang="es"><head><title>${title}</title>${head}</head><body><main>${body}</main></body></html>`, 'text/html');
-    const article = extractArticle(doc, { url });
+  type SongOptions = { title?: string; data?: boolean; recording?: object };
+
+  function songDoc(body: string, { title = 'Letra de Los Ejemplos - Calle de noche | Ejemplo', data = true, recording = RECORDING as object }: SongOptions = {}) {
+    const head = data ? `<script type="application/ld+json">${JSON.stringify(recording)}</script>` : '';
+    return new DOMParser().parseFromString(`<!doctype html><html lang="es"><head><title>${title}</title>${head}</head><body><main>${body}</main></body></html>`, 'text/html');
+  }
+
+  function songPage(body: string, { url = 'https://www.lyrics-example.com/los-ejemplos/calle', ...options }: SongOptions & { url?: string } = {}) {
+    const article = extractArticle(songDoc(body, options), { url });
     expect(article).not.toBeNull();
     const content = new DOMParser().parseFromString(`<div>${article!.content}</div>`, 'text/html').body;
     const stanzas = Array.from(content.querySelectorAll('p')).map((p) => p.innerHTML.split('<br>').map((line) => line.trim()));
@@ -222,6 +227,36 @@ describe('extractArticle on lyrics pages', () => {
       url: 'https://www.azlyrics.com/lyrics/losejemplos/calle.html', title: 'Los Ejemplos - Letra de "Calle de noche" | Lyrics at AZLyrics.com', data: false,
     });
     expect(article).toMatchObject({ title: 'Calle de noche', byline: 'Los Ejemplos', kind: 'song' });
+  });
+
+  it('names every artist of a duet', () => {
+    const recording = { ...RECORDING, byArtist: [{ '@type': 'MusicGroup', name: 'Los Ejemplos' }, { '@type': 'MusicGroup', name: 'Ana Prueba' }] };
+    const { article } = songPage(STANZAS.map((lines) => `<p>${lines.join('<br>')}</p>`).join(''), { recording });
+    expect(article.byline).toBe('Los Ejemplos & Ana Prueba');
+  });
+
+  it('starts a new stanza at a label inside one', () => {
+    const { stanzas } = songPage(`<p>[Verso]<br>${STANZAS[0].join('<br>')}<br>[Coro]<br>${STANZAS[1].join('<br>')}</p>`);
+    expect(stanzas).toEqual(STANZAS);
+  });
+
+  it('drops credits, lists of other songs and pictures', () => {
+    const others = ['Otra canción', 'Una más', 'La última'].map((name) => `<li><a href="/los-ejemplos/${name}/">${name}</a></li>`).join('');
+    const { content, stanzas } = songPage(`${STANZAS.map((lines) => `<p>${lines.join('<br>')}</p>`).join('')}<p>Writer(s): Ana Prueba, Beto Ejemplo</p><img src="https://t.example/pixel.gif"><ul>${others}</ul>`);
+    expect(stanzas).toEqual(STANZAS);
+    expect(content.querySelector('li, img')).toBeNull();
+  });
+
+  it('takes the lines when the extractor picks prose about the song instead', () => {
+    // Genius: a header and ads inside the lyrics, next to an "About" text.
+    const lyrics = `<div><div><span>3 Contributors</span></div>[Verso 1]<br>${STANZAS[0].join('<br>')}<br><div><script></script></div>[Coro]<br>${STANZAS[1].join('<br>')}</div>`;
+    const { content, stanzas } = songPage(`${lyrics}<section><h2>Sobre la canción</h2>${paragraphs()}${paragraphs()}</section>`);
+    expect(stanzas).toEqual(STANZAS);
+    expect(content.textContent).not.toContain('bibliotecas');
+  });
+
+  it('says there is no song when the page has none, only notes about it', () => {
+    expect(extractArticle(songDoc(paragraphs()), { url: 'https://www.lyrics-example.com/los-ejemplos/calle' })).toBeNull();
   });
 
   it('leaves articles alone', () => {
