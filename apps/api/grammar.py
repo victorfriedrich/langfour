@@ -27,6 +27,10 @@ of its verbs (learned_bar() below). Answers to choice and fill-in exercises are
 logged as 'recognized' and don't count. A receptive concept is learned when
 it's seen in a text, and one the user says they know, at once.
 
+Every mistake is kept: a wrong answer flags its concept with the date and the
+AI app's short note, also in chapters the user hasn't reached, until they next
+use the concept correctly. The overview lists the flagged concepts to revise.
+
 The refresh rule (practise() below):
   - once learned: the interval is the concept's base (30, 14 or 7 days for
     easy, medium, hard), and the refresh date that far out;
@@ -62,6 +66,7 @@ MIN_CORRECT = 2  # correct sentences before a concept counts as learned
 
 MAX_DETAIL_CHAPTERS = 3
 MAX_DETAIL_CONCEPTS = 10
+MAX_REVISE = 10  # flagged mistakes the overview lists, newest first
 
 State = Literal["not yet", "studied", "fresh", "fading"]
 ChapterStatus = Literal["not started", "started", "done"]
@@ -282,9 +287,11 @@ class Progress:
     error_count: int = 0
     correct_count: int = 0                 # correct sentences, self-reports not included
     forms_produced: tuple[str, ...] = ()   # the concept's forms used correctly, sorted
+    mistake_at: datetime | None = None     # the last mistake, until the next correct use
+    mistake_note: str | None = None
 
     _TIMES = ("first_correct_at", "learned_at", "last_seen_at", "last_produced_at",
-              "interval_grown_at", "refresh_at")
+              "interval_grown_at", "refresh_at", "mistake_at")
 
     @classmethod
     def from_row(cls, row: dict) -> "Progress":
@@ -293,7 +300,8 @@ class Progress:
                    produced_count=row.get("produced_count") or 0,
                    error_count=row.get("error_count") or 0,
                    correct_count=row.get("correct_count") or 0,
-                   forms_produced=tuple(row.get("forms_produced") or ()))
+                   forms_produced=tuple(row.get("forms_produced") or ()),
+                   mistake_note=row.get("mistake_note"))
 
     def to_row(self) -> dict:
         row = {k: (getattr(self, k).isoformat() if getattr(self, k) else None)
@@ -301,7 +309,16 @@ class Progress:
         return row | {"interval_days": self.interval_days,
                       "produced_count": self.produced_count, "error_count": self.error_count,
                       "correct_count": self.correct_count,
-                      "forms_produced": list(self.forms_produced)}
+                      "forms_produced": list(self.forms_produced),
+                      "mistake_note": self.mistake_note}
+
+    @property
+    def mistake(self) -> str | None:
+        """The flagged mistake for the AI app: its date and note."""
+        if not self.mistake_at:
+            return None
+        return f"{self.mistake_at.date().isoformat()}: {self.mistake_note or 'no note'}"
+
 
 
 def state(progress: Progress | None, chapter_status: ChapterStatus, now: datetime) -> State:
@@ -357,17 +374,21 @@ def to_learn(p: Progress | None, concept: Concept) -> str | None:
 
 
 def practise(p: Progress, concept: Concept, kind: Kind, correct: bool | None, now: datetime,
-             forms: set[str] = frozenset(), self_reported: bool = False) -> Progress:
+             forms: set[str] = frozenset(), self_reported: bool = False,
+             note: str | None = None) -> Progress:
     """The progress after one result; see the module docstring for the rule."""
+    if correct is False:
+        p = replace(p, mistake_at=now, mistake_note=note)
     if kind == "recognized":
-        return p  # logged as an event; choosing a form isn't using it
+        return p  # choosing a form isn't using it; only a wrong choice is kept
     if kind == "produced":
         p = replace(p, last_produced_at=now, produced_count=p.produced_count + 1,
                     error_count=p.error_count + (0 if correct else 1))
         if correct and not self_reported:
             p = replace(p, first_correct_at=p.first_correct_at or now,
                         correct_count=p.correct_count + 1,
-                        forms_produced=tuple(sorted(set(p.forms_produced) | forms)))
+                        forms_produced=tuple(sorted(set(p.forms_produced) | forms)),
+                        mistake_at=None, mistake_note=None)
     else:
         p = replace(p, last_seen_at=now)
 
@@ -420,6 +441,7 @@ class ConceptSummary(BaseModel):
     variety: Literal["spain", "latam"] | None
     chunk: bool
     to_learn: str | None  # what's left before it counts as learned; None once it is
+    mistake: str | None   # the flagged mistake to revise: its date and note
 
 
 class ConceptDetail(ConceptSummary):
@@ -466,6 +488,11 @@ class GrammarResult(BaseModel):
     sentence: str | None = Field(
         None, max_length=300,
         description="For 'produced': the user's whole sentence, exactly as they wrote it.")
+    note: str | None = Field(
+        None, max_length=200,
+        description="For a wrong result: a short note for whoever revises it later, saying "
+                    "what the user wrote and what was right, e.g. 'lo for la factura: the "
+                    "pronoun agrees with the feminine noun'.")
 
     @model_validator(mode="after")
     def _check(self):
@@ -475,6 +502,8 @@ class GrammarResult(BaseModel):
             raise ValueError("self_reported is for a correct 'produced' result only")
         if self.kind == "produced" and not self.self_reported and not self.sentence:
             raise ValueError("a 'produced' result needs the user's sentence")
+        if self.note and self.correct is not False:
+            raise ValueError("note is for a wrong result only")
         return self
 
 
@@ -655,6 +684,7 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
     chapters, progress = _user_state(store, user_id, cur)
     mark = {"done": "✓", "started": "→", "not started": "·"}
     lines, level, fading_total = [], None, 0
+    flagged = sorted(((p.mistake_at, i) for i, p in progress.items() if p.mistake_at), reverse=True)
     for ch in cur.chapters:
         if ch.level != level:
             level = ch.level
@@ -678,11 +708,17 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
         f"{LANGUAGE_NAMES.get(language, language)} grammar, {levels}, "
         f"{len(cur.chapters)} chapters in teaching order. "
         f"Started: {', '.join(c.id for c in started) or 'none'}. Done: {done}. "
-        f"Fading concepts: {fading_total}.",
+        f"Fading concepts: {fading_total}. Mistakes to revise: {len(flagged)}.",
         "Key: ✓ done, → started, · not started. 'learned' counts concepts that met the bar "
         "(the guide's 'When a concept is learned'); fading ones are due to be worked back in. "
         "get_grammar_details lists a chapter's concepts and what each still needs.",
     ]
+    if flagged:
+        head += ["", "TO REVISE (the user's mistakes, newest first; the guide's 'Revising mistakes')"]
+        for _, i in flagged[:MAX_REVISE]:
+            c = cur.concept[i]
+            reached = "" if _status(chapters, c.chapter_id) != "not started" else "  (chapter not started)"
+            head.append(f"{i}  {progress[i].mistake}{reached}")
     return GrammarOverview(language=language, overview="\n".join(head + lines),
                            guide=teaching_guide())
 
@@ -690,7 +726,8 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
 def _summary(c: Concept, s: State, p: Progress | None) -> dict:
     return {"id": c.id, "title": c.title, "scope": c.scope, "state": s,
             "mode": c.mode, "variety": c.variety, "chunk": c.chunk,
-            "to_learn": to_learn(p, c) if s != "not yet" else None}
+            "to_learn": to_learn(p, c) if s != "not yet" else None,
+            "mistake": p.mistake if p else None}
 
 
 def get_details(store: GrammarStore, user_id: str, language: str | None,
@@ -782,14 +819,16 @@ def _record_once(store: GrammarStore, user_id: str, language: str, results: list
                 continue
             counted.add(key)
         before.setdefault(c.id, state(progress.get(c.id), old_status[c.chapter_id], now))
-        if r.kind == "produced":
-            # Using a concept means its chapter is open, whatever the app said.
+        if r.kind == "produced" and r.correct:
+            # Using a concept means its chapter is open, whatever the app said. A
+            # mistake in grammar the user hasn't reached is only kept for later.
             set_chapter(c.chapter_id, "started")
         touched[c.id] = practise(touched.get(c.id) or progress.get(c.id) or Progress(),
                                  c, r.kind, r.correct, now, forms_in(r.sentence, c),
-                                 r.self_reported)
+                                 r.self_reported, r.note)
         events.append({"concept_id": c.id, "kind": r.kind, "correct": r.correct,
-                       "self_reported": r.self_reported, "sentence": r.sentence})
+                       "self_reported": r.self_reported, "sentence": r.sentence,
+                       "note": r.note})
 
     # A chapter is done once every concept that counts is learned, or the user says so.
     not_done = []

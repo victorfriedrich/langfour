@@ -68,6 +68,14 @@ alter table public.user_grammar_concepts
     add column if not exists correct_count  integer not null default 0,
     add column if not exists forms_produced text[] not null default '{}';
 
+-- Every mistake flags its concept until the next correct use, with the AI
+-- app's short note for whoever revises it; the event keeps the note for good.
+alter table public.user_grammar_concepts
+    add column if not exists mistake_at   timestamptz,
+    add column if not exists mistake_note text check (char_length(mistake_note) <= 200);
+alter table public.grammar_events
+    add column if not exists note text check (char_length(note) <= 200);
+
 alter table public.grammar_events drop constraint if exists grammar_events_kind_check;
 alter table public.grammar_events add constraint grammar_events_kind_check
     check (kind in ('seen', 'recognized', 'produced'));
@@ -103,7 +111,7 @@ revoke insert, update, delete, truncate on public.grammar_events from anon, auth
 
 -- One session's report, in one transaction. Every argument is a JSON array of
 -- rows the API already computed:
---   p_events    [{concept_id, kind, correct, self_reported, sentence}]
+--   p_events    [{concept_id, kind, correct, self_reported, sentence, note}]
 --   p_concepts  full user_grammar_concepts rows, minus user_id
 --   p_chapters  full user_grammar_chapters rows, minus user_id
 -- Each concept/chapter row includes `previous`: the row read by the API, or
@@ -170,22 +178,24 @@ begin
     insert into public.user_grammar_concepts (
         user_id, concept_id, first_correct_at, learned_at, last_seen_at, last_produced_at,
         interval_days, interval_grown_at, refresh_at, produced_count, error_count,
-        correct_count, forms_produced)
+        correct_count, forms_produced, mistake_at, mistake_note)
     select p_user_id, r.concept_id, r.first_correct_at, r.learned_at, r.last_seen_at,
            r.last_produced_at, r.interval_days, r.interval_grown_at, r.refresh_at,
            r.produced_count, r.error_count, coalesce(r.correct_count, 0),
-           coalesce(r.forms_produced, '{}')
+           coalesce(r.forms_produced, '{}'), r.mistake_at, r.mistake_note
     from jsonb_to_recordset(p_concepts)
          as r(concept_id text, first_correct_at timestamptz, learned_at timestamptz,
               last_seen_at timestamptz, last_produced_at timestamptz, interval_days integer,
               interval_grown_at timestamptz, refresh_at timestamptz,
               produced_count integer, error_count integer, correct_count integer,
-              forms_produced text[])
+              forms_produced text[], mistake_at timestamptz, mistake_note text)
     on conflict (user_id, concept_id) do update
         set first_correct_at = excluded.first_correct_at,
             learned_at = excluded.learned_at,
             correct_count = excluded.correct_count,
             forms_produced = excluded.forms_produced,
+            mistake_at = excluded.mistake_at,
+            mistake_note = excluded.mistake_note,
             last_seen_at = excluded.last_seen_at,
             last_produced_at = excluded.last_produced_at,
             interval_days = excluded.interval_days,
@@ -195,11 +205,12 @@ begin
             error_count = excluded.error_count;
 
     insert into public.grammar_events (user_id, concept_id, kind, correct, self_reported,
-                                       sentence, source)
+                                       sentence, note, source)
     select p_user_id, r.concept_id, r.kind, r.correct, coalesce(r.self_reported, false),
-           r.sentence, 'chatgpt'
+           r.sentence, r.note, 'chatgpt'
     from jsonb_to_recordset(p_events)
-         as r(concept_id text, kind text, correct boolean, self_reported boolean, sentence text);
+         as r(concept_id text, kind text, correct boolean, self_reported boolean, sentence text,
+              note text);
     get diagnostics v_inserted = row_count;
 
     return v_inserted;

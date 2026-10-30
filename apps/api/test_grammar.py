@@ -485,3 +485,57 @@ def test_the_book_and_lessons_use_the_ui_copy():
     lesson = grammar.get_lesson(FakeStore(), USER, "es", "es.ser", NOW)
     assert lesson.concepts[0].description == copy["es.ser.forms"].description
     assert lesson.concepts[1].see[0].title == copy[lesson.concepts[1].see[0].id].title
+
+
+# ---------------------------------------------------------------------------
+# Mistakes to revise
+# ---------------------------------------------------------------------------
+
+LO = ES.concept["es.objeto_directo.forms"]
+
+
+def test_a_mistake_is_flagged_with_its_note_until_the_next_correct_use():
+    p = grammar.practise(Progress(), LO, "produced", False, NOW, note="lo for la factura")
+    assert (p.mistake_at, p.mistake) == (NOW, "2026-10-29: lo for la factura")
+    p = grammar.practise(p, LO, "recognized", True, NOW + DAY)
+    assert p.mistake_at == NOW  # choosing right isn't using it
+    p = grammar.practise(p, LO, "produced", True, NOW + DAY)
+    assert (p.mistake_at, p.mistake_note) == (None, None)
+    wrong_choice = grammar.practise(Progress(), LO, "recognized", False, NOW, note="lo for la")
+    assert wrong_choice.mistake_note == "lo for la"
+
+
+def test_a_mistake_in_an_unreached_chapter_is_kept_without_starting_it():
+    store = FakeStore()
+    out = grammar.record(store, USER, "es", [
+        GrammarResult(concept=LO.id, kind="produced", correct=False,
+                      sentence="Los clientes pidieron una factura y lo busqué.",
+                      note="lo for la factura: the pronoun agrees with the feminine noun"),
+    ], [], NOW)
+    _, [event], [progress], chapters = store.recorded
+    assert chapters == [] and out.changed == []
+    assert event["note"].startswith("lo for la factura")
+    assert progress["mistake_note"].startswith("lo for la factura")
+    assert progress["mistake_at"] == NOW.isoformat()
+
+
+def test_the_overview_lists_mistakes_to_revise_newest_first():
+    old = grammar.practise(Progress(), SER, "produced", False, NOW - DAY, note="es for está")
+    new = grammar.practise(Progress(), LO, "produced", False, NOW, note="lo for la")
+    store = FakeStore(chapters=[{"chapter_id": SER.chapter_id, "status": "started",
+                                 "started_at": NOW.isoformat(), "finished_at": None}],
+                      concepts=[{"concept_id": SER.id, **old.to_row()},
+                                {"concept_id": LO.id, **new.to_row()}])
+    lines = grammar.get_overview(store, USER, "es", NOW).overview.splitlines()
+    assert "Mistakes to revise: 2." in lines[0]
+    at = lines.index(next(line for line in lines if line.startswith("TO REVISE")))
+    assert lines[at + 1] == f"{LO.id}  2026-10-29: lo for la  (chapter not started)"
+    assert lines[at + 2] == f"{SER.id}  2026-10-28: es for está"
+    [concept] = grammar.get_details(store, USER, "es", [], [LO.id], NOW).concepts
+    assert concept.mistake == "2026-10-29: lo for la"
+
+
+def test_a_note_is_for_wrong_results_only():
+    with pytest.raises(ValidationError):
+        GrammarResult(concept=LO.id, kind="produced", correct=True, sentence="La busqué.",
+                      note="fine")

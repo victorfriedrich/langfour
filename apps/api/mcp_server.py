@@ -198,8 +198,9 @@ def set_word_status_tool(
 ))
 def get_grammar_overview_tool(ctx: Context, language: Language | None = None) -> GrammarOverview:
     """Where the user is in their grammar book: every chapter in teaching order, which
-    ones they started or finished, how many concepts they've practised and how many are
-    fading (due to be worked back in), plus a guide for teaching from it.
+    ones they started or finished, how many concepts they've learned and how many are
+    fading (due to be worked back in), the mistakes they made that are still to revise,
+    with a note on each, plus a guide for teaching from it.
 
     Call it once at the start of a session in which you'll write in the language for the
     user or teach them grammar, and follow the guide. language is an ISO code; leave it
@@ -246,6 +247,10 @@ def record_grammar_tool(
     choice or fill-in exercise; it's logged but doesn't count toward learning. 'seen': a
     concept you used on purpose in a text the user read (the one you taught, or a fading
     one you worked in), not every rule a text happens to contain.
+
+    Record every grammar mistake the user makes, in any concept, including chapters they
+    haven't started (look the concept up with get_grammar_details), as a wrong result
+    with a short note. It stays flagged for revision until they next use it correctly.
 
     A concept is learned only after enough correct sentences covering enough of its
     forms; to_learn says what each practised concept still needs. Never tell the user a

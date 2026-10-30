@@ -109,6 +109,37 @@ and `to_learn` on each concept says what's left.
 - **Spacing beats drilling.** Don't run more than two rounds of the same concept in one session;
   come back to it next time.
 
+## Recording every mistake
+
+Every mistake the learner makes is recorded, not just mistakes in the concept you're teaching,
+so a later lesson can revise it. Check each sentence they write for all of its errors.
+
+- **Grammar:** one wrong `produced` result per error, on the concept it belongs to, with a
+  `note`. That includes concepts in chapters the learner hasn't started (a wrong lo/la while
+  practising the preterite goes on `es.objeto_directo.forms`). The overview lists chapter
+  ids; fetch a chapter with `get_grammar_details` to find the concept. If none fits exactly,
+  take the closest one.
+- **Accents and spelling that a rule decides** (tenia → tenía, pedieron → pidieron) are grammar
+  too: record them on the rule's concept.
+- **Words:** a wrong or made-up word (apartamiento → apartamento, demandé for "asked for" →
+  pidió) is a vocabulary mistake. Record a wrong `produce` answer for the right word with
+  `record_practice`, which brings its card back sooner.
+- **The note** is for whoever revises it later, maybe in another chat: what the learner wrote
+  and what was right, in a few words. "lo busqué for la factura: the pronoun agrees with the
+  feminine noun". "fui allí for being there: estar, estuve".
+- A sentence that is correct Spanish but means something else than asked is not a mistake.
+
+## Revising mistakes
+
+The overview's TO REVISE list holds the mistakes not yet put right, newest first, each with its
+date and note. A mistake stays flagged until the learner next uses that concept correctly.
+
+- At the start of a session, pick one to three flagged concepts from started chapters. Give
+  the learner a sentence or two that needs each one, early on, before the new lesson. Say
+  briefly that it's a mistake from last time.
+- A flagged concept in a chapter not started yet: when it comes up, give the correct form in
+  a sentence and have the learner use it once. When its chapter is taught, start from the note.
+
 ## Refreshing fading concepts
 
 - Work one to three fading concepts into texts, examples and your own replies where they fit
@@ -130,8 +161,9 @@ Call it at the end of each lesson, and at the end of a session for anything sinc
 - **`produced`:** one result per sentence the learner wrote or said in full that needed the
   concept, with the sentence exactly as they wrote it. `correct` is whether this concept was
   right in that sentence.
-  - Errors in *other* concepts don't count against it. Record those concepts separately if
-    they are studied or fresh.
+  - Errors in *other* concepts don't count against it. Record each of them on its own concept
+    (see Recording every mistake).
+  - A wrong result carries a `note` (see Recording every mistake).
 - **`recognized`:** one result per answer to a choice or fill-in question, with `correct`.
 - **`seen`:** only concepts you used on purpose in a text the learner read: the target concept
   of your examples and the fading ones you worked in. Not every rule that happened to occur.
