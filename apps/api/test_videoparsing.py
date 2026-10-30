@@ -418,3 +418,18 @@ def test_the_caption_retry_after_a_block_takes_a_new_ip(captions):
     captions.setattr(vp, "fetch_transcript", blocking(calls, failures=1))
     assert vp.caption_text({"id": "v1"}, "es", proxied=True, proxy="http://given:1") == SPANISH
     assert calls[0][1] == "http://given:1" and calls[1][1] != "http://given:1"
+
+
+@pytest.mark.parametrize("reply,expected", [
+    (" hola ", "hola"),
+    (type("T", (), {"text": "hola "})(), "hola"),
+    (15, "15"),                     # a piece that is only a number, parsed as JSON
+])
+def test_whisper_accepts_every_shape_the_transcription_reply_takes(monkeypatch, tmp_path, reply, expected):
+    audio = tmp_path / "piece.m4a"
+    audio.write_bytes(b"")
+    client = type("C", (), {})()
+    client.audio = type("A", (), {})()
+    client.audio.transcriptions = type("T", (), {"create": staticmethod(lambda **k: reply)})()
+    monkeypatch.setattr(vp, "transcription_client", lambda: client)
+    assert vp.whisper(str(audio), "es") == expected

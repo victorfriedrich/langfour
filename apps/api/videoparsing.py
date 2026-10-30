@@ -178,8 +178,11 @@ def whisper(audio_file: str, language: str) -> str:
             with open(audio_file, "rb") as fh:
                 result = transcription_client().audio.transcriptions.create(
                     model=MODEL_TRANSCRIBE, file=fh, response_format="text", language=language)
-            # A bare string on OpenAI; DeepInfra may return an object instead.
-            return (result if isinstance(result, str) else result.text).strip()
+            # A bare string on OpenAI; DeepInfra may return an object instead,
+            # and a piece that is only a number ("15", in a video counting to
+            # 100) comes back parsed as an int.
+            return str(result if isinstance(result, str | int | float)
+                       else result.text).strip()
         except Exception:
             if attempt == 2:
                 raise
