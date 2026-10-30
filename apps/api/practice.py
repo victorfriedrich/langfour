@@ -64,6 +64,16 @@ class PracticeAnswer(BaseModel):
     self_reported: bool = Field(
         False, description="True when the user told you how they'd do (e.g. 'I can read "
                            "these') instead of answering a question.")
+    note: str | None = Field(
+        None, max_length=200,
+        description="For a wrong answer: what the user wrote instead, for whoever revises "
+                    "it later, e.g. 'wrote apartamiento for flat'.")
+
+    @model_validator(mode="after")
+    def _note_for_wrong(self):
+        if self.note and self.correct:
+            raise ValueError("note is for a wrong answer only")
+        return self
 
 
 class PracticeRequest(BaseModel):
@@ -75,6 +85,7 @@ class PracticeSummary(BaseModel):
     recorded: int        # answers logged as events
     applied: int         # results already on a card (Langfour schedules the user)
     queued: int          # results on their way to a card in a connected app (RemNote)
+    flagged: list[str]   # words answered wrong: listed to revise until answered right
     not_found: list[str] # words not in the dictionary, so not recorded
 
 
@@ -237,7 +248,9 @@ def record_practice(store: PracticeStore, user_id: str, req: PracticeRequest,
         {"user_id": user_id, "word_id": word_id,
          "kind": "recall_correct" if a.correct else "recall_wrong",
          "source": SOURCE, "occurred_at": now.isoformat(),
-         "context": {"direction": a.direction, **({"self_reported": True} if a.self_reported else {})}}
+         "context": {"direction": a.direction,
+                     **({"self_reported": True} if a.self_reported else {}),
+                     **({"note": a.note} if a.note else {})}}
         for a, word_id in answers
     ])
 
@@ -275,6 +288,7 @@ def record_practice(store: PracticeStore, user_id: str, req: PracticeRequest,
         recorded=len(event_ids),
         applied=applied,
         queued=len(chosen) if provider != "langfour" else 0,
+        flagged=list(dict.fromkeys(a.word.strip() for a, _ in answers if not a.correct)),
         not_found=[w for w in words if w not in ids],
     )
 

@@ -141,7 +141,7 @@ def test_every_answer_is_logged_and_unknown_words_are_reported():
         ("hablar", "recognize", True), ("Casa ", "produce", False), ("xyzzy", "recognize", True),
     ), now=NOW)
 
-    assert (summary.recorded, summary.not_found) == (2, ["xyzzy"])
+    assert (summary.recorded, summary.not_found, summary.flagged) == (2, ["xyzzy"], ["Casa"])
     assert [(e["word_id"], e["kind"], e["source"]) for e in store.events] == [
         (1, "recall_correct", "chatgpt"), (2, "recall_wrong", "chatgpt")]
     assert store.events[1]["context"] == {"direction": "produce"}
@@ -156,6 +156,17 @@ def test_self_reported_answers_are_marked_in_the_event():
     assert summary.recorded == 1
     assert store.events[0]["kind"] == "recall_correct"
     assert store.events[0]["context"] == {"direction": "recognize", "self_reported": True}
+
+
+def test_a_wrong_answer_keeps_its_note_and_a_right_one_cannot_have_one():
+    store = FakeStore()
+    req = PracticeRequest(language="es", answers=[
+        PracticeAnswer(word="hablar", direction="produce", correct=False,
+                       note="wrote hablé for hablo")])
+    record_practice(store, USER, req, now=NOW)
+    assert store.events[0]["context"] == {"direction": "produce", "note": "wrote hablé for hablo"}
+    with pytest.raises(ValidationError):
+        PracticeAnswer(word="hablar", direction="produce", correct=True, note="fine")
 
 
 def test_direction_picks_the_card_and_grades_stay_conservative():
