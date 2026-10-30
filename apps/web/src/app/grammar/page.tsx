@@ -7,11 +7,11 @@ import { Check, X } from "lucide-react";
 import { UserContext } from "@/context/UserContext";
 import ProtectedRoute from "../components/ProtectedRoute";
 import { useGrammarBook, type BookChapter } from "../hooks/useGrammar";
-import { ConceptStrip, LEVEL_NAMES, Legend, chapterSlug, countStates } from "./grammarUi";
+import { ConceptStrip, LEVEL_NAMES, Legend, SLIPPING, chapterSlug, countStates } from "./grammarUi";
 
 /** Where the user is in the grammar book. Read only: the chat teaches and
  *  records over MCP; this page shows the progress it leaves behind. */
-function ChapterRow({ chapter }: { chapter: BookChapter }) {
+function ChapterRow({ chapter, slipping }: { chapter: BookChapter; slipping?: string[] }) {
   return (
     <li>
       <Link
@@ -27,7 +27,10 @@ function ChapterRow({ chapter }: { chapter: BookChapter }) {
           <span className="hidden text-gray-400 sm:inline"> · {chapter.description}</span>
         </span>
         <span className="flex w-24 shrink-0">
-          <ConceptStrip states={chapter.concepts.map((c) => c.state)} />
+          <ConceptStrip
+            states={chapter.concepts.map((c) => c.state)}
+            slipping={slipping && chapter.concepts.map((c) => slipping.includes(c.id))}
+          />
         </span>
         <span className="w-4 shrink-0">
           {chapter.status === "done" && <Check size={14} className="text-indigo-600" aria-label="Done" />}
@@ -43,8 +46,8 @@ const HIDDEN_KEY = "grammar-worth-revisiting-hidden";
  *  do here: the chat offers the refresher. Closing it hides this suggestion
  *  until a different one comes up. It only renders once the book has loaded
  *  in the browser, so reading localStorage on the first render is safe. */
-function WorthRevisiting({ chapters }: { chapters: BookChapter[] }) {
-  const key = chapters.map((ch) => ch.id).join(",");
+function WorthRevisiting({ chapters }: { chapters: { chapter: BookChapter; slipping: string[] }[] }) {
+  const key = chapters.map((w) => w.chapter.id).join(",");
   const [hidden, setHidden] = useState<string | null>(() => {
     try {
       return localStorage.getItem(HIDDEN_KEY);
@@ -81,10 +84,16 @@ function WorthRevisiting({ chapters }: { chapters: BookChapter[] }) {
       <p className="pt-2 text-sm text-gray-500">
         {chapters.length > 1 ? "These come" : "This comes"} up often in what you write and
         {chapters.length > 1 ? " haven't" : " hasn't"} quite settled yet.
+        {chapters.some((w) => w.slipping.length > 0) && (
+          <span className="ml-3 inline-flex items-center gap-1.5 text-gray-400">
+            {SLIPPING.label}
+            <i className="h-2 w-2" style={{ backgroundColor: SLIPPING.color }} />
+          </span>
+        )}
       </p>
       <ul className="py-1">
-        {chapters.map((ch) => (
-          <ChapterRow key={ch.id} chapter={ch} />
+        {chapters.map((w) => (
+          <ChapterRow key={w.chapter.id} chapter={w.chapter} slipping={w.slipping} />
         ))}
       </ul>
     </section>
@@ -103,7 +112,11 @@ const GrammarPage = () => {
 
   const counts = useMemo(() => countStates((chapters ?? []).flatMap((ch) => ch.concepts.map((c) => c.state))), [chapters]);
   const worth = useMemo(
-    () => worthRevisiting.flatMap((id) => chapters?.find((ch) => ch.id === id) ?? []),
+    () =>
+      worthRevisiting.flatMap((w) => {
+        const chapter = chapters?.find((ch) => ch.id === w.chapter);
+        return chapter ? [{ chapter, slipping: w.concepts }] : [];
+      }),
     [chapters, worthRevisiting],
   );
   const done = chapters?.filter((ch) => ch.status === "done").length ?? 0;

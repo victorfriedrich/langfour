@@ -17,6 +17,12 @@ export interface BookChapter {
   concepts: { id: string; title: string; state: ConceptState }[];
 }
 
+/** A chapter worth revisiting and its rules that slip often. */
+export interface WorthRevisiting {
+  chapter: string;
+  concepts: string[];
+}
+
 export interface ChapterRef {
   id: string;
   number: number;
@@ -72,11 +78,11 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 /** Every chapter of the grammar book with the user's progress; null while
- *  loading. Also the chapter ids worth revisiting, best first. */
+ *  loading. Also the chapters worth revisiting, best first. */
 export const useGrammarBook = (language: string | undefined) => {
   const { fetchWithAuth } = useContext(UserContext);
   const [chapters, setChapters] = useState<BookChapter[] | null>(null);
-  const [worthRevisiting, setWorthRevisiting] = useState<string[]>([]);
+  const [worthRevisiting, setWorthRevisiting] = useState<WorthRevisiting[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -84,7 +90,7 @@ export const useGrammarBook = (language: string | undefined) => {
     let cancelled = false;
     setChapters(null);
     fetchWithAuth(`${API_URL}/api/grammar?language=${language}`)
-      .then((r) => readJson<{ chapters: BookChapter[]; worth_revisiting?: string[] }>(r))
+      .then((r) => readJson<{ chapters: BookChapter[]; worth_revisiting?: WorthRevisiting[] }>(r))
       .then((book) => {
         if (cancelled) return;
         setChapters(book.chapters);

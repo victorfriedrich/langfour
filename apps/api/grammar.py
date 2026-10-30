@@ -78,6 +78,7 @@ WORTH_SLIP_DAYS = 2    # days with a wrong answer in it
 WORTH_SETTLED_DAYS = 2  # days of correct use after the last slip that settle it
 WORTH_AHEAD = 3        # chapters past the furthest one reached that still count
 WORTH_MAX = 2
+WORTH_CONCEPT_SLIPS = 2  # wrong answers that mark one of its rules as slipping often
 
 State = Literal["not yet", "studied", "fresh", "fading"]
 ChapterStatus = Literal["not started", "started", "done"]
@@ -557,11 +558,16 @@ class BookChapter(BaseModel):
     concepts: list[BookConcept]
 
 
+class WorthRevisiting(BaseModel):
+    chapter: str
+    concepts: list[str]  # its rules that slip often, in chapter order; may be empty
+
+
 class GrammarBook(BaseModel):
     """The web app's table of contents; no chapters without a curriculum."""
     language: str
     chapters: list[BookChapter]
-    worth_revisiting: list[str] = []  # chapter ids, best first (worth_revisiting())
+    worth_revisiting: list[WorthRevisiting] = []  # best first (worth_revisiting())
 
 
 class ChapterRef(BaseModel):
@@ -697,7 +703,7 @@ def _status(chapters: dict[str, dict], chapter_id: str) -> ChapterStatus:
 
 
 def worth_revisiting(cur: Curriculum, chapters: dict[str, dict], progress: dict[str, Progress],
-                     events: list[dict], now: datetime) -> list[str]:
+                     events: list[dict], now: datetime) -> list[WorthRevisiting]:
     """The chapters worth a friendly nudge, best first: at most WORTH_MAX.
 
     A chapter qualifies when it's near the user's place in the book (its level
@@ -705,7 +711,9 @@ def worth_revisiting(cur: Curriculum, chapters: dict[str, dict], progress: dict[
     WORTH_AHEAD chapters past it), the user used its grammar on WORTH_USE_DAYS
     days of the last WORTH_WINDOW, and got it wrong on WORTH_SLIP_DAYS of them.
     Slips on one day are just learning it; slips on several mean it isn't
-    settling. Using it correctly on WORTH_SETTLED_DAYS later days settles it."""
+    settling. Using it correctly on WORTH_SETTLED_DAYS later days settles it.
+    With each chapter come its rules that slip often: wrong WORTH_CONCEPT_SLIPS
+    times in the window and not settled the same way."""
     reached = [i for i, ch in enumerate(cur.chapters)
                if _status(chapters, ch.id) != "not started"
                or any(progress.get(c.id) and progress[c.id].learned_at for c in ch.concepts)]
@@ -715,6 +723,7 @@ def worth_revisiting(cur: Curriculum, chapters: dict[str, dict], progress: dict[
     lowest = max(0, LEVELS.index(frontier.level) - 1)
     position = {ch.id: i for i, ch in enumerate(cur.chapters)}
 
+    # By chapter and by concept: the days used, and the times wrong and right.
     used: dict[str, set] = {}
     slips: dict[str, list[datetime]] = {}
     correct: dict[str, list[datetime]] = {}
@@ -725,7 +734,12 @@ def worth_revisiting(cur: Curriculum, chapters: dict[str, dict], progress: dict[
         if c is None or e["kind"] == "seen" or e.get("self_reported") or at < since:
             continue
         used.setdefault(c.chapter_id, set()).add(at.date())
-        (slips if e["correct"] is False else correct).setdefault(c.chapter_id, []).append(at)
+        for key in (c.chapter_id, c.id):
+            (slips if e["correct"] is False else correct).setdefault(key, []).append(at)
+
+    def settled(key: str) -> bool:
+        last = max(t.date() for t in slips[key])
+        return len({t.date() for t in correct.get(key, []) if t.date() > last}) >= WORTH_SETTLED_DAYS
 
     ranked = []
     for chapter_id, days in used.items():
@@ -736,16 +750,18 @@ def worth_revisiting(cur: Curriculum, chapters: dict[str, dict], progress: dict[
         slip_days = {t.date() for t in slips.get(chapter_id, [])}
         if len(slip_days) < WORTH_SLIP_DAYS:
             continue
-        last = max(slip_days)
-        if len({t.date() for t in correct.get(chapter_id, []) if t.date() > last}) >= WORTH_SETTLED_DAYS:
+        if settled(chapter_id):
             continue
-        ranked.append((len(slip_days), last, chapter_id))
-    return [i for *_, i in sorted(ranked, reverse=True)[:WORTH_MAX]]
+        ranked.append((len(slip_days), max(slip_days), chapter_id))
+    return [WorthRevisiting(chapter=i, concepts=[
+                c.id for c in cur.chapter[i].concepts
+                if len(slips.get(c.id, [])) >= WORTH_CONCEPT_SLIPS and not settled(c.id)])
+            for *_, i in sorted(ranked, reverse=True)[:WORTH_MAX]]
 
 
 def _worth_revisiting(store: GrammarStore, user_id: str, cur: Curriculum,
                       chapters: dict[str, dict], progress: dict[str, Progress],
-                      now: datetime) -> list[str]:
+                      now: datetime) -> list[WorthRevisiting]:
     events = store.events(user_id, now - timedelta(days=WORTH_WINDOW))
     return worth_revisiting(cur, chapters, progress, events, now)
 
@@ -794,7 +810,9 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
         "get_grammar_details lists a chapter's concepts and what each still needs.",
     ]
     if worth := _worth_revisiting(store, user_id, cur, chapters, progress, now):
-        head.append(f"Worth revisiting: {', '.join(worth)} (the guide's 'Chapters worth revisiting').")
+        named = [w.chapter + (f" (slips most: {', '.join(w.concepts)})" if w.concepts else "")
+                 for w in worth]
+        head.append(f"Worth revisiting: {'; '.join(named)} (the guide's 'Chapters worth revisiting').")
     if flagged:
         head += ["", "TO REVISE (the user's mistakes, newest first; the guide's 'Revising mistakes')"]
         for _, i in flagged[:MAX_REVISE]:

@@ -564,7 +564,9 @@ def slipping(concept_id):
 
 
 def worth(events, chapters=STARTED_PRETERITE, progress=None):
-    return grammar.worth_revisiting(ES, chapters, progress or {}, events, NOW)
+    """The chapter ids worth revisiting."""
+    return [w.chapter for w in
+            grammar.worth_revisiting(ES, chapters, progress or {}, events, NOW)]
 
 
 def test_a_chapter_used_often_and_slipping_on_several_days_is_worth_revisiting():
@@ -614,11 +616,23 @@ def test_at_most_two_chapters_with_the_most_slip_days_first():
     assert len(worth(slipping(UV.id) + slipping(a1) + more)) == grammar.WORTH_MAX
 
 
+def test_the_rules_that_slip_often_come_with_their_chapter():
+    ser_ir = "es.indefinido_irregular.ser_ir"
+    events = [*slipping(UV.id), used(ser_ir, 7, False), used(ser_ir, 5)]
+    [w] = grammar.worth_revisiting(ES, STARTED_PRETERITE, {}, events, NOW)
+    assert w.concepts == [UV.id]  # ser/ir slipped once, so it isn't marked
+    events += [used(UV.id, 0)]    # wrong on day 4, right on days 1 and 0: settled
+    events += [used(ser_ir, 1, False), used(ser_ir, 0, False)]
+    [w] = grammar.worth_revisiting(ES, STARTED_PRETERITE, {}, events, NOW)
+    assert w.concepts == [ser_ir]
+
+
 def test_the_book_and_the_overview_name_the_chapters_worth_revisiting():
     store = FakeStore(chapters=[{"chapter_id": "es.indefinido_irregular", "status": "started",
                                  "started_at": NOW.isoformat(), "finished_at": None}],
                       events=slipping(UV.id))
-    assert grammar.get_book(store, USER, "es", NOW).worth_revisiting == ["es.indefinido_irregular"]
+    [w] = grammar.get_book(store, USER, "es", NOW).worth_revisiting
+    assert (w.chapter, w.concepts) == ("es.indefinido_irregular", [UV.id])
     overview = grammar.get_overview(store, USER, "es", NOW).overview
-    assert "Worth revisiting: es.indefinido_irregular" in overview
+    assert f"Worth revisiting: es.indefinido_irregular (slips most: {UV.id})" in overview
     assert "Worth revisiting" not in grammar.get_overview(FakeStore(), USER, "es", NOW).overview
