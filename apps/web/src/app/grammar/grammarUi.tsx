@@ -11,8 +11,8 @@ export const STATES: Record<ConceptState, { label: string; hint: string; color: 
 
 export const LEGEND: ConceptState[] = ['fresh', 'fading', 'studied', 'not yet'];
 
-// For the rules in a chapter worth revisiting that slip often; only there.
-export const SLIPPING = { label: 'slips often', color: '#f87171' };
+// The rules a chapter is worth revisiting for, wherever they're shown.
+export const REVISIT_COLOR = '#f87171';
 
 export const LEVEL_NAMES: Record<string, string> = {
   a1: 'Beginner',
@@ -26,21 +26,21 @@ export const LEVEL_NAMES: Record<string, string> = {
 /** A chapter id without its language, for the URL: es.ser_estar_1 → ser_estar_1. */
 export const chapterSlug = (id: string) => id.slice(id.indexOf('.') + 1);
 
-/** One square per rule, in the chapter's order; `slipping` marks rules by index. */
+/** One square per rule, in the chapter's order; `revisit` marks rules by index. */
 export function ConceptStrip({
   states,
-  slipping,
+  revisit,
   size = 'sm',
 }: {
   states: ConceptState[];
-  slipping?: boolean[];
+  revisit?: boolean[];
   size?: 'sm' | 'md';
 }) {
   const box = size === 'md' ? 'h-2.5 w-2.5' : 'h-2 w-2';
   return (
     <span className="inline-flex flex-wrap gap-0.5" aria-hidden>
       {states.map((s, i) => (
-        <i key={i} className={box} style={{ backgroundColor: slipping?.[i] ? SLIPPING.color : STATES[s].color }} />
+        <i key={i} className={box} style={{ backgroundColor: revisit?.[i] ? REVISIT_COLOR : STATES[s].color }} />
       ))}
     </span>
   );

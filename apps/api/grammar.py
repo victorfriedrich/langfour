@@ -600,6 +600,7 @@ class LessonConcept(BaseModel):
     mistakes: int  # of those, wrong
     last_used_at: str | None
     refresh_at: str | None
+    revisit: bool  # one of the rules its chapter is worth revisiting for (worth_revisiting())
 
 
 class Lesson(BaseModel):
@@ -1001,6 +1002,8 @@ def get_lesson(store: GrammarStore, user_id: str, language: str, chapter_id: str
     chapters, progress = _user_state(store, user_id, cur)
     number = {c.id: n for n, c in enumerate(cur.chapters, 1)}
     copy = _ui_copy(cur)
+    revisit = {i for w in _worth_revisiting(store, user_id, cur, chapters, progress, now)
+               if w.chapter == chapter_id for i in w.concepts}
 
     def chapter_ref(i: str | None) -> ChapterRef | None:
         return ChapterRef(id=i, number=number[i], title=copy(i).title) if i else None
@@ -1025,7 +1028,7 @@ def get_lesson(store: GrammarStore, user_id: str, language: str, chapter_id: str
             later=[ref(i) for i in c.later], see=[ref(i) for i in c.see],
             used=p.produced_count, mistakes=p.error_count,
             last_used_at=iso(p.last_produced_at),
-            refresh_at=iso(p.refresh_at) if p.learned_at else None))
+            refresh_at=iso(p.refresh_at) if p.learned_at else None, revisit=c.id in revisit))
     return Lesson(
         id=ch.id, number=n, level=ch.level, title=copy(ch.id).title,
         description=copy(ch.id).description, status=status,
