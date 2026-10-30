@@ -274,7 +274,7 @@ def _mark_words(chunks: list[dict], parsed: list[dict]) -> None:
             chunk_start += len(chunks[index]["text"]) + 1
             index += 1
         spans[index].append([start - chunk_start, offset - chunk_start, token["id"]])
-    for chunk, words in zip(chunks, spans):
+    for chunk, words in zip(chunks, spans, strict=True):
         chunk["words"] = words
 
 
@@ -282,12 +282,24 @@ def list_media(store: MediaStore, user_id: str, language: str) -> list[dict]:
     return [to_api(row) for row in store.list(user_id, require_code(language))]
 
 
-def get_media(store: MediaStore, user_id: str, media_id: str, language: str) -> dict:
+def get_media(
+    store: MediaStore,
+    user_id: str,
+    media_id: str,
+    language: str,
+    tokenize: Callable[[str, str], list[dict]] | None = None,
+) -> dict:
+    """One item with its text. Items imported before chunks carried `words`
+    get them here from `tokenize` (text, language -> tokens shaped like
+    parse()'s), which should only read the word cache: nothing is saved."""
     if not _ID.fullmatch(media_id):
         raise ValueError("Invalid media id")
     row = store.get(user_id, require_code(language), media_id)
     if row is None:
         raise FileNotFoundError(media_id)
+    chunks = row.get("chunks") or []
+    if tokenize and chunks and any("words" not in chunk for chunk in chunks):
+        _mark_words(chunks, tokenize("\n".join(chunk["text"] for chunk in chunks), row["language"]))
     return to_api(row)
 
 
