@@ -52,6 +52,7 @@ export interface LessonConcept {
   mistakes: number;
   last_used_at: string | null;
   refresh_at: string | null;
+  revisit?: boolean; // one of the rules its chapter is worth revisiting for
 }
 
 export interface Lesson {

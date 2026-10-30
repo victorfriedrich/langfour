@@ -627,6 +627,16 @@ def test_the_rules_that_slip_often_come_with_their_chapter():
     assert w.concepts == [ser_ir]
 
 
+def test_a_lesson_marks_the_rules_worth_revisiting():
+    store = FakeStore(chapters=[{"chapter_id": "es.indefinido_irregular", "status": "started",
+                                 "started_at": NOW.isoformat(), "finished_at": None}],
+                      events=slipping(UV.id))
+    lesson = grammar.get_lesson(store, USER, "es", "es.indefinido_irregular", NOW)
+    assert [c.id for c in lesson.concepts if c.revisit] == [UV.id]
+    other = grammar.get_lesson(store, USER, "es", "es.imperfecto", NOW)
+    assert not any(c.revisit for c in other.concepts)
+
+
 def test_the_book_and_the_overview_name_the_chapters_worth_revisiting():
     store = FakeStore(chapters=[{"chapter_id": "es.indefinido_irregular", "status": "started",
                                  "started_at": NOW.isoformat(), "finished_at": None}],

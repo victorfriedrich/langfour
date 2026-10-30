@@ -8,7 +8,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { UserContext } from "@/context/UserContext";
 import ProtectedRoute from "../../components/ProtectedRoute";
 import { useLesson, type ChapterRef, type LessonConcept, type LessonRef } from "../../hooks/useGrammar";
-import { ConceptStrip, LEVEL_NAMES, Legend, STATES, chapterSlug, countStates } from "../grammarUi";
+import { ConceptStrip, LEVEL_NAMES, Legend, REVISIT_COLOR, STATES, chapterSlug, countStates } from "../grammarUi";
 
 const DAY_MS = 86_400_000;
 
@@ -83,7 +83,16 @@ function Rule({ concept, language, chapterId }: { concept: LessonConcept; langua
       )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h3 className="font-medium text-gray-900">{concept.title}</h3>
+          <h3 className="font-medium text-gray-900">
+            {concept.title}
+            {concept.revisit && (
+              // Proposed for the chat's next refresher; the same red as on the Grammar page.
+              <span className="ml-2 inline-flex items-center gap-1.5 text-xs font-normal text-red-500">
+                worth revisiting
+                <i className="h-2 w-2" style={{ backgroundColor: REVISIT_COLOR }} />
+              </span>
+            )}
+          </h3>
           <span className="inline-flex shrink-0 cursor-help items-center gap-1.5 text-xs text-gray-400" title={state.hint}>
             {state.label}
             <i className="h-2 w-2" style={{ backgroundColor: state.color }} />
@@ -166,7 +175,7 @@ const LessonPage = () => {
                 </p>
                 <p className="mt-3 text-gray-700">{lesson.description}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <ConceptStrip states={states} size="md" />
+                  <ConceptStrip states={states} revisit={lesson.concepts.map((c) => !!c.revisit)} size="md" />
                   <Legend counts={counts} />
                 </div>
               </header>
