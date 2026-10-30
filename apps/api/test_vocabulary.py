@@ -56,7 +56,7 @@ class FakeStore:
         return [{"word_id": w, "root": root} for w, root in self.LIST.items() if root in roots]
 
     # As find_roots and wordforms would resolve them; 11 isn't in the list.
-    FORMS = {"encontré": 10, "El perro": 2, "hablé": 11}
+    FORMS = {"encontré": 10, "El perro": 2, "hablé": 11, "comer": 3, "la": 4, "apagar": 12}
 
     def resolve_words(self, language, words):
         return {w: self.FORMS[w] for w in words if w in self.FORMS}
@@ -66,6 +66,19 @@ class FakeStore:
 
     def set_status(self, user_id, word_ids, status):
         self.calls.append(("set_status", user_id, word_ids, status))
+
+    # Statuses of the list's words; 12 had its cards turned off in RemNote.
+    STATUSES = {2: "learning", 4: "known", 7: "known", 8: "learning", 10: "learning",
+                12: "disabled"}
+
+    def statuses(self, user_id, word_ids):
+        return {w: self.STATUSES[w] for w in word_ids if w in self.STATUSES}
+
+    def add_words(self, user_id, word_ids, status):
+        self.calls.append(("add_words", user_id, word_ids, status))
+
+    def touch(self, user_id):
+        self.calls.append(("touch", user_id))
 
 
 def test_get_vocabulary_passes_the_user_and_parses_the_answer():
@@ -132,6 +145,36 @@ def test_set_word_status_with_nothing_found_updates_nothing():
     change = vocabulary.set_word_status(store, USER, "es", ["casa"], "learning")
     assert not any(c[0] == "set_status" for c in store.calls)
     assert change.not_found == ["casa"]
+
+
+def test_add_words_as_learning_adds_new_words_and_leaves_listed_ones():
+    store = FakeStore()
+    added = vocabulary.add_words(store, USER, "es",
+                                 ["comer", " hablé ", "la", "encontré", "apagar", "xyz"], "learning")
+    assert store.calls == [("add_words", USER, [3, 11], "learning")]
+    assert (added.added, added.already, added.not_found) == (
+        ["comer", "hablé"], ["la", "encontré", "apagar"], ["xyz"])
+
+
+def test_add_words_as_known_also_moves_learning_words_to_known():
+    store = FakeStore()
+    added = vocabulary.add_words(store, USER, "es", ["comer", "encontré", "la", "apagar"], "known")
+    assert store.calls == [("add_words", USER, [3], "known"),
+                           ("set_status", USER, [10], "known")]
+    assert (added.added, added.already) == (["comer", "encontré"], ["la", "apagar"])
+
+
+def test_add_words_already_known_changes_nothing():
+    store = FakeStore()
+    added = vocabulary.add_words(store, USER, "es", ["la", "casa"], "known")
+    assert store.calls == []
+    assert (added.added, added.already, added.not_found) == ([], ["la"], ["casa"])
+
+
+def test_add_words_moving_only_learning_words_marks_the_list_changed():
+    store = FakeStore()
+    vocabulary.add_words(store, USER, "es", ["encontré"], "known")
+    assert store.calls == [("set_status", USER, [10], "known"), ("touch", USER)]
 
 
 def recall(word_id, root, kind, at, note=None):

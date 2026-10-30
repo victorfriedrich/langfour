@@ -11,7 +11,8 @@ Clients discover Supabase OAuth through mcp_auth.py. See docs/mcp-oauth.md
 for project setup and connecting ChatGPT or Claude.
 
 Tools: get_vocabulary and score_text read (vocabulary.py); record_practice
-(practice.py), record_exposure and set_word_status (vocabulary.py) write.
+(practice.py), record_exposure, set_word_status and add_words (vocabulary.py)
+write.
 get_grammar_overview and get_grammar_details read the grammar curriculum and
 the user's place in it; record_grammar writes (grammar.py).
 
@@ -52,6 +53,8 @@ from vocabulary import (
     StatusChange,
     TextScore,
     Vocabulary,
+    WordsAdded,
+    add_words,
     get_vocabulary,
     get_vocabulary_store,
     record_exposure,
@@ -70,7 +73,8 @@ mcp = FastMCP(
         "read it, log it with record_exposure. Take the user at their word about what they "
         "know: words they know outright go to known with set_word_status, and words they say "
         "they can read but not produce get a correct 'recognize' answer, self_reported, with "
-        "record_practice. Don't quiz them first unless they ask. "
+        "record_practice. Don't quiz them first unless they ask. When the user asks to add "
+        "words to their vocabulary, add them with add_words, as learning or as known. "
         "Langfour also knows where the user is in their grammar book. Before you write a text "
         "for them or teach grammar, read get_grammar_overview once and follow the guide it "
         "returns; fetch get_grammar_details only for the chapters the conversation is about. "
@@ -215,6 +219,34 @@ async def set_word_status_tool(
     they confirm. not_found lists words that aren't in their list in that language.
     """
     return await asyncio.to_thread(set_word_status, get_vocabulary_store(), _user_id(ctx),
+                                   language, words, status)
+
+
+@mcp.tool(name="add_words", annotations=ToolAnnotations(
+    title="Add words to vocabulary",
+    readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False,
+))
+async def add_words_tool(
+    language: Language,
+    words: Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]],
+                     Field(min_length=1, max_length=200)],
+    status: Literal["learning", "known"],
+    ctx: Context,
+) -> WordsAdded:
+    """Add words to the user's vocabulary when they ask you to: as learning (they get a
+    flashcard, in their connected app if they use one) or as known (no flashcard; texts
+    count them as understood).
+
+    Only add words the user asked for, not words you think they should learn. Pass each
+    word's dictionary form (e.g. 'casa' or 'la casa', 'hablar'), or the form the user saw
+    ('encontré' finds encontrar). language is an ISO code: es, de, it or fr.
+
+    Words already in their list stay as they are, except that a learning word added as
+    known becomes known; to move a known word back to learning, use set_word_status.
+    already lists the words left as they were; not_found lists words Langfour's
+    dictionary doesn't have in that language.
+    """
+    return await asyncio.to_thread(add_words, get_vocabulary_store(), _user_id(ctx),
                                    language, words, status)
 
 
