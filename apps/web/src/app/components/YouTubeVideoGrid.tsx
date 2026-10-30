@@ -8,15 +8,24 @@ import ConfirmationPopup from '../components/ConfirmationPopup';
 import { UserContext } from '@/context/UserContext';
 import { useSeenVideos } from '../hooks/useSeenVideos';
 
+const DEFAULT_CATEGORY = 'Travel';
+
 const YouTubeVideoGrid: React.FC = () => {
   const { language } = useContext(UserContext);
 
   // ────────────────────────────────────────────────────────────────────────────────
   // STATE
   // ────────────────────────────────────────────────────────────────────────────────
-  const [selectedCategory, setSelectedCategory] = useState<string>('All Videos');
+  const [selectedCategory, setSelectedCategory] = useState<string>(DEFAULT_CATEGORY);
   const { videos, categories, isVideosLoading, isCategoriesLoading, error } =
     useVideoRecommendations(selectedCategory, language?.code || 'es');
+
+  // A language without Travel videos starts on All Videos instead.
+  useEffect(() => {
+    if (categories.length > 0 && !categories.some((c) => c.category === selectedCategory)) {
+      setSelectedCategory('All Videos');
+    }
+  }, [categories, selectedCategory]);
 
   const [selectedVideo, setSelectedVideo] = useState<{ id: string; title: string } | null>(null);
   const [confirmationPopup, setConfirmationPopup] = useState<{ count: number; visible: boolean }>({
