@@ -18,12 +18,22 @@ The AI app does the judging (was the sentence right, which concepts did a text
 use); this module only stores its verdicts and keeps the refresh dates.
 
 A concept's state: 'not yet' (its chapter isn't started), 'studied' (started,
-never used correctly), 'fresh' (used correctly, refresh date ahead) or
-'fading' (refresh date passed: the AI app should work it back in).
+not learned yet), 'fresh' (learned, refresh date ahead) or 'fading' (refresh
+date passed: the AI app should work it back in).
+
+A concept is learned once the user has written MIN_CORRECT sentences that used
+it correctly and, for a concept with `forms`, at least half the forms of each
+of its verbs (learned_bar() below). Answers to choice and fill-in exercises are
+logged as 'recognized' and don't count. A receptive concept is learned when
+it's seen in a text, and one the user says they know, at once.
+
+Every mistake is kept: a wrong answer flags its concept with the date and the
+AI app's short note, also in chapters the user hasn't reached, until they next
+use the concept correctly. The overview lists the flagged concepts to revise.
 
 The refresh rule (practise() below):
-  - first correct use: the interval is the concept's base (30, 14 or 7 days
-    for easy, medium, hard), and the refresh date that far out;
+  - once learned: the interval is the concept's base (30, 14 or 7 days for
+    easy, medium, hard), and the refresh date that far out;
   - later correct use: the interval doubles (at most 180 days) once half of
     it has passed since it last grew, so using a rule five times in one chat
     counts once;
@@ -32,6 +42,9 @@ The refresh rule (practise() below):
   - a receptive concept is never drilled, so seeing it counts as practice.
 """
 
+import math
+import re
+import unicodedata
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from functools import cache
@@ -49,12 +62,15 @@ LANGUAGE_NAMES = {"es": "Spanish", "de": "German", "it": "Italian", "fr": "Frenc
 
 BASE_INTERVAL = {"easy": 30, "medium": 14, "hard": 7}
 MAX_INTERVAL = 180
+MIN_CORRECT = 2  # correct sentences before a concept counts as learned
 
 MAX_DETAIL_CHAPTERS = 3
 MAX_DETAIL_CONCEPTS = 10
+MAX_REVISE = 10  # flagged mistakes the overview lists, newest first
 
 State = Literal["not yet", "studied", "fresh", "fading"]
 ChapterStatus = Literal["not started", "started", "done"]
+Kind = Literal["seen", "recognized", "produced"]
 
 
 # ---------------------------------------------------------------------------
@@ -76,10 +92,19 @@ class Concept:
     later: tuple[str, ...] = ()
     see: tuple[str, ...] = ()
     image: str | None = None  # the web app's picture, in apps/web/public/grammar/<language>/
+    # The forms to cover before the concept is learned, by verb: half of each verb's.
+    forms: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    enclitic: bool = False  # the forms take attached pronouns (hazlo, dímelo)
 
     @property
     def base_interval(self) -> int:
         return BASE_INTERVAL[self.difficulty]
+
+    @property
+    def counts_for_chapter(self) -> bool:
+        """Whether the chapter needs it learned to be done: regional and
+        receptive concepts don't hold a chapter back."""
+        return self.mode == "productive" and self.variety is None
 
 
 @dataclass(frozen=True)
@@ -103,7 +128,19 @@ class Curriculum:
 
 _CHAPTER_FIELDS = {"id", "title", "goal", "continues", "teach", "concepts"}
 _CONCEPT_FIELDS = {"id", "title", "scope", "difficulty", "mode", "variety", "chunk",
-                   "lemmas", "pitfall", "later", "see", "image"}
+                   "lemmas", "pitfall", "later", "see", "image", "forms", "enclitic"}
+
+
+def _parse_forms(full: str, raw, errors: list[str]) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict) or not all(
+            isinstance(v, list) and v and all(isinstance(f, str) and f for f in v)
+            for v in raw.values()):
+        errors.append(f"{full}: forms maps each verb to a list of its forms")
+        return ()
+    return tuple((verb, tuple(unicodedata.normalize("NFC", f.lower()) for f in v))
+                 for verb, v in raw.items())
 
 
 def parse_curriculum(language: str, levels: dict[str, dict]) -> Curriculum:
@@ -139,7 +176,8 @@ def parse_curriculum(language: str, levels: dict[str, dict]) -> Curriculum:
                     variety=c.get("variety"), chunk=bool(c.get("chunk", False)),
                     pitfall=c.get("pitfall"), lemmas=tuple(c.get("lemmas") or ()),
                     later=tuple(c.get("later") or ()), see=tuple(c.get("see") or ()),
-                    image=c.get("image"),
+                    image=c.get("image"), forms=_parse_forms(full, c.get("forms"), errors),
+                    enclitic=bool(c.get("enclitic", False)),
                 ))
             chapters.append(Chapter(
                 id=cid, level=level, title=ch.get("title", ""), goal=ch.get("goal", ""),
@@ -239,6 +277,7 @@ def _ui_copy(cur: Curriculum):
 class Progress:
     """A user_grammar_concepts row."""
     first_correct_at: datetime | None = None
+    learned_at: datetime | None = None  # when it first met the bar; null while studied
     last_seen_at: datetime | None = None
     last_produced_at: datetime | None = None
     interval_days: int | None = None
@@ -246,44 +285,123 @@ class Progress:
     refresh_at: datetime | None = None
     produced_count: int = 0
     error_count: int = 0
+    correct_count: int = 0                 # correct sentences, self-reports not included
+    forms_produced: tuple[str, ...] = ()   # the concept's forms used correctly, sorted
+    mistake_at: datetime | None = None     # the last mistake, until the next correct use
+    mistake_note: str | None = None
 
-    _TIMES = ("first_correct_at", "last_seen_at", "last_produced_at",
-              "interval_grown_at", "refresh_at")
+    _TIMES = ("first_correct_at", "learned_at", "last_seen_at", "last_produced_at",
+              "interval_grown_at", "refresh_at", "mistake_at")
 
     @classmethod
     def from_row(cls, row: dict) -> "Progress":
         times = {k: datetime.fromisoformat(row[k]) if row.get(k) else None for k in cls._TIMES}
         return cls(**times, interval_days=row.get("interval_days"),
                    produced_count=row.get("produced_count") or 0,
-                   error_count=row.get("error_count") or 0)
+                   error_count=row.get("error_count") or 0,
+                   correct_count=row.get("correct_count") or 0,
+                   forms_produced=tuple(row.get("forms_produced") or ()),
+                   mistake_note=row.get("mistake_note"))
 
     def to_row(self) -> dict:
         row = {k: (getattr(self, k).isoformat() if getattr(self, k) else None)
                for k in self._TIMES}
         return row | {"interval_days": self.interval_days,
-                      "produced_count": self.produced_count, "error_count": self.error_count}
+                      "produced_count": self.produced_count, "error_count": self.error_count,
+                      "correct_count": self.correct_count,
+                      "forms_produced": list(self.forms_produced),
+                      "mistake_note": self.mistake_note}
+
+    @property
+    def mistake(self) -> str | None:
+        """The flagged mistake for the AI app: its date and note."""
+        if not self.mistake_at:
+            return None
+        return f"{self.mistake_at.date().isoformat()}: {self.mistake_note or 'no note'}"
+
 
 
 def state(progress: Progress | None, chapter_status: ChapterStatus, now: datetime) -> State:
-    if progress and progress.first_correct_at:
+    if progress and progress.learned_at:
         return "fading" if progress.refresh_at <= now else "fresh"
     return "studied" if chapter_status != "not started" else "not yet"
 
 
-def practise(p: Progress, concept: Concept, kind: Literal["seen", "produced"],
-             correct: bool | None, now: datetime) -> Progress:
+_CLITICS = re.compile(r"(?:me|te|se|lo|la|le|los|las|les|nos|os)+")
+
+
+def _plain(word: str) -> str:
+    return "".join(ch for ch in unicodedata.normalize("NFD", word)
+                   if unicodedata.category(ch) != "Mn")
+
+
+def forms_in(sentence: str | None, concept: Concept) -> set[str]:
+    """The concept's forms that occur in a sentence, as whole words, accents
+    included. For an enclitic concept a form may carry attached pronouns, which
+    can add an accent (hazlo has haz, dímelo di)."""
+    if not sentence or not concept.forms:
+        return set()
+    words = set(re.findall(r"[^\W\d_]+", unicodedata.normalize("NFC", sentence.lower())))
+    plain = {_plain(w) for w in words}
+    found = set()
+    for _, forms in concept.forms:
+        for f in forms:
+            stem = _plain(f)
+            if f in words or (concept.enclitic and any(
+                    w.startswith(stem) and _CLITICS.fullmatch(w[len(stem):]) for w in plain)):
+                found.add(f)
+    return found
+
+
+def to_learn(p: Progress | None, concept: Concept) -> str | None:
+    """What the user still has to do before the concept is learned, in a
+    sentence for the AI app; None once it is."""
+    p = p or Progress()
+    if p.learned_at:
+        return None
+    if concept.mode == "receptive":
+        return "Use it in a text the user reads."
+    parts = []
+    if (more := MIN_CORRECT - p.correct_count) > 0:
+        parts.append(f"{more} more correct sentence{'s' * (more > 1)} written by the user")
+    done = set(p.forms_produced)
+    for verb, forms in concept.forms:
+        more = math.ceil(len(forms) / 2) - len(done & set(forms))
+        if more > 0:
+            left = ", ".join(f for f in forms if f not in done)
+            parts.append(f"{verb}: {more} more of {left}")
+    return "; ".join(parts) + "." if parts else None
+
+
+def practise(p: Progress, concept: Concept, kind: Kind, correct: bool | None, now: datetime,
+             forms: set[str] = frozenset(), self_reported: bool = False,
+             note: str | None = None) -> Progress:
     """The progress after one result; see the module docstring for the rule."""
+    if correct is False:
+        p = replace(p, mistake_at=now, mistake_note=note)
+    if kind == "recognized":
+        return p  # choosing a form isn't using it; only a wrong choice is kept
     if kind == "produced":
         p = replace(p, last_produced_at=now, produced_count=p.produced_count + 1,
                     error_count=p.error_count + (0 if correct else 1))
+        if correct and not self_reported:
+            p = replace(p, first_correct_at=p.first_correct_at or now,
+                        correct_count=p.correct_count + 1,
+                        forms_produced=tuple(sorted(set(p.forms_produced) | forms)),
+                        mistake_at=None, mistake_note=None)
     else:
         p = replace(p, last_seen_at=now)
 
+    if p.learned_at is None:
+        receptive_seen = kind == "seen" and concept.mode == "receptive"
+        if receptive_seen or (correct and (self_reported or to_learn(p, concept) is None)):
+            return replace(p, learned_at=now, interval_days=concept.base_interval,
+                           interval_grown_at=now,
+                           refresh_at=now + timedelta(days=concept.base_interval))
+        return p  # not learned yet: nothing to refresh
+
     if correct or (kind == "seen" and concept.mode == "receptive"):
-        if p.first_correct_at is None:
-            p = replace(p, first_correct_at=now, interval_days=concept.base_interval,
-                        interval_grown_at=now)
-        elif now - p.interval_grown_at >= timedelta(days=p.interval_days / 2):
+        if now - p.interval_grown_at >= timedelta(days=p.interval_days / 2):
             p = replace(p, interval_days=min(2 * p.interval_days, MAX_INTERVAL),
                         interval_grown_at=now)
         else:
@@ -291,8 +409,6 @@ def practise(p: Progress, concept: Concept, kind: Literal["seen", "produced"],
         out = now + timedelta(days=p.interval_days)
         return replace(p, refresh_at=max(p.refresh_at or out, out))
 
-    if p.first_correct_at is None:
-        return p  # never got it right: nothing to refresh yet
     if kind == "produced":  # wrong
         return replace(p, interval_days=max(1, p.interval_days // 2), interval_grown_at=now,
                        refresh_at=now + timedelta(days=1))
@@ -324,6 +440,8 @@ class ConceptSummary(BaseModel):
     mode: Literal["productive", "receptive"]
     variety: Literal["spain", "latam"] | None
     chunk: bool
+    to_learn: str | None  # what's left before it counts as learned; None once it is
+    mistake: str | None   # the flagged mistake to revise: its date and note
 
 
 class ConceptDetail(ConceptSummary):
@@ -332,6 +450,9 @@ class ConceptDetail(ConceptSummary):
     pitfall: str | None
     later: list[ConceptRef]  # refinements that come in later chapters
     see: list[ConceptRef]
+    forms: dict[str, list[str]]  # by verb: the forms to cover, half of each verb's
+    forms_produced: list[str]    # of those, the ones the user has used correctly
+    correct_sentences: int
     refresh_at: str | None
 
 
@@ -354,27 +475,44 @@ class GrammarDetails(BaseModel):
 class GrammarResult(BaseModel):
     concept: str = Field(..., min_length=1, max_length=120,
                          description="A concept id, e.g. 'es.ser_estar_1.characteristic_vs_state'")
-    kind: Literal["seen", "produced"] = Field(
-        ..., description="'produced': the user wrote or said Spanish that needed the concept. "
+    kind: Kind = Field(
+        ..., description="'produced': one sentence the user wrote or said in full that needed "
+                         "the concept. 'recognized': one answer to a choice or fill-in exercise. "
                          "'seen': you used it on purpose in a text the user read.")
     correct: bool | None = Field(
-        None, description="For 'produced' only: false if the user got this concept wrong "
-                          "anywhere in the session.")
+        None, description="For 'produced' and 'recognized': whether the user got this "
+                          "concept right in that sentence or answer.")
     self_reported: bool = Field(
-        False, description="True when the user told you they know it instead of using it.")
+        False, description="Only when the user told you in their own words that they already "
+                           "know the concept, with no exercise. Never for exercise answers.")
     sentence: str | None = Field(
-        None, max_length=300, description="One of the user's sentences that used the concept.")
+        None, max_length=300,
+        description="For 'produced': the user's whole sentence, exactly as they wrote it.")
+    note: str | None = Field(
+        None, max_length=200,
+        description="For a wrong result: a short note for whoever revises it later, saying "
+                    "what the user wrote and what was right, e.g. 'lo for la factura: the "
+                    "pronoun agrees with the feminine noun'.")
 
     @model_validator(mode="after")
-    def _correct_for_produced(self):
-        if (self.kind == "produced") != (self.correct is not None):
-            raise ValueError("correct is required for 'produced', and only for it")
+    def _check(self):
+        if (self.kind != "seen") != (self.correct is not None):
+            raise ValueError("correct is required for 'produced' and 'recognized', and only for them")
+        if self.self_reported and not (self.kind == "produced" and self.correct):
+            raise ValueError("self_reported is for a correct 'produced' result only")
+        if self.kind == "produced" and not self.self_reported and not self.sentence:
+            raise ValueError("a 'produced' result needs the user's sentence")
+        if self.note and self.correct is not False:
+            raise ValueError("note is for a wrong result only")
         return self
 
 
 class ChapterUpdate(BaseModel):
     chapter: str = Field(..., min_length=1, max_length=80, description="A chapter id, e.g. 'es.ser'")
     status: Literal["started", "done"]
+    self_reported: bool = Field(
+        False, description="For 'done': the user told you they already know the chapter. "
+                           "Without it, 'done' needs every concept of the chapter learned.")
 
 
 class ConceptChange(BaseModel):
@@ -386,7 +524,9 @@ class ConceptChange(BaseModel):
 class GrammarRecord(BaseModel):
     recorded: int                # results logged as events
     changed: list[ConceptChange]  # concepts whose state moved
+    to_learn: dict[str, str]     # concepts practised but not learned yet, and what's left
     chapters: list[str]          # chapters whose status changed
+    not_done: list[str]          # chapters asked to be done with concepts still to learn
     not_found: list[str]         # ids not in the curriculum, so not recorded
 
 
@@ -544,18 +684,19 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
     chapters, progress = _user_state(store, user_id, cur)
     mark = {"done": "✓", "started": "→", "not started": "·"}
     lines, level, fading_total = [], None, 0
+    flagged = sorted(((p.mistake_at, i) for i, p in progress.items() if p.mistake_at), reverse=True)
     for ch in cur.chapters:
         if ch.level != level:
             level = ch.level
             lines += ["", level.upper()]
         status = _status(chapters, ch.id)
         states = [state(progress.get(c.id), status, now) for c in ch.concepts]
-        practised = sum(s in ("fresh", "fading") for s in states)
+        learned = sum(s in ("fresh", "fading") for s in states)
         fading = states.count("fading")
         fading_total += fading
         line = f"{mark[status]} {ch.id}  {ch.title}"
-        if status != "not started" or practised:
-            line += f"  {practised}/{len(states)} practised"
+        if status != "not started" or learned:
+            line += f"  {learned}/{len(states)} learned"
             if fading:
                 line += f", {fading} fading"
         lines.append(line)
@@ -567,17 +708,26 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
         f"{LANGUAGE_NAMES.get(language, language)} grammar, {levels}, "
         f"{len(cur.chapters)} chapters in teaching order. "
         f"Started: {', '.join(c.id for c in started) or 'none'}. Done: {done}. "
-        f"Fading concepts: {fading_total}.",
-        "Key: ✓ done, → started, · not started. 'practised' counts concepts used correctly; "
-        "fading ones are due to be worked back in. get_grammar_details lists a chapter's concepts.",
+        f"Fading concepts: {fading_total}. Mistakes to revise: {len(flagged)}.",
+        "Key: ✓ done, → started, · not started. 'learned' counts concepts that met the bar "
+        "(the guide's 'When a concept is learned'); fading ones are due to be worked back in. "
+        "get_grammar_details lists a chapter's concepts and what each still needs.",
     ]
+    if flagged:
+        head += ["", "TO REVISE (the user's mistakes, newest first; the guide's 'Revising mistakes')"]
+        for _, i in flagged[:MAX_REVISE]:
+            c = cur.concept[i]
+            reached = "" if _status(chapters, c.chapter_id) != "not started" else "  (chapter not started)"
+            head.append(f"{i}  {progress[i].mistake}{reached}")
     return GrammarOverview(language=language, overview="\n".join(head + lines),
                            guide=teaching_guide())
 
 
-def _summary(c: Concept, s: State) -> dict:
+def _summary(c: Concept, s: State, p: Progress | None) -> dict:
     return {"id": c.id, "title": c.title, "scope": c.scope, "state": s,
-            "mode": c.mode, "variety": c.variety, "chunk": c.chunk}
+            "mode": c.mode, "variety": c.variety, "chunk": c.chunk,
+            "to_learn": to_learn(p, c) if s != "not yet" else None,
+            "mistake": p.mistake if p else None}
 
 
 def get_details(store: GrammarStore, user_id: str, language: str | None,
@@ -598,15 +748,18 @@ def get_details(store: GrammarStore, user_id: str, language: str | None,
     out_chapters = [
         ChapterDetail(id=ch.id, level=ch.level, title=ch.title, goal=ch.goal, teach=ch.teach,
                       status=_status(chapters, ch.id),
-                      concepts=[ConceptSummary(**_summary(c, concept_state(c))) for c in ch.concepts])
+                      concepts=[ConceptSummary(**_summary(c, concept_state(c), progress.get(c.id)))
+                                for c in ch.concepts])
         for ch in (cur.chapter[i] for i in asked_chapters if i in cur.chapter)
     ]
     out_concepts = [
-        ConceptDetail(**_summary(c, concept_state(c)), chapter=c.chapter_id,
-                      difficulty=c.difficulty, pitfall=c.pitfall,
+        ConceptDetail(**_summary(c, concept_state(c), p := progress.get(c.id)),
+                      chapter=c.chapter_id, difficulty=c.difficulty, pitfall=c.pitfall,
                       later=[ref(i) for i in c.later], see=[ref(i) for i in c.see],
-                      refresh_at=(p.refresh_at.isoformat()
-                                  if (p := progress.get(c.id)) and p.refresh_at else None))
+                      forms={verb: list(forms) for verb, forms in c.forms},
+                      forms_produced=list(p.forms_produced) if p else [],
+                      correct_sentences=p.correct_count if p else 0,
+                      refresh_at=p.refresh_at.isoformat() if p and p.learned_at else None)
         for c in (cur.concept[i] for i in asked_concepts if i in cur.concept)
     ]
     not_found = ([i for i in asked_chapters if i not in cur.chapter]
@@ -647,12 +800,12 @@ def _record_once(store: GrammarStore, user_id: str, language: str, results: list
         changed_chapters[chapter_id] = new
 
     for u in chapter_updates:
-        if u.chapter in cur.chapter:
-            set_chapter(u.chapter, u.status)
-        else:
+        if u.chapter not in cur.chapter:
             not_found.append(u.chapter)
+        elif u.status == "started" or u.self_reported:
+            set_chapter(u.chapter, u.status)
 
-    events, before, touched = [], {}, {}
+    events, before, touched, counted = [], {}, {}, set()
     # Results summarize a session, not a timeline. Apply exposure first so a
     # production error wins even when a receptive concept was also seen.
     for r in sorted(results, key=lambda r: r.kind == "produced"):
@@ -660,14 +813,34 @@ def _record_once(store: GrammarStore, user_id: str, language: str, results: list
         if c is None:
             not_found.append(r.concept)
             continue
+        if r.kind == "produced" and r.sentence:
+            key = (c.id, " ".join(r.sentence.lower().split()))
+            if key in counted:  # the same sentence twice counts once
+                continue
+            counted.add(key)
         before.setdefault(c.id, state(progress.get(c.id), old_status[c.chapter_id], now))
-        if r.kind == "produced":
-            # Using a concept means its chapter is open, whatever the app said.
+        if r.kind == "produced" and r.correct:
+            # Using a concept means its chapter is open, whatever the app said. A
+            # mistake in grammar the user hasn't reached is only kept for later.
             set_chapter(c.chapter_id, "started")
         touched[c.id] = practise(touched.get(c.id) or progress.get(c.id) or Progress(),
-                                 c, r.kind, r.correct, now)
+                                 c, r.kind, r.correct, now, forms_in(r.sentence, c),
+                                 r.self_reported, r.note)
         events.append({"concept_id": c.id, "kind": r.kind, "correct": r.correct,
-                       "self_reported": r.self_reported, "sentence": r.sentence})
+                       "self_reported": r.self_reported, "sentence": r.sentence,
+                       "note": r.note})
+
+    # A chapter is done once every concept that counts is learned, or the user says so.
+    not_done = []
+    for u in chapter_updates:
+        if (u.chapter in cur.chapter and u.status == "done" and not u.self_reported
+                and old_status[u.chapter] != "done"):
+            left = [c for c in cur.chapter[u.chapter].concepts if c.counts_for_chapter
+                    and not (touched.get(c.id) or progress.get(c.id) or Progress()).learned_at]
+            if left:
+                not_done.append(u.chapter)
+            else:
+                set_chapter(u.chapter, "done")
 
     new_status = old_status | {i: row["status"] for i, row in changed_chapters.items()}
     recorded = store.record(
@@ -685,7 +858,9 @@ def _record_once(store: GrammarStore, user_id: str, language: str, results: list
         recorded=recorded,
         changed=[ConceptChange(concept=i, before=before[i], after=after[i])
                  for i in after if before[i] != after[i]],
+        to_learn={i: left for i in touched if (left := to_learn(touched[i], cur.concept[i]))},
         chapters=[i for i in changed_chapters if new_status[i] != old_status[i]],
+        not_done=list(dict.fromkeys(not_done)),
         not_found=list(dict.fromkeys(not_found)),
     )
 
@@ -748,7 +923,8 @@ def get_lesson(store: GrammarStore, user_id: str, language: str, chapter_id: str
             variety=c.variety, chunk=c.chunk, pitfall=c.pitfall,
             later=[ref(i) for i in c.later], see=[ref(i) for i in c.see],
             used=p.produced_count, mistakes=p.error_count,
-            last_used_at=iso(p.last_produced_at), refresh_at=iso(p.refresh_at)))
+            last_used_at=iso(p.last_produced_at),
+            refresh_at=iso(p.refresh_at) if p.learned_at else None))
     return Lesson(
         id=ch.id, number=n, level=ch.level, title=copy(ch.id).title,
         description=copy(ch.id).description, status=status,

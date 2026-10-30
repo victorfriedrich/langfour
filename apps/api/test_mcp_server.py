@@ -85,7 +85,8 @@ def test_record_practice_over_http_as_the_signed_in_user(monkeypatch):
             "jsonrpc": "2.0", "id": 7, "method": "tools/call",
             "params": {"name": "record_grammar", "arguments": {
                 "language": "es",
-                "results": [{"concept": "es.ser.origin", "kind": "produced", "correct": True}],
+                "results": [{"concept": "es.ser.origin", "kind": "produced", "correct": True,
+                             "sentence": "Soy de Bonn."}],
             }},
         }).json()["result"]
         assert not recorded.get("isError"), recorded
