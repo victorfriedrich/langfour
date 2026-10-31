@@ -66,7 +66,7 @@ BASE_INTERVAL = {"easy": 30, "medium": 14, "hard": 7}
 MAX_INTERVAL = 180
 MIN_CORRECT = 2  # correct sentences before a concept counts as learned
 
-MAX_DETAIL_CHAPTERS = 3
+MAX_DETAIL_CHAPTERS = 5
 MAX_DETAIL_CONCEPTS = 10
 MAX_REVISE = 10  # flagged mistakes the overview lists, newest first
 
@@ -797,6 +797,9 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
             if fading:
                 line += f", {fading} fading"
         lines.append(line)
+        # Every concept, so the client can find the one a sentence needs without
+        # guessing which chapter holds it.
+        lines += [f"    {c.id.removeprefix(ch.id + '.')}  {c.title}" for c in ch.concepts]
 
     started = [c for c in cur.chapters if _status(chapters, c.id) == "started"]
     done = sum(_status(chapters, c.id) == "done" for c in cur.chapters)
@@ -808,7 +811,9 @@ def get_overview(store: GrammarStore, user_id: str, language: str | None,
         f"Fading concepts: {fading_total}. Mistakes to revise: {len(flagged)}.",
         "Key: ✓ done, → started, · not started. 'learned' counts concepts that met the bar "
         "(the guide's 'When a concept is learned'); fading ones are due to be worked back in. "
-        "get_grammar_details lists a chapter's concepts and what each still needs.",
+        "Under each chapter are its concepts; a concept's full id is the chapter id, a dot "
+        "and the concept id (es.conectores_3.pero_sino). get_grammar_details gives each "
+        "concept's scope, state and what it still needs.",
     ]
     if worth := _worth_revisiting(store, user_id, cur, chapters, progress, now):
         named = [w.chapter + (f" (slips most: {', '.join(w.concepts)})" if w.concepts else "")

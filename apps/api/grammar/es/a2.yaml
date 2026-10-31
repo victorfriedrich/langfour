@@ -5,10 +5,10 @@ chapters:
     goal: "Refer back to people and things without repeating them."
     concepts:
       - id: forms
-        title: "lo, la, los, las"
+        title: "Direct object pronouns: lo, la, los, las"
         scope: "me, te, lo, la, nos, os, los, las replace the direct object (¿El libro? Lo tengo. ¿Las llaves? No las encuentro)."
       - id: position
-        title: "Position of object pronouns"
+        title: "Where object pronouns go: lo compro, quiero verlo"
         scope: "Before the conjugated verb (Lo compro). With an infinitive or gerund, either attached to it or before the whole verb group, never in between (Quiero verlo / Lo quiero ver; Estoy leyéndolo / Lo estoy leyendo)."
         pitfall: "Quiero lo ver → Quiero verlo / Lo quiero ver"
       - id: people_and_things
@@ -16,14 +16,14 @@ chapters:
         scope: "lo/la/los/las stand for both people and things (Conozco a Pedro. Lo conozco)."
         later: [es.objeto_doblado.leismo]
       - id: no_object_drop
-        title: "The pronoun can't be dropped"
+        title: "Object pronoun can't be dropped: Sí, lo tengo"
         scope: "Where English answers I have, Spanish needs the pronoun: ¿Tienes el billete? — Sí, lo tengo."
         pitfall: "Sí, tengo → Sí, lo tengo"
       - id: lo_neutro
-        title: "lo for a whole statement"
+        title: "lo for a whole statement: Ya lo sé"
         scope: "lo also stands for a fact or idea: Ya lo sé. No lo creo. ¿Lo entiendes? Where English says I know, Spanish says Lo sé."
       - id: personal_a
-        title: "Personal a"
+        title: "Personal a before a person: Veo a María"
         scope: "a before a specific person (or pet) as direct object: Veo a María, Busco a mi hermano, Quiero a mi perro. Not for unspecified people (Busco un médico) or after tener (Tengo dos hermanos)."
         difficulty: hard
         pitfall: "Conozco Ana → Conozco a Ana"
@@ -33,14 +33,14 @@ chapters:
     goal: "Talk about experiences and what you've done today or this week."
     concepts:
       - id: forms
-        title: "haber + participle"
+        title: "Present perfect: he, has, ha + participle"
         scope: "he, has, ha, hemos, habéis, han + participle in -ado/-ido (he hablado, has comido). The participle doesn't change."
         difficulty: easy
       - id: irregular_participles
-        title: "Irregular participles"
+        title: "Irregular participles: hecho, dicho, visto"
         scope: "hecho, dicho, visto, escrito, puesto, vuelto, roto, abierto, muerto, cubierto, resuelto. Compounds follow their base (descubierto, devuelto, deshecho, propuesto)."
       - id: accented_participles
-        title: "leído, oído, traído"
+        title: "Participles in -ído: leído, oído, traído"
         scope: "-ído after a, e, o: leído, creído, oído, traído, caído, reído."
         difficulty: easy
       - id: no_split
@@ -48,10 +48,10 @@ chapters:
         scope: "Pronouns and adverbs go before haber or after the participle: Lo he visto. Ya lo he hecho. No he comido todavía."
         pitfall: "He lo visto / He ya comido → Lo he visto / Ya he comido"
       - id: experience
-        title: "Experiences"
+        title: "Present perfect for experiences: ¿Has estado…?"
         scope: "What has happened at some point in your life, with alguna vez, nunca, ya, todavía no: ¿Has estado en México? Nunca he comido pulpo."
       - id: open_period
-        title: "Today, this week, this year"
+        title: "Present perfect for today, this week (Spain)"
         scope: "In Spain, actions in a period that hasn't ended: hoy, esta mañana, esta semana, este año, últimamente (Hoy he trabajado mucho)."
         variety: spain
         later: [es.perfecto_indefinido_1.latam_usage]
@@ -61,17 +61,17 @@ chapters:
     goal: "Say what you did yesterday, last year, on a trip."
     concepts:
       - id: ar
-        title: "-ar verbs"
+        title: "Preterite of -ar verbs: hablé, habló"
         scope: "-é, -aste, -ó, -amos, -asteis, -aron (hablé, hablaste, habló…). The accent matters: hablo (I speak) / habló (he spoke)."
       - id: er_ir
-        title: "-er and -ir verbs"
+        title: "Preterite of -er and -ir verbs: comí, vivió"
         scope: "One set of endings for both: -í, -iste, -ió, -imos, -isteis, -ieron (comí, viví, comió, vivieron)."
       - id: nosotros
-        title: "nosotros like the present"
+        title: "Preterite nosotros same as present: hablamos"
         scope: "-ar and -ir nosotros forms are the same as in the present (hablamos, vivimos); context or a time word decides. -er verbs differ (comemos / comimos)."
         difficulty: easy
       - id: spelling_yo
-        title: "busqué, llegué, empecé"
+        title: "Preterite yo spelling: busqué, llegué, empecé"
         scope: "-car, -gar, -zar verbs change spelling in yo only: buscar → busqué, llegar → llegué, empezar → empecé, pagar → pagué."
         see: [es.escritura.letters]
         forms:
@@ -79,14 +79,14 @@ chapters:
           llegar: [llegué]
           empezar: [empecé]
       - id: y_spelling
-        title: "leyó, oyeron"
+        title: "Preterite y in the third person: leyó, oyeron"
         scope: "-er/-ir verbs with a vowel before the ending take y in the third person: leer → leyó, leyeron; oír, creer, caer, construir. Other forms take an accent (leíste, leímos)."
         forms:
           leer: [leyó, leyeron]
           oír: [oyó, oyeron]
           creer: [creyó, creyeron]
       - id: completed
-        title: "Completed actions at a finished time"
+        title: "Preterite for completed actions: ayer, el lunes"
         scope: "Events in a time that is over: ayer, anoche, el lunes, la semana pasada, en 2010, hace dos años (Ayer cené con Ana)."
 
   - id: es.comparacion
@@ -94,7 +94,7 @@ chapters:
     goal: "Compare people, places and things."
     concepts:
       - id: mas_menos_que
-        title: "más/menos… que"
+        title: "más / menos… que"
         scope: "más or menos + adjective, adverb or noun + que (Es más alto que yo, Tengo menos tiempo que tú); verb + más/menos que (Trabaja más que yo)."
         difficulty: easy
       - id: tan_tanto
@@ -109,11 +109,11 @@ chapters:
         scope: "With a number or quantity, más de / menos de: Tiene más de cincuenta años."
         pitfall: "más que diez → más de diez"
       - id: superlative
-        title: "el más… de"
+        title: "Superlative: el más… de"
         scope: "el/la/los/las + más/menos + adjective + de: Es el restaurante más caro de la ciudad, La más alta de la clase. In Spanish, de, not en."
         pitfall: "el más alto en la clase → de la clase"
       - id: isimo
-        title: "-ísimo"
+        title: "-ísimo: carísimo, muchísimo"
         scope: "Very, very: carísimo, guapísima, muchísimo. Spelling kept: rico → riquísimo, largo → larguísimo, feliz → felicísimo."
       - id: igual_mismo
         title: "igual que, el mismo que"
@@ -126,18 +126,18 @@ chapters:
     teach: "Start with the shared endings of the strong preterites; then the stems verb by verb, the most frequent first."
     concepts:
       - id: ser_ir
-        title: "fui: ser and ir"
+        title: "Preterite of ser and ir: fui, fue"
         scope: "fui, fuiste, fue, fuimos, fuisteis, fueron is the preterite of both ser and ir; context tells which (Fue un día largo / Fue a Madrid)."
         lemmas: [ser, ir]
         forms:
           ser/ir: [fui, fuiste, fue, fuimos, fueron]
       - id: strong_endings
-        title: "Endings of the strong preterites"
+        title: "Strong preterite endings: tuve, hizo (no accent)"
         scope: "Irregular stems take -e, -iste, -o, -imos, -isteis, -ieron with no written accent (tuve, tuvo, hice, hizo)."
         difficulty: hard
         pitfall: "tuvé, tuvó → tuve, tuvo"
       - id: uv
-        title: "tener, estar, andar: -uv-"
+        title: "Preterite -uv-: tuve, estuve, anduve"
         scope: "tuve, estuve, anduve (tuvo, estuvimos, anduvieron). Compounds follow: mantuve, obtuve."
         lemmas: [tener, estar, andar]
         forms:
@@ -145,44 +145,44 @@ chapters:
           estar: [estuve, estuviste, estuvo, estuvimos, estuvieron]
           andar: [anduve, anduvo, anduvieron]
       - id: hacer
-        title: "hacer: hice, hizo"
+        title: "Preterite of hacer: hice, hizo"
         scope: "hice, hiciste, hizo (z), hicimos, hicisteis, hicieron. Compounds follow (deshice)."
         lemmas: [hacer]
         forms:
           hacer: [hice, hiciste, hizo, hicimos, hicieron]
       - id: poder
-        title: "poder: pude"
+        title: "Preterite of poder: pude"
         scope: "pude, pudiste, pudo, pudimos…"
         lemmas: [poder]
         forms:
           poder: [pude, pudiste, pudo, pudimos, pudieron]
       - id: poner
-        title: "poner: puse"
+        title: "Preterite of poner: puse"
         scope: "puse, pusiste, puso… Compounds: propuse, supuse."
         lemmas: [poner]
         forms:
           poner: [puse, pusiste, puso, pusimos, pusieron]
       - id: saber
-        title: "saber: supe"
+        title: "Preterite of saber: supe"
         scope: "supe, supiste, supo… (it often means found out)."
         lemmas: [saber]
         later: [es.indefinido_imperfecto_2.meaning_change]
         forms:
           saber: [supe, supiste, supo, supimos, supieron]
       - id: querer
-        title: "querer: quise"
+        title: "Preterite of querer: quise"
         scope: "quise, quisiste, quiso…"
         lemmas: [querer]
         forms:
           querer: [quise, quisiste, quiso, quisimos, quisieron]
       - id: venir
-        title: "venir: vine"
+        title: "Preterite of venir: vine"
         scope: "vine, viniste, vino, vinimos, vinisteis, vinieron."
         lemmas: [venir]
         forms:
           venir: [vine, viniste, vino, vinimos, vinieron]
       - id: j_stems
-        title: "decir, traer, -ducir: -j-"
+        title: "Preterite -j-: dije, traje, conduje"
         scope: "dije, traje, conduje, traduje, produje; after j the 3rd plural is -eron (dijeron, trajeron)."
         difficulty: hard
         lemmas: [decir, traer, conducir, traducir, producir]
@@ -192,14 +192,14 @@ chapters:
           traer: [traje, trajiste, trajo, trajimos, trajeron]
           conducir: [conduje, condujo, condujeron]
       - id: dar_ver
-        title: "dar and ver"
+        title: "Preterite of dar and ver: di, vi"
         scope: "dar takes -er/-ir endings: di, diste, dio, dimos, disteis, dieron. ver: vi, viste, vio. No accents on di, dio, vi, vio."
         lemmas: [dar, ver]
         forms:
           dar: [di, diste, dio, dimos, dieron]
           ver: [vi, viste, vio, vimos, vieron]
       - id: e_i_third
-        title: "pidió, sintió: e → i in the third person"
+        title: "Preterite e → i in the third person: pidió, sintió"
         scope: "-ir stem-changing verbs change e → i only in él and ellos: pedir → pidió, pidieron; sentir, seguir, preferir, repetir, servir, vestirse, divertirse."
         difficulty: hard
         forms:
@@ -208,33 +208,33 @@ chapters:
           seguir: [siguió, siguieron]
           preferir: [prefirió, prefirieron]
       - id: o_u_third
-        title: "durmió, murió"
+        title: "Preterite o → u in the third person: durmió, murió"
         scope: "dormir and morir change o → u in él and ellos: durmió, durmieron, murió."
         lemmas: [dormir, morir]
         forms:
           dormir: [durmió, durmieron]
           morir: [murió, murieron]
       - id: hubo
-        title: "hubo"
+        title: "hubo: there was (an event)"
         scope: "hubo = there was / there were, for an event that took place (Hubo un accidente)."
         later: [es.indefinido_imperfecto_2.hubo_habia]
 
   - id: es.perfecto_indefinido_1
-    title: "Perfecto o indefinido I"
+    title: "Perfecto o indefinido I: la palabra de tiempo"
     goal: "Talk about recent and earlier events in the right tense."
     teach: "Follow the learner's variety. In Latin America the contrast is weaker; teach latam_usage first there."
     concepts:
       - id: time_markers
-        title: "The time word decides"
+        title: "Perfecto or indefinido by the time word: hoy or ayer"
         scope: "Spain: hoy, esta mañana, este año, ya, todavía no, nunca → perfecto; ayer, anoche, el año pasado, en 2019, hace dos años → indefinido (Hoy he comido paella. Ayer comí pescado)."
         difficulty: hard
         variety: spain
         later: [es.perfecto_indefinido_2.speaker_frame]
       - id: experience_vs_event
-        title: "Ever vs then"
+        title: "Perfecto for experience, indefinido for a dated event"
         scope: "perfecto for experience without a time (¿Has estado en Perú?), indefinido for a dated event (Estuve en Perú en 2019)."
       - id: latam_usage
-        title: "Latin American usage"
+        title: "Indefinido for today and recent events (Latin America)"
         scope: "In most of Latin America the indefinido is used for today and recent events too (Hoy comí temprano, ¿Ya comiste?); the perfecto is mostly for experience and things still continuing."
         variety: latam
 
@@ -244,22 +244,22 @@ chapters:
     continues: es.gustar_1
     concepts:
       - id: doler
-        title: "doler"
+        title: "doler: me duele la cabeza"
         scope: "Me duele la cabeza, Me duelen los pies — the body part takes the article, not a possessive."
         pitfall: "Mi cabeza duele → Me duele la cabeza"
       - id: others
-        title: "interesar, importar, molestar, preocupar, faltar, quedar"
+        title: "Verbs like gustar: interesar, importar, molestar, faltar"
         scope: "Same pattern as gustar: Me interesa la historia, No me importa, Me molesta el ruido, Nos falta tiempo, Me queda bien (fits me), Me quedan diez euros (I have left)."
       - id: parecer
-        title: "¿Qué te parece?"
+        title: "parecer for opinions: ¿Qué te parece?"
         scope: "parecer for opinions: ¿Qué te parece? — Me parece bien / Me parece interesante; Me parece que + indicative (I think that)."
         later: [es.subj_emocion.me_parece_bien, es.subj_opinion.no_creo_subj]
       - id: hacer_falta
-        title: "hacer falta"
+        title: "hacer falta: to need"
         scope: "hacer falta = to need, built like gustar: Me hace falta tiempo, Nos hacen falta sillas. Impersonal: Hace falta + infinitive (Hace falta reservar)."
         later: [es.subj_deseo.influence]
       - id: infinitives_singular
-        title: "Singular with infinitives"
+        title: "Singular gusta with infinitives"
         scope: "One or several infinitives take the singular verb: Me gusta cocinar y leer."
 
   - id: es.imperfecto
@@ -267,15 +267,15 @@ chapters:
     goal: "Describe how things were and what you used to do."
     concepts:
       - id: ar
-        title: "-ar verbs: -aba"
+        title: "Imperfect of -ar verbs: -aba"
         scope: "hablaba, hablabas, hablaba, hablábamos, hablabais, hablaban (accent only in nosotros)."
         difficulty: easy
       - id: er_ir
-        title: "-er/-ir verbs: -ía"
+        title: "Imperfect of -er and -ir verbs: -ía"
         scope: "One set for both: comía, vivías, vivíamos, comían."
         difficulty: easy
       - id: irregular
-        title: "Only three irregulars: ser, ir, ver"
+        title: "Imperfect irregulars: era, iba, veía"
         scope: "era, iba, veía (eras, íbamos, veían). Every other verb is regular in the imperfecto."
         difficulty: easy
         lemmas: [ser, ir, ver]
@@ -284,21 +284,21 @@ chapters:
           ir: [iba, ibas, íbamos, iban]
           ver: [veía, veías, veíamos, veían]
       - id: habitual
-        title: "Habits in the past"
+        title: "Imperfect for past habits"
         scope: "What you used to do: antes, siempre, todos los días, de pequeño, cuando era niño (Antes vivía en Bonn, Siempre íbamos a la playa)."
       - id: description
-        title: "Descriptions in the past"
+        title: "Imperfect for past descriptions"
         scope: "What people, places and situations were like (Era alta y tenía el pelo largo, La casa tenía un jardín, Hacía frío)."
       - id: time_age
-        title: "Time and age in the past"
+        title: "Imperfect for time and age: Eran las tres, Tenía veinte años"
         scope: "Eran las tres, Tenía veinte años."
         difficulty: easy
       - id: habia
-        title: "había, always singular"
+        title: "había: there was, always singular"
         scope: "había = there was / there were for descriptions, always singular (Había muchas personas)."
         pitfall: "Habían muchas personas → Había muchas personas"
       - id: soler
-        title: "solía + infinitive"
+        title: "soler + infinitive: solía correr"
         scope: "Solía correr por las mañanas = I used to run. soler is also used in the present (Suelo cenar tarde)."
         difficulty: easy
 
@@ -308,14 +308,14 @@ chapters:
     continues: es.posesivos_1
     concepts:
       - id: forms
-        title: "mío, tuyo, suyo, nuestro, vuestro"
+        title: "Stressed possessives: mío, tuyo, suyo"
         scope: "mío/mía/míos/mías, tuyo, suyo, nuestro, vuestro, agreeing with the thing owned."
         difficulty: easy
       - id: after_noun
-        title: "un amigo mío"
+        title: "Possessive after the noun: un amigo mío"
         scope: "After the noun: un amigo mío (a friend of mine), unas primas suyas."
       - id: pronoun
-        title: "el mío, la tuya"
+        title: "Possessive pronouns: el mío, la tuya"
         scope: "With an article, replacing a noun: Mi coche es rojo, ¿y el tuyo?"
       - id: after_ser
         title: "Es mío, es el mío"
@@ -326,56 +326,56 @@ chapters:
     goal: "Say how long ago, since when and for how long."
     concepts:
       - id: hace_ago
-        title: "hace for ago"
+        title: "hace for ago: llegué hace dos años"
         scope: "hace + amount of time, usually with a past tense: Llegué hace dos años. La vi hace un rato."
         pitfall: "Llegué dos años hace → Llegué hace dos años"
       - id: desde
-        title: "desde, desde hace"
+        title: "desde or desde hace"
         scope: "desde + a point (desde 2019, desde el lunes); desde hace + a period (desde hace dos años). With an action still going on, the present tense: Vivo aquí desde hace dos años."
         difficulty: hard
         pitfall: "Vivo aquí por dos años → Vivo aquí desde hace dos años"
       - id: hace_que
-        title: "Hace… que"
+        title: "hace… que: Hace dos años que vivo aquí"
         scope: "Hace dos años que vivo aquí (present), Hace mucho que no te veo."
       - id: ya_todavia
         title: "ya, todavía, ya no, todavía no"
         scope: "ya = already/now, todavía/aún = still, ya no = no longer, todavía no = not yet."
         difficulty: hard
       - id: durante_en
-        title: "durante, en"
+        title: "durante or en for time"
         scope: "durante for a period (durante el verano, durante tres horas); en for the time it takes or within which (Lo hago en una hora)."
       - id: antes_despues_de
         title: "antes de, después de"
         scope: "+ noun or infinitive: antes de comer, después de la clase."
       - id: acabar_de
-        title: "acabar de + infinitive"
+        title: "acabar de + infinitive: just did"
         scope: "Just did: Acabo de llegar, Acababa de salir."
 
   - id: es.indefinido_imperfecto_1
-    title: "Indefinido o imperfecto I"
+    title: "Indefinido o imperfecto I: acción y descripción"
     goal: "Talk about your past: what happened and what it was like."
     teach: "The core contrast. Narration with layered background, and verbs whose meaning changes, come in tier II."
     concepts:
       - id: event_vs_background
-        title: "What happened vs what it was like"
+        title: "Preterite for events, imperfect for background"
         scope: "indefinido for completed events that move the story on (Llegué, cené y me acosté); imperfecto for the circumstances and descriptions around them (Hacía calor, estaba cansado)."
         difficulty: hard
         later: [es.indefinido_imperfecto_2.narrative]
       - id: once_vs_habit
-        title: "Once vs used to"
+        title: "Preterite for once, imperfect for habits"
         scope: "One occasion → indefinido (El domingo fui al cine); repeated habit → imperfecto (Los domingos iba al cine)."
         difficulty: hard
       - id: bounded_duration
-        title: "Long but finished: indefinido"
+        title: "Preterite for a finished duration: viví tres años"
         scope: "A stated, finished duration takes the indefinido however long it was: Viví tres años en Roma. Estuve dos horas esperando."
         difficulty: hard
         pitfall: "Vivía tres años en Roma → Viví tres años en Roma"
       - id: interrupted
-        title: "Interrupted action"
+        title: "Imperfect interrupted by preterite: dormía cuando sonó"
         scope: "imperfecto for the action in progress, indefinido for what interrupts it: Dormía cuando sonó el teléfono. Estaba duchándome cuando llegó."
         difficulty: hard
       - id: cuando_era
-        title: "cuando era / cuando llegué"
+        title: "cuando era or cuando llegué"
         scope: "cuando + imperfecto for a life stage as background (Cuando era niño, vivía en el campo); cuando + indefinido for a moment (Cuando llegué, me llamaste)."
 
   - id: es.objeto_indirecto
@@ -383,16 +383,16 @@ chapters:
     goal: "Say who you give, tell, send or show something to."
     concepts:
       - id: forms
-        title: "me, te, le, nos, os, les"
+        title: "Indirect object pronouns: me, te, le, les"
         scope: "The person who receives (Le doy el libro, Les escribo, ¿Me dices la hora?)."
         difficulty: easy
       - id: doubling
-        title: "le with a named person"
+        title: "le with a named person: Le doy el libro a Ana"
         scope: "le/les normally stays even when the person is named: Le doy el libro a Ana. Les escribí a mis padres."
         difficulty: hard
         pitfall: "Doy el libro a Ana → Le doy el libro a Ana"
       - id: combined_order
-        title: "me lo, te la"
+        title: "Two pronouns, indirect first: me lo, te la"
         scope: "Two pronouns: indirect before direct (Me lo da, Te la envío, Nos los trae)."
       - id: se_lo
         title: "le lo → se lo"
@@ -400,7 +400,7 @@ chapters:
         difficulty: hard
         pitfall: "Le lo doy → Se lo doy"
       - id: combined_position
-        title: "Position of two pronouns"
+        title: "Where two pronouns go: voy a dártelo"
         scope: "Same rules as one pronoun; attached, they add an accent: Voy a dártelo, Está explicándomelo."
 
   - id: es.imperativo_1
@@ -408,10 +408,10 @@ chapters:
     goal: "Give instructions, directions, advice and invitations."
     concepts:
       - id: tu_regular
-        title: "tú: like the él form"
+        title: "tú commands like the él form: habla, come"
         scope: "The tú imperative is the third-person present: habla, come, escribe, including stem changes (piensa, duerme, pide)."
       - id: tu_irregular
-        title: "di, haz, ve, pon, sal, sé, ten, ven"
+        title: "Irregular tú commands: di, haz, ve, pon, sal, sé, ten, ven"
         scope: "Eight short irregular tú forms: decir → di, hacer → haz, ir → ve, poner → pon, salir → sal, ser → sé, tener → ten, venir → ven."
         difficulty: hard
         lemmas: [decir, hacer, ir, poner, salir, ser, tener, venir]
@@ -426,40 +426,40 @@ chapters:
           venir: [ven]
         enclitic: true
       - id: usted
-        title: "usted, ustedes"
+        title: "usted and ustedes commands: hable, coman"
         scope: "Formed from the yo stem with the opposite vowel: hable/hablen, coma/coman, tenga, haga, diga; irregular: sea, vaya, esté, dé, sepa. These are present-subjunctive forms, learned here as commands."
         later: [es.subj_formas.yo_stem]
       - id: vosotros
-        title: "vosotros: -ad, -ed, -id"
+        title: "vosotros commands: hablad, sentaos"
         scope: "Infinitive -r → -d: hablad, comed, venid. Reflexive drops the d: sentaos, levantaos (idos is the exception)."
         variety: spain
       - id: pronouns_attached
-        title: "Pronouns attached: dímelo, siéntate"
+        title: "Pronouns attached to commands: dímelo, siéntate"
         scope: "Pronouns attach to the end of an affirmative imperative, with an accent to keep the stress: cómpralo, siéntate, dímelo, dígamelo."
         difficulty: hard
         later: [es.imperativo_2.pronouns_before]
       - id: politeness
-        title: "Polite requests"
+        title: "Polite requests: commands with por favor, ¿me pasas…?"
         scope: "Imperatives are normal and polite in Spanish with por favor or a soft tone (Pásame la sal, por favor). Softer: ¿Me pasas la sal? ¿Puedes cerrar la puerta?"
         difficulty: easy
 
   - id: es.indefinidos
-    title: "Indefinidos"
+    title: "Indefinidos: algo, alguien, alguno, todo, cada"
     goal: "Talk about someone, something, nobody, nothing, every and other."
     concepts:
       - id: algo_nada
-        title: "algo, nada"
+        title: "algo, nada: something, nothing"
         scope: "¿Quieres algo? — No, nada."
         difficulty: easy
       - id: alguien_nadie
-        title: "alguien, nadie"
+        title: "alguien, nadie: someone, no one"
         scope: "For people, with personal a as object (¿Ves a alguien? No conozco a nadie)."
       - id: alguno_ninguno
-        title: "alguno, ninguno"
+        title: "alguno, ninguno; algún, ningún"
         scope: "alguno/a/os/as (some, any of a group); before a masculine singular noun algún, ningún. ninguno is almost always singular (No tengo ningún problema)."
         difficulty: hard
       - id: otro
-        title: "otro, without un"
+        title: "otro without un"
         scope: "otro/otra never takes un: otro café, otra vez, ¿Tienes otro?"
         difficulty: hard
         pitfall: "un otro café → otro café"
@@ -467,7 +467,7 @@ chapters:
         title: "todo el día, todos los días"
         scope: "todo + article: todo el día (the whole day), toda la casa; todos los días (every day)."
       - id: cada
-        title: "cada"
+        title: "cada + singular"
         scope: "Invariable, + singular: cada día, cada semana, cada uno."
         difficulty: easy
       - id: cualquier
@@ -479,11 +479,11 @@ chapters:
     goal: "Make predictions, promises and plans with conditions."
     concepts:
       - id: regular
-        title: "Infinitive + endings"
+        title: "Future: infinitive + -é, -ás, -á"
         scope: "-é, -ás, -á, -emos, -éis, -án on the whole infinitive, the same for -ar, -er, -ir (hablaré, comerás, vivirán)."
         difficulty: easy
       - id: stems_drop
-        title: "podr-, sabr-, querr-, habr-, cabr-"
+        title: "Future stems that drop e: podr-, sabr-, querr-"
         scope: "poder, saber, querer, haber, caber drop the e of the infinitive (podré, sabrás, querrá, habrá)."
         lemmas: [poder, saber, querer, haber, caber]
         forms:
@@ -492,7 +492,7 @@ chapters:
           querer: [querré, querrás, querrá, querremos, querrán]
           haber: [habrá]
       - id: stems_d
-        title: "tendr-, pondr-, saldr-, vendr-, valdr-"
+        title: "Future stems with d: tendr-, pondr-, saldr-"
         scope: "tener, poner, salir, venir, valer replace the vowel with d (tendré, pondrás, saldremos, vendrán)."
         lemmas: [tener, poner, salir, venir, valer]
         forms:
@@ -501,25 +501,25 @@ chapters:
           salir: [saldré, saldrás, saldrá, saldremos, saldrán]
           venir: [vendré, vendrás, vendrá, vendremos, vendrán]
       - id: stems_hacer_decir
-        title: "har-, dir-"
+        title: "Future of hacer and decir: haré, diré"
         scope: "hacer → haré, decir → diré."
         lemmas: [hacer, decir]
         forms:
           hacer: [haré, harás, hará, haremos, harán]
           decir: [diré, dirás, dirá, diremos, dirán]
       - id: uses
-        title: "futuro or ir a"
+        title: "Future or ir a"
         scope: "futuro for predictions, promises and more distant or less certain future (Mañana lloverá, Te llamaré); ir a for intentions and what is clearly about to happen. In speech ir a is more common."
         later: [es.futuro_2.probability_now]
       - id: si_present
-        title: "si + present, then futuro"
+        title: "si + present, then future or command"
         scope: "Real conditions: si + present, with present, futuro or imperative after (Si llueve, me quedo / me quedaré en casa; Si tienes tiempo, llámame). Never futuro after si meaning if; si meaning whether takes any tense (No sé si vendrá)."
         difficulty: hard
         pitfall: "Si lloverá → Si llueve"
         later: [es.condicionales.si_unlikely]
 
   - id: es.por_para_1
-    title: "Por y para I"
+    title: "Por y para I: usos básicos"
     goal: "Say why, what for, who for, through where and by when."
     teach: "The uses with clear cues. Present para as goal and destination, por as cause and route. Tier II adds the harder cases."
     concepts:
@@ -548,7 +548,7 @@ chapters:
         title: "por for means"
         scope: "Communication and means: por teléfono, por correo, por internet. Transport normally takes en (en tren)."
       - id: por_time
-        title: "por la mañana"
+        title: "por la mañana: parts of the day"
         scope: "Parts of the day without a clock time: por la mañana, por la tarde, por la noche."
         difficulty: easy
       - id: por_rate
@@ -560,43 +560,43 @@ chapters:
         scope: "Lo compré por diez euros, Te cambio mi bici por la tuya."
 
   - id: es.relativas_1
-    title: "Oraciones de relativo I"
+    title: "Oraciones de relativo I: que, donde, lo que"
     goal: "Say which person, thing or place you mean."
     concepts:
       - id: que
-        title: "que for people and things"
+        title: "Relative que for people and things"
         scope: "el chico que vive aquí, el libro que leo."
         difficulty: easy
       - id: donde
-        title: "donde for places"
+        title: "Relative donde for places"
         scope: "la ciudad donde vivo (also en la que, later)."
         difficulty: easy
         later: [es.relativas_2.preposition_article]
       - id: not_omitted
-        title: "que can't be left out"
+        title: "Relative que can't be left out"
         scope: "English drops that; Spanish never does: the book I read → el libro que leí."
         pitfall: "La película vi ayer → La película que vi ayer"
       - id: lo_que
-        title: "lo que"
+        title: "lo que: what, the thing that"
         scope: "lo que = what, the thing that: No entiendo lo que dices. Lo que más me gusta es…"
 
   - id: es.adverbios
-    title: "Adverbios"
+    title: "Adverbios: -mente, bien, frecuencia, lugar y tiempo"
     goal: "Say how, how often, where and when."
     concepts:
       - id: mente
-        title: "-mente"
+        title: "Adverbs in -mente: rápidamente"
         scope: "Feminine form of the adjective + -mente: rápida → rápidamente, tranquila → tranquilamente. An accent on the adjective stays (fácilmente)."
       - id: bien_bueno
         title: "bien or bueno"
         scope: "bien and mal are adverbs (Habla bien), bueno and malo adjectives (Es un buen libro)."
         pitfall: "Cocina muy bueno → Cocina muy bien"
       - id: frequency
-        title: "siempre, a veces, nunca"
+        title: "Frequency: siempre, a veces, nunca"
         scope: "siempre, casi siempre, a menudo, a veces, casi nunca, nunca."
         difficulty: easy
       - id: place_time
-        title: "aquí, allí, pronto, tarde"
+        title: "Place and time adverbs: aquí, allí, pronto, tarde"
         scope: "aquí, ahí, allí; cerca, lejos; ahora, luego, después, pronto, temprano, tarde."
         difficulty: easy
 
@@ -605,20 +605,20 @@ chapters:
     goal: "Talk about what people generally do and what's done somewhere."
     concepts:
       - id: impersonal
-        title: "se for people in general"
+        title: "Impersonal se: Aquí se come bien"
         scope: "se + third-person singular for general statements: Aquí se come bien. ¿Cómo se dice…? Se vive bien en Valencia."
       - id: se_agreement
-        title: "Se vende, se venden"
+        title: "se vende, se venden: agrees with the thing"
         scope: "With a thing, the verb agrees with it: Se vende piso. Se venden pisos. Se habla español."
         difficulty: hard
         pitfall: "Se vende pisos → Se venden pisos"
         later: [es.pasiva.pasiva_refleja]
       - id: reciprocal
-        title: "Each other"
+        title: "Reciprocal nos, os, se: each other"
         scope: "nos, os, se for each other: Nos vemos mañana. Se quieren mucho."
         difficulty: easy
       - id: se_puede
-        title: "¿Se puede…?"
+        title: "¿Se puede…?: allowed or possible"
         scope: "Asking what is allowed or possible: ¿Se puede pagar con tarjeta? Aquí no se puede fumar."
         difficulty: easy
         chunk: true
@@ -628,37 +628,37 @@ chapters:
     goal: "React: how nice, what a day, so many people!"
     concepts:
       - id: que
-        title: "¡Qué…!"
+        title: "¡Qué…! exclamations: ¡Qué bonito!"
         scope: "¡Qué + adjective, adverb or noun!: ¡Qué bonito! ¡Qué bien! ¡Qué frío! ¡Qué pena!"
         difficulty: easy
       - id: que_mas
-        title: "¡Qué día más bonito!"
+        title: "¡Qué + noun + más + adjective!"
         scope: "¡Qué + noun + más/tan + adjective!: ¡Qué casa más grande! ¡Qué chica tan simpática!"
       - id: cuanto_como
         title: "¡Cuánto…! ¡Cómo…!"
         scope: "¡Cuánta gente! ¡Cuántos libros! ¡Cómo llueve! ¡Cómo me gusta!"
 
   - id: es.numeros_2
-    title: "Números II"
+    title: "Números II: centenas, miles, años y ordinales"
     goal: "Use large numbers, years and ordinals."
     continues: es.numeros_1
     concepts:
       - id: hundreds
-        title: "cien, ciento, doscientas"
+        title: "Hundreds: cien, ciento, doscientas"
         scope: "cien alone and before nouns or mil (cien euros, cien mil); ciento + more (ciento veinte). 200–900 agree with the noun (doscientas personas); irregular quinientos, setecientos, novecientos."
       - id: thousands
-        title: "mil, millón de"
+        title: "mil, un millón de"
         scope: "mil never takes un and doesn't pluralise as a number (dos mil); millón is a noun: un millón de personas, dos millones de euros."
       - id: years
-        title: "Years"
+        title: "Saying years: dos mil veinticinco"
         scope: "Said as one number: mil novecientos noventa y nueve, dos mil veinticinco."
         difficulty: easy
       - id: ordinals
-        title: "primero to décimo"
+        title: "Ordinals: primero to décimo"
         scope: "primero to décimo agree with the noun (la segunda vez); primer and tercer before a masculine noun. Above ten, cardinals are normal (el siglo veintiuno, el piso quince)."
 
   - id: es.conectores_2
-    title: "Conectores II"
+    title: "Conectores II: causa, consecuencia y orden"
     goal: "Tell a story in order and give reasons and consequences."
     concepts:
       - id: como_causal
@@ -666,23 +666,23 @@ chapters:
         scope: "como + cause at the start of the sentence (Como llovía, me quedé en casa); porque comes after the main clause."
         pitfall: "Porque llovía, me quedé → Como llovía, me quedé"
       - id: consequence
-        title: "por eso, así que, entonces"
+        title: "Consequence: por eso, así que, entonces"
         scope: "Estaba cansado, por eso me fui. No tengo coche, así que voy en bus."
         difficulty: easy
       - id: sequence
-        title: "primero, luego, después, al final"
+        title: "Sequence: primero, luego, al final"
         scope: "Ordering events: primero, luego, después, más tarde, al final, por último."
         difficulty: easy
       - id: es_que
-        title: "Es que…"
+        title: "Es que… to explain or excuse"
         scope: "Es que… introduces an explanation or excuse: ¿Por qué no viniste? — Es que estaba enfermo."
         difficulty: easy
         chunk: true
       - id: aunque_fact
-        title: "aunque + indicative"
+        title: "aunque + indicative for a known fact"
         scope: "aunque (although) + indicative for a known fact: Aunque llueve, salgo."
         later: [es.concesivas.aunque]
       - id: cuando_indicative
-        title: "cuando + indicative"
+        title: "cuando + indicative for habits and the past"
         scope: "For habits and the past: Cuando llego a casa, ceno. Cuando era niño, jugaba mucho."
         later: [es.subj_tiempo_finalidad.cuando_future]

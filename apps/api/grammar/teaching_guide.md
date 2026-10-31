@@ -120,9 +120,12 @@ mistake without recording it leaves the reply unfinished.
 
 - **Grammar:** one wrong `produced` result per error, on the concept it belongs to, with a
   `note`. That includes concepts in chapters the learner hasn't started (a wrong lo/la while
-  practising the preterite goes on `es.objeto_directo.forms`). The overview lists chapter
-  ids; fetch a chapter with `get_grammar_details` to find the concept. If none fits exactly,
-  take the closest one.
+  practising the preterite goes on `es.objeto_directo.forms`). Find the concept in the
+  overview, which lists every concept of every chapter, not just the chapters you've opened.
+  Take the most specific one: a basic concept often has a later one for the harder case
+  (pero for contrast, sino after a negation), and its `later` entries name it. If two could
+  fit, read both scopes with `get_grammar_details`. Correct results go on the specific
+  concept the same way.
 - **Accents and spelling that a rule decides** (tenia → tenía, pedieron → pidieron) are grammar
   too: record them on the rule's concept.
 - **Words:** a wrong or made-up word is a vocabulary mistake. Record a wrong `produce` answer
