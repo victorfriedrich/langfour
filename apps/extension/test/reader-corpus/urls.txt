@@ -42,3 +42,19 @@ lemonde        fr  https://www.lemonde.fr/actualite-medias/article/2019/08/12/le
 repubblica     it  https://www.repubblica.it/commenti/2026/10/07/news/legge_elettorale_un_premierato_in_maschera-425630553/  none
 ilpost         it  https://www.ilpost.it/2025/08/01/cattivi-film-miliardari-tecnologia/
 ansa           it  https://www.ansa.it/sito/notizie/cronaca/2026/10/06/attentato-di-modena-el-koudri-tenta-il-suicidio-in-carcere_dc8802dc-c3f5-4b75-822e-36576ccf9789.html
+# Lyrics, each marked up its own way: a block per line (Musixmatch), <br>
+# lines with [section] labels (Genius), a paragraph per stanza (Letras).
+# AZLyrics' consent dialog holds a megabyte of hidden text.
+lyrics-musixmatch es https://www.musixmatch.com/es/letras/Bad-Bunny/Titi-Me-Pregunto
+lyrics-genius es https://genius.com/Bad-bunny-titi-me-pregunto-lyrics
+lyrics-letras es https://www.letras.com/bad-bunny/titi-me-pregunto/
+lyrics-azlyrics es https://www.azlyrics.com/lyrics/badbunny/titimepregunto.html
+# Songs that broke it: Genius's About text winning over the lyrics, Genius
+# ads between sections, Musixmatch credits and tracking pixel, Musixmatch
+# notes winning over lyrics with performer chips, and Letras' list of the
+# artist's songs.
+lyrics-genius-ads es https://genius.com/Bizarrap-and-shakira-shakira-bzrp-music-sessions-vol-53-66-lyrics
+lyrics-genius-about es https://genius.com/Rosalia-despecha-lyrics
+lyrics-musixmatch-credits es https://www.musixmatch.com/lyrics/Bad-Bunny-Bomba-Est%C3%A9reo/Ojitos-Lindos
+lyrics-musixmatch-performers es https://www.musixmatch.com/lyrics/Bizarrap-Shakira/Shakira-Bzrp-Music-Sessions-Vol-53
+lyrics-letras-others es https://www.letras.com/luis-miguel/108666/

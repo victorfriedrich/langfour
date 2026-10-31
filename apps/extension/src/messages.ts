@@ -13,6 +13,8 @@ export type ArticleData = {
   url?: string | null;
   siteName?: string | null;
   byline?: string | null;
+  /** A song's byline is its artist, and its paragraphs are stanzas. */
+  kind?: 'article' | 'song';
 };
 
 export type ArticleExtractionResponse = {
