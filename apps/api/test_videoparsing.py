@@ -302,6 +302,9 @@ def test_a_caption_run_reads_metadata_through_the_proxy_and_unspaced(monkeypatch
         def extract_info(self, url, download):
             return {"id": "v1"}
 
+        def get_info_extractor(self, key):
+            return None
+
     monkeypatch.setattr(__import__("yt_dlp"), "YoutubeDL", YDL)
     spaced = []
     monkeypatch.setattr(vp, "_space_ytdlp", lambda: spaced.append(1))
@@ -452,3 +455,21 @@ def test_a_passing_proxy_error_retries_on_a_new_ip_without_pausing(captions):
     assert calls[0][1] != calls[1][1]
     assert vp.caption_text({"id": "v2"}, "es", proxied=True) is None        # failed twice
     assert vp.caption_text({"id": "v3"}, "es", proxied=True) == SPANISH     # not paused
+
+
+def test_every_ytdlp_instance_shares_one_player_script_cache():
+    """yt-dlp keeps the ~1.5 MB player script per instance, and each read makes a
+    new instance. If an upgrade renames or stops using `_code_cache`, this fails
+    instead of every video silently downloading the script again."""
+    import inspect
+
+    import yt_dlp
+    from yt_dlp.extractor.youtube import YoutubeIE
+
+    assert "_code_cache" in inspect.getsource(YoutubeIE._load_player)
+    seen = []
+    for _ in range(2):
+        with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+            vp._share_player_js(ydl)
+            seen.append(ydl.get_info_extractor("Youtube")._code_cache)
+    assert seen[0] is seen[1] is vp._PLAYER_JS

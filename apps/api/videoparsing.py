@@ -57,6 +57,26 @@ def _space_ytdlp() -> None:
         _ytdlp_next_at = time.monotonic() + YTDLP_MIN_INTERVAL_S
 
 
+# YouTube's player script (~2.9 MB, ~1.5 MB on the wire) is what yt-dlp runs to
+# answer the JS challenges. yt-dlp keeps it only in one YoutubeDL instance's
+# extractor (`_code_cache`, keyed by player version), and every read here makes
+# a new instance, so every video downloaded it again: ~1.5 of the ~1.9 MB a
+# proxied read cost. One dict shared by every instance downloads each player
+# version once per process instead. Measured on 2026-10-31: a read went from
+# 1,860 KB and 4.4 s to 383 KB and 2.7 s, captions unchanged.
+_PLAYER_JS: dict[str, str] = {}
+
+
+def _share_player_js(ydl) -> None:
+    """Point this instance's YouTube extractor at _PLAYER_JS. `_code_cache` is
+    yt-dlp internals: test_videoparsing checks it is still there and still
+    used, so a yt-dlp upgrade that drops it fails a test instead of quietly
+    going back to ~1.9 MB a video."""
+    ie = ydl.get_info_extractor("Youtube")
+    if isinstance(getattr(ie, "_code_cache", None), dict):
+        ie._code_cache = _PLAYER_JS
+
+
 def video_info(url, proxied: bool = False, proxy: str | None = None) -> dict:
     """Metadata and the selected audio format, from one page load.
 
@@ -73,6 +93,7 @@ def video_info(url, proxied: bool = False, proxy: str | None = None) -> dict:
     else:
         _space_ytdlp()
     with yt_dlp.YoutubeDL(opts) as ydl:
+        _share_player_js(ydl)
         return ydl.extract_info(url, download=False)
 
 
@@ -105,6 +126,7 @@ def download_video(info):
     try:
         start_time = time.time()
         with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+            _share_player_js(ydl)
             ydl.process_info(info)
             audio_file = ydl.prepare_filename(info)
         print(f"Audio downloaded in {time.time() - start_time:.2f} seconds")
