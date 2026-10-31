@@ -564,6 +564,17 @@ const MAX_LINE_WORDS = 20;
 /** A line this long that ends with a full stop is a sentence. */
 const MIN_SENTENCE_WORDS = 8;
 
+/** A line of a song: short, and not a sentence ending in a full stop, as notes about the song are. */
+function isLineText(text: string): boolean {
+  const words = wordsIn(text);
+  return words > 0 && words <= MAX_LINE_WORDS && !(words >= MIN_SENTENCE_WORDS && /[^.]\.$/.test(text.trim()));
+}
+
+/** Fewer lines than this are not a song's lyrics. */
+const MIN_LYRIC_LINES = 8;
+/** Share of a page's lines that its lyrics block holds. */
+const NEARLY_ALL = 0.9;
+
 /** "verse", plus who sings it: "Bad Bunny & Jhay Cortez". */
 const MAX_LABEL_WORDS = 8;
 
@@ -620,7 +631,7 @@ function stanzaShare(root: ParentNode): number {
 const MIN_STANZA_SHARE = 0.5;
 
 /**
- * The page's lyrics as lines: every element that splits its text into three
+ * The page's lyrics as <br> lines: every element that splits its text into three
  * lines or more with <br>s, outermost only. A stanza ends at a blank line or
  * at a block between lines: Genius puts its header in the first such block,
  * and an ad between sections instead of a blank line.
@@ -656,6 +667,56 @@ function lineBlocks(doc: Document): string {
 }
 
 /**
+ * The page's lyrics when each line is an element of its own (Musixmatch):
+ * the element holding the most such lines, where they are most of its
+ * text, with each line made a paragraph so stanzas are joined as usual.
+ */
+function lineElements(doc: Document): string {
+  if (!doc.body) return '';
+  const isLine = (el: Element) => el.children.length === 0 && isLineText(el.textContent || '');
+  const lines = new Map<Element, number>();
+  const lineWords = new Map<Element, number>();
+  for (const line of Array.from(doc.body.getElementsByTagName('*')).filter(isLine)) {
+    const words = wordsIn(line.textContent || '');
+    for (let el = line.parentElement; el && el !== doc.body; el = el.parentElement) {
+      lines.set(el, (lines.get(el) ?? 0) + 1);
+      lineWords.set(el, (lineWords.get(el) ?? 0) + words);
+    }
+  }
+  const candidates = Array.from(lines.keys()).filter((el) =>
+    lines.get(el)! >= MIN_LYRIC_LINES && lineWords.get(el)! / wordsIn(el.textContent || '') >= MIN_STANZA_SHARE);
+  const most = Math.max(0, ...candidates.map((el) => lines.get(el)!));
+  // The innermost element with nearly all the lines: one level up can add a
+  // short banner that reads like a line ("Are you an artist? …").
+  const best = candidates
+    .filter((el) => lines.get(el)! >= most * NEARLY_ALL)
+    .find((el, _, all) => !all.some((other) => other !== el && el.contains(other)));
+  if (!best) return '';
+  const copy = best.cloneNode(true) as Element;
+  // Lyrics lines are all wrapped alike, so they sit at one depth; a heading
+  // or footer beside them ("Lyrics of …", "Rating: PG-13") sits elsewhere.
+  const depthOf = (el: Element) => {
+    let depth = 0;
+    for (let node = el.parentElement; node && node !== copy; node = node.parentElement) depth++;
+    return depth;
+  };
+  const found = Array.from(copy.getElementsByTagName('*')).filter(isLine);
+  const atDepth = new Map<number, number>();
+  found.forEach((line) => atDepth.set(depthOf(line), (atDepth.get(depthOf(line)) ?? 0) + 1));
+  const lineDepth = Array.from(atDepth).sort((a, b) => b[1] - a[1])[0][0];
+  found.forEach((line) => {
+    if (depthOf(line) !== lineDepth) {
+      line.remove();
+      return;
+    }
+    const p = doc.createElement('p');
+    p.append(...Array.from(line.childNodes));
+    line.replaceWith(p);
+  });
+  return copy.outerHTML;
+}
+
+/**
  * Joins runs of one-line paragraphs into one paragraph per stanza. A run
  * ends at any other block (a heading, a stanza, an empty paragraph) and
  * where the section changes: the nearest ancestor holding other paragraphs.
@@ -666,13 +727,7 @@ function joinLinesIntoStanzas(root: ParentNode): void {
     while (el && el.querySelectorAll('p').length < 2) el = el.parentElement;
     return el;
   };
-  const isLine = (p: Element) => {
-    const text = (p.textContent || '').trim();
-    const words = wordsIn(text);
-    if (p.tagName !== 'P' || p.querySelector('br') || words === 0 || words > MAX_LINE_WORDS) return false;
-    // A sentence, as in notes about the song, ends with a full stop.
-    return !(words >= MIN_SENTENCE_WORDS && /[^.]\.$/.test(text));
-  };
+  const isLine = (p: Element) => p.tagName === 'P' && !p.querySelector('br') && isLineText(p.textContent || '');
   let stanza: Element | null = null;
   let section: Element | null = null;
   for (const block of Array.from(root.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, figure, table'))) {
@@ -737,8 +792,14 @@ export function extractArticle(doc: Document, options: ExtractOptions): ArticleD
   prune(clone);
   markPromotions(clone);
   const isSong = Boolean(declared(doc, 'MusicRecording')) || isLyricsPage(options.url);
+  if (isSong) {
+    // Controls, not lines: Musixmatch's performer chips ("SHAKIRA").
+    clone.querySelectorAll('[tabindex], [role="button"]').forEach((el) => {
+      if (wordsIn(el.textContent || '') <= MAX_LABEL_WORDS) el.remove();
+    });
+  }
   // Taken before Readability, which changes the document it reads.
-  const lines = isSong ? lineBlocks(clone) : '';
+  const lyrics = isSong ? [lineBlocks(clone), lineElements(clone)] : [];
 
   const parsed = new Readability(clone, { charThreshold: MIN_ARTICLE_CHARS }).parse();
   if (!parsed?.content) return null;
@@ -750,13 +811,14 @@ export function extractArticle(doc: Document, options: ExtractOptions): ArticleD
   const probe = doc.createElement('template');
   let content = withIngredients(normalize(parsed.content, title, isSong), recipeIngredients(doc), doc);
   probe.innerHTML = content;
-  if (isSong && stanzaShare(probe.content) < MIN_STANZA_SHARE) {
-    // Prose instead of lyrics: the page's lines, or no song at all (a page
-    // whose lyrics are missing, with only notes about them).
+  // Prose instead of lyrics: the page's lines, or no song at all (a page
+  // whose lyrics are missing, with only notes about them).
+  for (const lines of lyrics) {
+    if (stanzaShare(probe.content) >= MIN_STANZA_SHARE) break;
     content = normalize(lines, title, true);
     probe.innerHTML = content;
-    if (stanzaShare(probe.content) < MIN_STANZA_SHARE) return null;
   }
+  if (isSong && stanzaShare(probe.content) < MIN_STANZA_SHARE) return null;
   if (wordsIn(probe.content.textContent || '') < MIN_ARTICLE_WORDS) return null;
 
   return {

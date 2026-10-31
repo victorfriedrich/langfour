@@ -255,6 +255,15 @@ describe('extractArticle on lyrics pages', () => {
     expect(content.textContent).not.toContain('bibliotecas');
   });
 
+  it('takes a line per element when the extractor picks notes about the song instead', () => {
+    // Musixmatch: a performer chip, then each line in its own box, beside notes.
+    const line = (text: string) => `<div><div><div>${text}</div></div></div>`;
+    const section = (lines: string[]) => `<div><div tabindex="0"><div>LOS EJEMPLOS</div></div>${lines.map(line).join('')}</div>`;
+    const lyrics = `<div><div>Lyrics of Calle de noche by Los Ejemplos</div>${STANZAS.map(section).join('')}<div>Rating: PG</div></div>`;
+    const { stanzas } = songPage(`${lyrics}<section><h2>Meaning</h2>${paragraphs()}${paragraphs()}</section>`);
+    expect(stanzas).toEqual(STANZAS);
+  });
+
   it('says there is no song when the page has none, only notes about it', () => {
     expect(extractArticle(songDoc(paragraphs()), { url: 'https://www.lyrics-example.com/los-ejemplos/calle' })).toBeNull();
   });
