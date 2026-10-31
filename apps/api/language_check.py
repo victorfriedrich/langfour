@@ -55,6 +55,22 @@ class CheckRequest(BaseModel):
     blocks: list[Block] = Field(max_length=MAX_BLOCKS)
 
 
+def code_points(text: str) -> dict[int, int]:
+    """Python index of each character boundary, keyed by its UTF-16 offset.
+
+    The extension counts in JavaScript string units, where an emoji outside
+    the BMP (👉, 🎯) takes two, so its offsets run ahead of Python's after one.
+    An offset inside such a pair, or past the end, has no entry.
+    """
+    at = {}
+    units = 0
+    for i, ch in enumerate(text):
+        at[units] = i
+        units += 2 if ord(ch) > 0xFFFF else 1
+    at[units] = len(text)
+    return at
+
+
 def enabled_for(user_id: str) -> bool:
     res = (supabase.table("userdata").select("chatgpt_language_check")
            .eq("user_id", user_id).limit(1).execute())
@@ -113,8 +129,10 @@ async def language_check(payload: CheckRequest, current_user=Depends(get_current
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve)) from ve
     for block in payload.blocks:
-        if any(not 0 <= s < e <= len(block.text) for s, e in block.words):
+        at = code_points(block.text)
+        if any(not (s in at and e in at and s < e) for s, e in block.words):
             raise HTTPException(status_code=400, detail="Word offsets outside the text")
+        block.words = [(at[s], at[e]) for s, e in block.words]
     if not await asyncio.to_thread(enabled_for, str(current_user.id)):
         raise HTTPException(status_code=403, detail="The language check is off for this account")
 
