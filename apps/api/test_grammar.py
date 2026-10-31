@@ -227,10 +227,19 @@ def test_the_overview_has_one_line_per_chapter_with_progress():
     assert out.language == "es"
     assert "Started: es.ser. Done: 1. Fading concepts: 1." in lines[0]
     assert "✓ es.pronombres_sujeto  Pronombres personales y tratamiento  0/3 learned" in lines
-    assert "→ es.ser  Ser  2/6 learned, 1 fading" in lines
+    assert "→ es.ser  Ser: identidad, origen y características  2/6 learned, 1 fading" in lines
     assert "· es.presente_regular  Presente: verbos regulares" in lines
     assert sum(line.startswith(("✓", "→", "·")) for line in lines) == len(ES.chapters)
     assert "teach" in out.guide
+
+
+def test_the_overview_lists_every_concept_under_its_chapter():
+    lines = grammar.get_overview(FakeStore(), USER, "es", NOW).overview.splitlines()
+    at = lines.index(next(line for line in lines if line.startswith("→ es.conectores_3")
+                          or line.startswith("· es.conectores_3")))
+    pero_sino = ES.concept["es.conectores_3.pero_sino"]
+    assert lines[at + 1] == f"    pero_sino  {pero_sino.title}"
+    assert sum(line.startswith("    ") for line in lines) == len(ES.concept)
 
 
 def test_the_overview_says_when_a_language_has_no_curriculum():

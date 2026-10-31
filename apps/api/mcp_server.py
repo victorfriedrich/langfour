@@ -257,8 +257,9 @@ async def add_words_tool(
     title="See grammar progress", readOnlyHint=True, openWorldHint=False,
 ))
 async def get_grammar_overview_tool(ctx: Context, language: Language | None = None) -> GrammarOverview:
-    """Where the user is in their grammar book: every chapter in teaching order, which
-    ones they started or finished, how many concepts they've learned and how many are
+    """Where the user is in their grammar book: every chapter in teaching order with the
+    id and title of each of its concepts, which chapters they started or finished, how
+    many concepts they've learned and how many are
     fading (due to be worked back in), the mistakes they made that are still to revise,
     with a note on each, plus a guide for teaching from it.
 

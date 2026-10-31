@@ -106,8 +106,9 @@ def test_record_practice_over_http_as_the_signed_in_user(monkeypatch):
         too_many = client.post("/mcp", headers=HEADERS, json={
             "jsonrpc": "2.0", "id": 8, "method": "tools/call",
             "params": {"name": "get_grammar_details",
-                       "arguments": {"chapters": ["es.ser", "es.ser_estar_1",
-                                                  "es.ser_estar_2", "es.ser_estar_3"]}},
+                       "arguments": {"chapters": ["es.ser", "es.estar_hay", "es.ser_estar_1",
+                                                  "es.ser_estar_2", "es.ser_estar_3",
+                                                  "es.condicional"]}},
         }).json()["result"]
         assert too_many.get("isError")
 

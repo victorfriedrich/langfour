@@ -64,6 +64,11 @@ language).
     learned until the user has used half of each verb's forms correctly in sentences of their
     own, so list the verbs that matter, not every verb the scope names. Every concept also
     needs two correct sentences (`MIN_CORRECT` in `grammar.py`).
+14. **Titles name the rule on their own.** The overview lists every concept by id and title,
+    and that list is how the teaching LLM picks where a sentence goes. A title says the rule and
+    its cue words so it reads right without its chapter (Preterite of hacer: hice, hizo, not
+    hacer; pero or sino, sino que: correcting after a negation). Numbered chapter titles add
+    what they hold (Conectores III: sino, sin embargo, ya que, por lo tanto).
 
 ## File format
 
@@ -71,13 +76,13 @@ language).
 level: a1
 chapters:
   - id: es.ser_estar_1            # stable; never renamed once users have data
-    title: "Ser o estar I"        # Spanish heading, shown in the overview
+    title: "Ser o estar I: …"     # Spanish heading, shown in the overview
     goal: "…"                     # what the learner can do afterwards
     continues: es.estar_hay       # optional: the earlier tier or chapter this builds on
     teach: "…"                    # optional: chapter-wide guidance for the teaching LLM
     concepts:
       - id: characteristic_vs_state   # full id: es.ser_estar_1.characteristic_vs_state
-        title: "…"
+        title: "…"                    # the rule and its cue words (rule 14)
         scope: "…"
         difficulty: hard          # easy | medium (default) | hard → refresh interval 30/14/7 days
         mode: receptive           # optional; default productive
