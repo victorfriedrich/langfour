@@ -58,6 +58,28 @@ def test_refuses_offsets_outside_the_text(account):
     assert response.status_code == 400
 
 
+def test_reads_offsets_as_javascript_counts_them(account, monkeypatch):
+    # 👉 is two UTF-16 units: the extension puts "Hola" at 3-7 and "tal" at 14-17.
+    text = "👉 Hola, ¿qué tal"
+    asked = []
+
+    async def fake_ask(client, code, block):
+        asked.append([block.text[s:e] for s, e in block.words])
+        return [0.9, 0.9]
+
+    monkeypatch.setattr(language_check, "ask_jev", fake_ask)
+    response = client.post("/api/language-check", headers=AUTH, json={
+        "language": "es", "blocks": [{"text": text, "words": [[3, 7], [14, 17]]}]})
+    assert response.status_code == 200
+    assert asked == [["Hola", "tal"]]
+
+
+def test_refuses_an_offset_inside_an_emoji(account):
+    response = client.post("/api/language-check", headers=AUTH, json={
+        "language": "es", "blocks": [{"text": "👉 hola", "words": [[1, 7]]}]})
+    assert response.status_code == 400
+
+
 def test_thresholds_each_block_and_passes_failures_on(account, monkeypatch):
     async def fake_ask(client, code, block):
         assert code == "es"
