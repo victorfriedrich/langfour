@@ -45,6 +45,7 @@ from text_article_parsing import parse_article
 from tts import router as tts_router
 from utils import get_video_words, is_special_character
 from videoparsing import main as process_video
+from vocabulary_routes import router as vocabulary_router
 
 app = FastAPI()
 
@@ -138,6 +139,7 @@ app.include_router(tts_router, tags=["tts"])
 app.include_router(grammar_router, tags=["grammar"])
 app.include_router(language_check_router, tags=["language-check"])
 app.include_router(exposure_router, tags=["exposure"])
+app.include_router(vocabulary_router, tags=["vocabulary"])
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 

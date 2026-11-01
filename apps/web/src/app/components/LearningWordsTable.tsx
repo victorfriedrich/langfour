@@ -14,7 +14,9 @@ import { useGetSources } from '../hooks/useGetSources';
 import { useGetLearningWords, LearningWord } from '../hooks/useLearningWords';
 import { useSetUserwordsStatus } from '../hooks/useSetUserwordsStatus';
 import { useOverdueWords } from '../hooks/useOverdueWords';
+import { useStuckWords } from '../hooks/useStuckWords';
 import { getDaysUntilReview } from '../utils/dateUtils';
+import { STUCK_PARAM, STUCK_VALUE, evidence, preselected } from '../vocabulary/stuck';
 
 /* coloured “days‑due” pill */
 function getDuePill(due: string) {
@@ -174,6 +176,18 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  /* "Common words you never reviewed": a second tab, opened by its link */
+  const { words: stuckWords, moveToKnown } = useStuckWords();
+  const [view, setView] = useState<'all' | 'stuck'>('all');
+  // Until the user changes it, the selection is every word not looked up.
+  const [stuckPicked, setStuckPicked] = useState<number[] | null>(null);
+  const stuckSelected = stuckPicked ?? (stuckWords ? preselected(stuckWords) : []);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get(STUCK_PARAM) === STUCK_VALUE) setView('stuck');
+  }, []);
+  const showStuck = view === 'stuck' && !!stuckWords;
+  const toggleStuck = (id: number) =>
+    setStuckPicked(stuckSelected.includes(id) ? stuckSelected.filter((w) => w !== id) : [...stuckSelected, id]);
   /* source dropdown */
   const [sources, setSources] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState<string | null>(source);
@@ -342,6 +356,18 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
     }
   };
 
+  const handleStuckToKnown = async () => {
+    try {
+      const moved = await moveToKnown(stuckSelected);
+      setStuckPicked(stuckSelected.filter((id) => !moved.includes(id)));
+      setWords((prev) => prev.filter((w) => !moved.includes(w.word_id)));
+      if (moved.length === stuckWords?.length) setView('all');
+      onMovedToKnown?.();
+    } catch (err) {
+      console.error('Error moving words to known:', err);
+    }
+  };
+
   const observer = useRef<IntersectionObserver | null>(null);
   const lastRowRef = useCallback((node: HTMLTableRowElement | null) => {
     if (isLoading) return;
@@ -360,13 +386,27 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
     <section>
       {/* header */}
       <div className="flex flex-wrap items-center gap-3 pb-3">
-        <h2 className="font-semibold text-gray-900">
-          Your words
-          {total !== undefined && <span className="ml-2 font-normal tabular-nums text-gray-400">{total.toLocaleString()}</span>}
+        <h2 className="flex flex-wrap items-baseline gap-x-6 gap-y-1 font-semibold">
+          <button
+            onClick={() => setView('all')}
+            className={showStuck ? 'text-gray-400 hover:text-gray-600' : 'text-gray-900'}
+          >
+            Your words
+            {total !== undefined && <span className="ml-2 font-normal tabular-nums text-gray-400">{total.toLocaleString()}</span>}
+          </button>
+          {!!stuckWords?.length && (
+            <button
+              onClick={() => setView('stuck')}
+              className={showStuck ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'}
+            >
+              Common words you never reviewed
+              <span className="ml-2 font-normal tabular-nums text-gray-400">{stuckWords.length.toLocaleString()}</span>
+            </button>
+          )}
         </h2>
 
         {/* right‑aligned group */}
-        <div className="ml-auto flex items-center gap-1">
+        <div className={`ml-auto flex items-center gap-1 ${showStuck ? 'hidden' : ''}`}>
           <button
             onClick={toggleDirection}
             className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
@@ -401,8 +441,31 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
         </div>
       </div>
 
+      {showStuck && (
+        <table className="w-full table-auto">
+          <tbody className="divide-y divide-gray-100 text-sm">
+            {stuckWords!.map((w) => (
+              <tr key={w.word_id} className="cursor-pointer hover:bg-gray-50" onClick={() => toggleStuck(w.word_id)}>
+                <td className="w-10 py-2.5 pl-1 pr-3">
+                  <input
+                    type="checkbox"
+                    checked={stuckSelected.includes(w.word_id)}
+                    onChange={() => toggleStuck(w.word_id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="form-checkbox h-4 w-4 text-indigo-600"
+                  />
+                </td>
+                <td className="w-56 whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900">{w.word}</td>
+                <td className="w-full whitespace-nowrap py-2.5 text-gray-500">{w.translation}</td>
+                <td className="whitespace-nowrap py-2.5 pr-1 text-right text-xs text-gray-400">{evidence(w)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
       {/* table */}
-      <div>
+      <div className={showStuck ? 'hidden' : ''}>
         <table
           className="w-full table-auto"
           onMouseDown={(e) => e.shiftKey && e.preventDefault()}
@@ -464,7 +527,18 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
         )}
       </div>
       {/* Floating action bar while words are selected */}
-      {selectedWords.length > 0 && (
+      {showStuck && stuckSelected.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full bg-gray-900 py-1.5 pl-4 pr-1.5 text-sm text-white shadow-lg">
+          <span className="mr-2 tabular-nums">{stuckSelected.length} selected</span>
+          <button className="rounded-full bg-white px-3 py-1 font-medium text-gray-900 hover:bg-gray-100" onClick={handleStuckToKnown}>
+            Move to known
+          </button>
+          <button className="rounded-full p-1.5 text-gray-400 hover:text-white" onClick={() => setStuckPicked([])} aria-label="Clear selection">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+      {!showStuck && selectedWords.length > 0 && (
         <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full bg-gray-900 py-1.5 pl-4 pr-1.5 text-sm text-white shadow-lg">
           <span className="mr-2 tabular-nums">{selectedWords.length} selected</span>
           <button className="rounded-full bg-white px-3 py-1 font-medium text-gray-900 hover:bg-gray-100" onClick={handleMoveToKnown}>

@@ -8,6 +8,8 @@ import { WEB_URL } from '../config';
 import { reviewLink } from '../reviewLink';
 import { SIGN_IN_WITH_CODE, normalizeEmailCode, signInWithEmailCode } from '../emailCode';
 import { cleanTitle, hostOf } from '../pageTitle';
+import { requestBackend } from '../api-service';
+import { STUCK_OPENED_KEY, stuckWordsText, stuckWordsToShow, stuckWordsUrl } from '../stuckWords';
 
 // --- DOM Elements for Logged In View ---
 const loggedInPane = document.getElementById('loggedInPane') as HTMLElement;
@@ -339,7 +341,27 @@ function drawReviewLink() {
 function setReviewLanguage(language: Language) {
   reviewLanguage = language;
   drawReviewLink();
+  void drawStuckRow(language);
 }
+
+// "45 common words are still marked learning · Review", until opened once.
+const stuckRow = document.getElementById('stuckRow') as HTMLElement;
+
+async function drawStuckRow(language: Language) {
+  const count = await stuckWordsToShow(
+    language,
+    async () => !!(await chrome.storage.local.get(STUCK_OPENED_KEY))[STUCK_OPENED_KEY],
+    requestBackend,
+  );
+  if (language !== reviewLanguage) return; // switched while it loaded
+  (document.getElementById('stuckText') as HTMLElement).textContent = stuckWordsText(count);
+  stuckRow.classList.toggle('hidden', count === 0);
+}
+
+document.getElementById('stuckBtn')?.addEventListener('click', async () => {
+  await chrome.storage.local.set({ [STUCK_OPENED_KEY]: true });
+  chrome.tabs.create({ url: stuckWordsUrl(WEB_URL) });
+});
 
 async function updateReviewLink(userId: string) {
   const { data, error } = await supabase

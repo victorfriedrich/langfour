@@ -223,3 +223,73 @@ def test_get_vocabulary_lists_words_last_answered_wrong_newest_first():
     mistakes = vocabulary.get_vocabulary(store, USER, None, "due", 20).mistakes
     assert [(m.word, m.date, m.note) for m in mistakes] == [
         ("el piso", "2026-10-30", "wrote apartamiento"), ("la manzana", "2026-10-29", None)]
+
+
+class StuckStore(FakeStore):
+    """The user's learning rows among the common words: 21 was reviewed long
+    ago under the old schedule, 22 in RemNote, 23 and 24 never."""
+    LEARNING = {
+        21: ("ya", "already", "2025-06-01T10:00:00"),
+        22: ("según", "according to", None),
+        23: ("que", "that, which", None),
+        24: ("quedar", "to stay", None),
+    }
+
+    def __init__(self, events=()):
+        super().__init__()
+        del self.events  # FakeStore's log of inserts; here events() reads
+        self.logged = list(events)
+
+    def learning_rows(self, user_id, word_ids):
+        self.calls.append(("learning_rows", user_id, word_ids))
+        return [{"word_id": w, "last_reviewed_at": at, "words": {"root": root, "translation": t}}
+                for w, (root, t, at) in self.LEARNING.items() if w in word_ids]
+
+    def reviewed(self, user_id, word_ids):
+        self.calls.append(("reviewed", user_id, word_ids))
+        return {22} & set(word_ids)
+
+    def events(self, user_id, word_ids, kinds):
+        return [e for e in self.logged if e["word_id"] in word_ids and e["kind"] in kinds]
+
+
+def seen(word_id, media, source="video", kind="exposure"):
+    return {"word_id": word_id, "kind": kind, "source": source,
+            "context": {"media": media} if media else None}
+
+
+def test_stuck_words_are_learning_never_reviewed_and_most_common_first():
+    store = StuckStore()
+    stuck = vocabulary.stuck_words(store, USER, [24, 23, 22, 21, 99])
+    assert [(w.word_id, w.word, w.translation) for w in stuck.words] == [
+        (24, "quedar", "to stay"), (23, "que", "that, which")]
+    assert ("reviewed", USER, [22, 23, 24]) in store.calls
+
+
+def test_stuck_words_count_distinct_videos_and_lookups():
+    store = StuckStore(events=[
+        seen(23, "youtube:a"), seen(23, "youtube:a"), seen(23, "youtube:b"),
+        seen(23, "https://example.com/page", source="reader"),
+        seen(24, "youtube:a"), seen(24, None, kind="lookup"), seen(24, None, kind="lookup"),
+    ])
+    stuck = {w.word: (w.videos, w.lookups) for w in vocabulary.stuck_words(store, USER, [23, 24]).words}
+    assert stuck == {"que": (2, 0), "quedar": (1, 2)}
+
+
+def test_stuck_words_with_none_learning_reads_nothing_else():
+    store = StuckStore()
+    assert vocabulary.stuck_words(store, USER, [1, 2]).words == []
+    assert [c[0] for c in store.calls] == ["learning_rows"]
+
+
+def test_move_words_moves_only_words_in_the_users_list():
+    store = FakeStore()
+    moved = vocabulary.move_words(store, USER, [10, 2, 2, 11], "known")
+    assert store.calls == [("set_status", USER, [2, 10], "known")]
+    assert moved.moved == [2, 10]
+
+
+def test_move_words_with_none_in_the_list_updates_nothing():
+    store = FakeStore()
+    assert vocabulary.move_words(store, USER, [11], "known").moved == []
+    assert store.calls == []

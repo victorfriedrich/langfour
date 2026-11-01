@@ -25,6 +25,10 @@ what it reports back about texts the user read with it.
     learning or known, as the web app's move_words_to_userwords does. Words
     already in the list keep their row, except learning ones asked for as
     known; a known word never goes back to learning here.
+  - stuck_words: the web app's "Common words you never reviewed": learning
+    words among the corpus's most common that were never reviewed, with the
+    videos they were seen in and their look-ups. move_words moves the ones the
+    user ticks through set_status, as set_word_status does.
 
 The API runs these with the service role on behalf of the OAuth user, so every
 query names the user explicitly.
@@ -57,6 +61,8 @@ _CLASSIFY_CHUNK = 1000  # tokens per classify_words_for call, as in the extensio
 _IN_CHUNK = 200
 MAX_MISTAKES = 10    # words to revise listed, newest first
 _RECALL_SCAN = 1000  # practice answers read to find them
+STUCK_TOP = 500      # "common": among the corpus's most frequent words
+_PAGE = 1000         # PostgREST's row cap per request
 
 
 def _chunks(items: list, size: int) -> Iterable[list]:
@@ -131,6 +137,27 @@ class WordsAdded(BaseModel):
     added: list[str]      # now in the user's list in the requested status
     already: list[str]    # in their list already and left as it was
     not_found: list[str]  # not in the dictionary in that language
+
+
+class StuckWord(BaseModel):
+    word_id: int
+    word: str
+    translation: str | None
+    videos: int   # distinct videos its captions were seen in (exposure rows)
+    lookups: int
+
+
+class StuckWords(BaseModel):
+    words: list[StuckWord]  # most common first
+
+
+class MoveRequest(BaseModel):
+    word_ids: list[int] = Field(min_length=1, max_length=STUCK_TOP)
+    status: Literal["known", "learning"] = "known"
+
+
+class WordsMoved(BaseModel):
+    moved: list[int]  # now in the requested status; words not in the list are left out
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +258,46 @@ class VocabularyStore:
                   for w in word_ids], on_conflict="user_id,word_id", ignore_duplicates=True)
          .execute())
         self.touch(user_id)
+
+    def learning_rows(self, user_id: str, word_ids: list[int]) -> list[dict]:
+        """The user's learning rows among these words: [{word_id,
+        last_reviewed_at, words: {root, translation}}]."""
+        out: list[dict] = []
+        for chunk in _chunks(word_ids, _IN_CHUNK):
+            res = (self.db.table("userwords")
+                   .select("word_id, last_reviewed_at, words!inner(root, translation)")
+                   .eq("user_id", user_id).eq("status", "learning").in_("word_id", chunk)
+                   .execute())
+            out.extend(res.data or [])
+        return out
+
+    def reviewed(self, user_id: str, word_ids: list[int]) -> set[int]:
+        """Which of these words have a review on any card, in Langfour or a
+        connected app (srs_reviews)."""
+        out: set[int] = set()
+        for chunk in _chunks(word_ids, _IN_CHUNK):
+            res = (self.db.table("srs_notes")
+                   .select("word_id, srs_cards!inner(srs_reviews!inner(card_id))")
+                   .eq("user_id", user_id).in_("word_id", chunk).execute())
+            out |= {r["word_id"] for r in res.data or []}
+        return out
+
+    def events(self, user_id: str, word_ids: list[int], kinds: list[str]) -> list[dict]:
+        """The user's word_events of these kinds for these words: [{word_id,
+        kind, source, context}], every page of them."""
+        out: list[dict] = []
+        for chunk in _chunks(word_ids, _IN_CHUNK):
+            start = 0
+            while True:
+                res = (self.db.table("word_events").select("word_id, kind, source, context")
+                       .eq("user_id", user_id).in_("kind", kinds).in_("word_id", chunk)
+                       .order("id").range(start, start + _PAGE - 1).execute())
+                rows = res.data or []
+                out.extend(rows)
+                if len(rows) < _PAGE:
+                    break
+                start += _PAGE
+        return out
 
     def touch(self, user_id: str) -> None:
         (self.db.table("userdata").update({"known_words_updated_at": datetime.now(UTC).isoformat()})
@@ -363,3 +430,40 @@ def add_words(store: VocabularyStore, user_id: str, language: str, words: list[s
     return WordsAdded(added=[w for w in asked if ids.get(w) in moved],
                       already=[w for w in asked if w in ids and ids[w] not in moved],
                       not_found=[w for w in asked if w not in ids])
+
+
+def stuck_words(store: VocabularyStore, user_id: str, common: list[int]) -> StuckWords:
+    """Learning words among `common` (word ids, most frequent first) that were
+    never reviewed: imported or saved long ago and left. Each with the videos
+    it was seen in and how often it was looked up, so the user can tell which
+    they know."""
+    rank = {w: i for i, w in enumerate(common)}
+    rows = [r for r in store.learning_rows(user_id, common) if not r.get("last_reviewed_at")]
+    reviewed = store.reviewed(user_id, [r["word_id"] for r in rows]) if rows else set()
+    rows = sorted((r for r in rows if r["word_id"] not in reviewed), key=lambda r: rank[r["word_id"]])
+    ids = [r["word_id"] for r in rows]
+
+    videos: dict[int, set[str]] = {}
+    lookups: Counter[int] = Counter()
+    for e in store.events(user_id, ids, ["exposure", "lookup"]) if ids else []:
+        if e["kind"] == "lookup":
+            lookups[e["word_id"]] += 1
+        elif e["source"] == "video" and (media := (e.get("context") or {}).get("media")):
+            videos.setdefault(e["word_id"], set()).add(media)
+
+    return StuckWords(words=[
+        StuckWord(word_id=r["word_id"], word=r["words"]["root"],
+                  translation=r["words"].get("translation"),
+                  videos=len(videos.get(r["word_id"], ())), lookups=lookups[r["word_id"]])
+        for r in rows
+    ])
+
+
+def move_words(store: VocabularyStore, user_id: str, word_ids: list[int],
+               status: Literal["known", "learning"]) -> WordsMoved:
+    """set_word_status for words the client names by id. Only learning and
+    known words move; one turned off in RemNote stays off."""
+    ids = sorted(store.owned(user_id, sorted(set(word_ids))))
+    if ids:
+        store.set_status(user_id, ids, status)
+    return WordsMoved(moved=ids)
