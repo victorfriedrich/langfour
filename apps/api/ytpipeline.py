@@ -11,7 +11,8 @@ ytpipeline.py - build a language-filtered list of YouTube videos.
     classify  cached titles -> LLM verdict per channel   MODEL_FAST, cheap
     expand    whole catalogue for gated channels         2 units / 50 videos,
                                                          or 101 above ENUMERATE_MAX
-    select    gates + per-video ranking -> video_queue   free
+    judge     titles -> Jev worth + appeal per channel   Jev, ~free
+    select    gates + engagement x quality -> queue      free
   ingestion
     ingest.py drains video_queue (Supabase) into transcripts
 
@@ -31,6 +32,7 @@ what makes the second language nearly free.
     python ytpipeline.py videos --lang es --min-subs 100000 --budget 9000
     python ytpipeline.py classify --lang es
     python ytpipeline.py expand --lang es --budget 9000
+    python ytpipeline.py judge --lang es
     python ytpipeline.py select --lang es --push
 """
 
@@ -111,7 +113,8 @@ CREATE TABLE IF NOT EXISTS channels (
     enriched_at TEXT, videos_at TEXT,   -- NULL = stage not run; also the TTL
     audio_lang TEXT, music_share REAL, note TEXT,
     expanded_at TEXT,                   -- full-catalogue pull done, by either route
-    classified_at TEXT, sensitivity REAL, intellectuality REAL
+    classified_at TEXT, sensitivity REAL, intellectuality REAL,
+    judged_at TEXT, worth REAL, p_clickbait REAL, appeal REAL, genre TEXT   -- from judge
 );
 
 CREATE TABLE IF NOT EXISTS videos (
@@ -148,7 +151,8 @@ CREATE INDEX IF NOT EXISTS ix_effective_lang
 # missing, so an existing multi-GB store upgrades in place on first use.
 ADDED_COLUMNS = {
     "channels": ["expanded_at TEXT", "classified_at TEXT", "sensitivity REAL",
-                 "intellectuality REAL"],
+                 "intellectuality REAL", "judged_at TEXT", "worth REAL",
+                 "p_clickbait REAL", "appeal REAL", "genre TEXT"],
     "videos": ["source TEXT NOT NULL DEFAULT 'uploads'", "fetched_at TEXT"],
 }
 
@@ -970,7 +974,7 @@ class Gates:
 CHANNEL_STATS = """
     SELECT c.channel_id, c.title, c.subscribers, c.music_share,
            c.sensitivity, c.intellectuality, c.classified_at, c.expanded_at,
-           c.uploads, c.video_count,
+           c.uploads, c.video_count, c.judged_at, c.worth, c.p_clickbait, c.appeal,
            COUNT(*) AS n, AVG(v.views) AS avg_views,
            -- Only videos where both counts are known. A video with comments
            -- disabled cannot be averaged in as a zero, and COALESCE(...,0) here
@@ -1113,6 +1117,163 @@ def classify(db: sqlite3.Connection, lang: str, g: Gates, limit: int,
             if done % 50 == 0:
                 print(f"  {done:,}/{len(todo):,}", flush=True)
     print(f"classified {done:,}, failed {failed:,}")
+
+
+# ─────────────────────────────────────────────────────── stage: judge ──
+#
+# classify gates; judge ranks. Engagement says people watch a channel, not that
+# a learner should: GTA challenges and crypto hype rank high on it, and a
+# worth-only rubric swings the other way and puts university lectures and award
+# ceremonies first. So Jev answers two separate questions -- is it worth a
+# learner's time (worth), and would anyone watch it for fun (appeal) -- and
+# select() needs a video to be decent on engagement and on both.
+
+JUDGE_URL = "https://openrouter.ai/api/alpha/decisions"
+JUDGE_MODEL = "typesafe/jev-1.13"      # pinned, like video_quality.py
+JUDGE_WORKERS = 16
+JUDGE_TITLES = 25                      # most-viewed titles shown per channel
+
+WORTH = {
+    1: "Trash for this purpose: gaming playthroughs and challenges, pranks, gossip, shock "
+       "clickbait, get-rich-quick or crypto hype, children's cartoons, sermons, campaign propaganda.",
+    4: "Watchable but thin: mostly reactions, product unboxings, rankings and lists, or a niche "
+       "hobby with little general interest.",
+    7: "Solid: clear tutorials, decent vlogs and travel guides, interviews, news coverage, cooking "
+       "with narration.",
+    10: "Excellent: documentaries, well-researched explainers on history, science, economics or "
+        "culture, thoughtful long-form conversation and storytelling.",
+}
+APPEAL = {
+    1: "Recordings nobody watches for fun: full lectures, seminars, conference talks, panels, "
+       "award ceremonies, institutional events and reports, webinars, sermons, official statements.",
+    4: "Dry or niche: useful to specialists, static delivery, little story or payoff.",
+    7: "Engaging: made for a YouTube audience, a host with energy, a clear story or payoff.",
+    10: "Gripping: people watch to the end for pleasure: strong storytelling, humour, "
+        "personality and pacing.",
+}
+GENRES = {
+    "explainer": "Documentary, explainer, history, science, economics, culture.",
+    "news": "News reporting, journalism, current-affairs analysis.",
+    "talk": "Interviews, podcasts, long conversations, debates.",
+    "story": "Vlogs, travel, personal storytelling, true crime narration.",
+    "howto": "Tutorials and how-to: cooking, crafts, tech, fitness, hobbies.",
+    "review": "Product reviews, unboxings, rankings, tech news.",
+    "gaming": "Video games: playthroughs, challenges, game news.",
+    "kids": "Made for children: cartoons, nursery content, toy videos.",
+    "religion": "Religious preaching, sermons, devotionals.",
+    "politics": "Party or campaign material, political propaganda.",
+    "money": "Trading, crypto, make-money-online, financial hype.",
+    "entertainment": "Comedy, reactions, gossip, pranks, celebrity and pop culture.",
+    "other": "None of the above.",
+}
+
+
+def scale_criteria(anchors: dict[int, str]) -> dict[str, str]:
+    """A 1-10 scale from a few anchors; the steps between point at both sides."""
+    out = {}
+    for k in range(1, 11):
+        if k in anchors:
+            out[str(k)] = anchors[k]
+        else:
+            lo, hi = max(a for a in anchors if a < k), min(a for a in anchors if a > k)
+            out[str(k)] = f"Between {lo} and {hi}."
+    return out
+
+
+def judge_questions(lang: str) -> dict[str, dict]:
+    from languages import LANGUAGES
+    pre = (f"The state describes a {LANGUAGES[lang]}-language YouTube channel: its name, the "
+           "start of its description, and titles of its videos. The audience is an adult "
+           f"learning {LANGUAGES[lang]} by listening to whole videos, who wants content worth "
+           "their time. Judge the channel as a whole. ")
+    return {
+        "worth": {"type": "choice", "criteria": scale_criteria(WORTH), "instructions": pre +
+                  "How worthwhile is this channel for that learner? Rate the substance and craft "
+                  "of the content, not its popularity or production budget."},
+        "appeal": {"type": "choice", "criteria": scale_criteria(APPEAL), "instructions": pre +
+                   "Leave aside how educational it is. Would an ordinary adult choose to watch "
+                   "these videos in their free time and stay to the end? Judge format and "
+                   "delivery as well as topic."},
+        "clickbait": {"type": "choice", "criteria": {"yes": "Yes, mostly clickbait.", "no": "No."},
+                      "instructions": pre + "Do the titles mostly rely on clickbait or "
+                      "sensationalism (shock caps, 'te sorprenderá', '$1 vs $1,000,000', outrage, "
+                      "emoji bait)?"},
+        "genre": {"type": "choice", "criteria": GENRES,
+                  "instructions": pre + "Which kind of channel is this, mainly?"},
+    }
+
+
+def judgment_for(http, state: dict, lang: str, attempts: int = 5) -> dict[str, Any]:
+    """One Decisions API request: expected worth and appeal (1-10), p_clickbait,
+    and the likeliest genre. Retries transient errors like video_quality.ask."""
+    questions = judge_questions(lang)
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            r = http.post(JUDGE_URL, json={"model": JUDGE_MODEL, "state": state,
+                                           "questions": questions})
+            if r.status_code == 200:
+                answers = r.json().get("answers", {})
+                if all(k in answers for k in questions):
+                    p = {k: answers[k]["probabilities"] for k in questions}
+                    return {"worth": round(sum(int(k) * v for k, v in p["worth"].items()), 2),
+                            "appeal": round(sum(int(k) * v for k, v in p["appeal"].items()), 2),
+                            "p_clickbait": round(p["clickbait"].get("yes", 0.0), 3),
+                            "genre": max(p["genre"], key=p["genre"].get)}
+                last = RuntimeError(f"Jev left out {sorted(set(questions) - set(answers))}")
+            else:
+                last = RuntimeError(f"Jev HTTP {r.status_code}: {r.text[:200]}")
+                if r.status_code < 500 and r.status_code not in (408, 429):
+                    break
+        except Exception as exc:          # httpx is imported lazily; its errors too
+            last = exc
+        time.sleep(2 ** attempt)
+    raise last or RuntimeError("Jev did not answer")
+
+
+def judge(db: sqlite3.Connection, lang: str, g: Gates, limit: int,
+          workers: int = JUDGE_WORKERS) -> None:
+    """Jev's worth and appeal for every channel select() would take, `workers`
+    requests in flight. Like classify: reads and writes stay on this thread,
+    one commit per channel, so a stopped run resumes where it left off."""
+    import httpx
+    from dotenv import load_dotenv
+    load_dotenv(API_ROOT / ".env")         # as YouTube() does: cwd may be anywhere
+
+    passed, _funnel = qualified(db, lang, g, need_llm=True)
+    todo = [r for r in passed if r["judged_at"] is None][:limit]
+    print(f"judging {len(todo):,} channels, {workers} at a time", flush=True)
+    states = {}
+    for r in todo:
+        (description,) = db.execute("SELECT description FROM channels WHERE channel_id=?",
+                                    (r["channel_id"],)).fetchone()
+        titles = [t for (t,) in db.execute(
+            "SELECT title FROM videos WHERE channel_id=? ORDER BY views DESC LIMIT ?",
+            (r["channel_id"], JUDGE_TITLES))]
+        states[r["channel_id"]] = {"channel": r["title"] or r["channel_id"],
+                                   "description": (description or "")[:400], "titles": titles}
+    done = failed = 0
+    headers = {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}
+    with httpx.Client(timeout=60, headers=headers) as http, \
+            ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(judgment_for, http, state, lang): cid
+                   for cid, state in states.items()}
+        for future in as_completed(futures):
+            cid = futures[future]
+            try:
+                v = future.result()
+            except Exception as exc:
+                failed += 1
+                print(f"  {cid}: {type(exc).__name__}: {str(exc)[:100]}", flush=True)
+                continue
+            db.execute("""UPDATE channels SET judged_at=datetime('now'), worth=?, appeal=?,
+                          p_clickbait=?, genre=? WHERE channel_id=?""",
+                       (v["worth"], v["appeal"], v["p_clickbait"], v["genre"], cid))
+            db.commit()
+            done += 1
+            if done % 200 == 0:
+                print(f"  {done:,}/{len(todo):,}", flush=True)
+    print(f"judged {done:,}, failed {failed:,}")
 
 
 # ─────────────────────────────────────────────────────── stage: expand ──
@@ -1319,6 +1480,49 @@ def score(minutes: int, views: int, lo: float, hi: float) -> float:
     return (1 - VIEW_BIAS) * short + VIEW_BIAS * seen
 
 
+# Engagement keeps half the say: it is the measured part. The two judge()
+# answers split the rest. Each is percentile-ranked over the candidates, as in
+# rank_channels(), and the three are joined by a weighted geometric mean rather
+# than a sum, so one strong signal cannot carry a video that fails another:
+# popular junk sinks on worth, worthy lectures on appeal.
+BLEND_WEIGHTS = {"engagement": 0.5, "worth": 0.25, "appeal": 0.25}
+BLEND_FLOOR = 0.02         # keeps a bottom percentile from zeroing the product
+CLICKBAIT_PENALTY = 1.0    # worth points a certainly-clickbait channel loses
+# Each further video of a channel gives up this much, so a top channel's videos
+# interleave with the next channels' instead of draining as one block.
+CHANNEL_SPREAD = 0.004
+
+
+def judged_quality(r: dict) -> tuple[float | None, float | None]:
+    """(worth, appeal) of a qualified() row; None when judge() has not run."""
+    if r.get("judged_at") is None:
+        return None, None
+    worth = max(0.0, r["worth"] - CLICKBAIT_PENALTY * (r["p_clickbait"] or 0.0))
+    return worth, r["appeal"]
+
+
+def blend(rows: list[dict], quality: dict[str, tuple[float | None, float | None]]) -> list[dict]:
+    """Rescore queue_rows() output by engagement x judged quality, best first.
+
+    `rows` must be best-first, as queue_rows() returns them, so a channel's
+    videos are met in its own order. An unjudged channel's percentiles are 0.5
+    (neutral, as percentiles() treats any unknown); with nothing judged the
+    order is engagement's, apart from CHANNEL_SPREAD."""
+    unknown = (None, None)
+    engagement = percentiles([r["score"] for r in rows])
+    worth = percentiles([quality.get(r["channel_id"], unknown)[0] for r in rows])
+    appeal = percentiles([quality.get(r["channel_id"], unknown)[1] for r in rows])
+    w, f = BLEND_WEIGHTS, BLEND_FLOOR
+    seen: Counter = Counter()
+    for r, e, q, a in zip(rows, engagement, worth, appeal, strict=True):
+        mean = ((e + f) ** w["engagement"] * (q + f) ** w["worth"]
+                * (a + f) ** w["appeal"]) / (1 + f)
+        r["score"] = round(mean - CHANNEL_SPREAD * seen[r["channel_id"]], 4)
+        seen[r["channel_id"]] += 1
+    rows.sort(key=lambda v: -v["score"])
+    return rows
+
+
 def select(db: sqlite3.Connection, lang: str, g: Gates,
            top_n: int | None = TOP_N) -> list[dict]:
     """The deliverable: queue rows for every channel that cleared the gates,
@@ -1327,7 +1531,11 @@ def select(db: sqlite3.Connection, lang: str, g: Gates,
     keep = {r["channel_id"] for r in passed}
     rank = rank_channels(passed)
     videos = [v for v in usable_videos(db, lang) if v[0] in keep]
-    out = queue_rows(lang, videos, rank, top_n)
+    out = blend(queue_rows(lang, videos, rank, top_n),
+                {r["channel_id"]: judged_quality(r) for r in passed})
+    unjudged = sum(1 for r in passed if r["judged_at"] is None)
+    if unjudged:
+        print(f"  {unjudged:,} channels not judged yet: neutral quality (run judge)")
     what = "videos selected" if top_n else "candidates ranked"
     print(f"{len({v['channel_id'] for v in out}):,} channels, {len(out):,} {what}")
     return out
@@ -1506,7 +1714,7 @@ def main() -> None:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("stage",
                    choices=["harvest", "enrich", "detect", "videos", "classify",
-                            "expand", "select", "add", "refresh", "report"])
+                            "expand", "judge", "select", "add", "refresh", "report"])
     p.add_argument("--db", type=Path, default=DB)
     p.add_argument("--budget", type=int, default=9000, help="quota units")
     p.add_argument("--lang", help="ISO 639-1, e.g. es")
@@ -1536,7 +1744,7 @@ def main() -> None:
     p.add_argument("--new-uploads", action="store_true",
                    help="refresh: also pick up videos published since the last pass "
                         "(one unit per tracked channel; not required by retention)")
-    p.add_argument("--limit", type=int, default=10_000, help="classify: channels per run")
+    p.add_argument("--limit", type=int, default=10_000, help="classify/judge: channels per run")
     p.add_argument("--top", type=int, default=TOP_N, help="select: videos per channel")
     p.add_argument("--channel", help="add: a UC id, channel URL, or @handle")
     p.add_argument("--push", action="store_true", help="select/add: upsert into video_queue")
@@ -1548,7 +1756,7 @@ def main() -> None:
     db = connect(a.db)
     if a.stage == "report":
         return report(db)
-    if a.stage in ("classify", "expand", "select", "add") and not a.lang:
+    if a.stage in ("classify", "expand", "judge", "select", "add") and not a.lang:
         sys.exit(f"{a.stage} needs --lang")
     if a.stage == "select":
         if a.push:
@@ -1588,6 +1796,8 @@ def main() -> None:
         detect(db)
     elif a.stage == "classify":
         classify(db, a.lang, g, a.limit)
+    elif a.stage == "judge":
+        judge(db, a.lang, g, a.limit)
     else:
         yt = YouTube(a.budget)
         if a.stage == "enrich":

@@ -450,7 +450,7 @@ def test_store_upgrades_in_place(tmp_path):
     for _ in range(2):                          # idempotent
         db = yp.connect(path)
         cols = {r[1] for r in db.execute("PRAGMA table_info(channels)")}
-        assert {"expanded_at", "classified_at", "sensitivity"} <= cols
+        assert {"expanded_at", "classified_at", "sensitivity", "judged_at", "appeal"} <= cols
         assert db.execute("SELECT source, fetched_at FROM videos").fetchone() \
             == ("uploads", None)
         db.close()
@@ -903,6 +903,76 @@ def test_queue_rows_still_order_within_a_channel(db):
     videos = [("c", "low", "t", 10, 600), ("c", "high", "t", 10_000, 600)]
     rows = yp.queue_rows("es", videos, {"c": 0.5}, top_n=2)
     assert [r["video_id"] for r in rows] == ["high", "low"]
+
+
+# ════════════════════════════════════════════════ engagement x judged quality ══
+
+def one_video_each(scores):
+    """queue_rows-shaped rows, best first, one video per channel."""
+    rows = [{"video_id": cid, "channel_id": cid, "score": s} for cid, s in scores.items()]
+    return sorted(rows, key=lambda r: -r["score"])
+
+
+def test_blend_sinks_popular_junk_and_boring_lectures():
+    """The two failure modes this exists for: GTA-style junk that engagement
+    loves, and lectures a worth-only rubric loves. A channel decent on all
+    three must beat both, though it is the least engaging of the three."""
+    rows = one_video_each({"junk": 0.9, "lectures": 0.8, "good": 0.7, "dull": 0.1})
+    quality = {"junk": (1.5, 7.0), "lectures": (9.5, 1.0), "good": (8.0, 7.5),
+               "dull": (4.0, 3.0)}
+    order = [r["channel_id"] for r in yp.blend(rows, quality)]
+    assert order[0] == "good"
+
+
+def test_blend_keeps_engagement_order_when_nothing_is_judged():
+    """A store where judge() never ran must queue exactly as before."""
+    scores = {"a": 0.9, "b": 0.5, "c": 0.4, "d": 0.1}
+    rows = yp.blend(one_video_each(scores), {})
+    assert [r["channel_id"] for r in rows] == ["a", "b", "c", "d"]
+
+
+def test_blend_keeps_a_channels_own_order_and_interleaves_channels():
+    rows = [{"video_id": f"{c}{i}", "channel_id": c, "score": 0.5}
+            for i in range(3) for c in ("x", "y")]
+    rows.sort(key=lambda r: r["channel_id"])          # x0 x1 x2 y0 y1 y2
+    out = [r["video_id"] for r in yp.blend(rows, {})]
+    assert [v for v in out if v[0] == "x"] == ["x0", "x1", "x2"]
+    assert out[:2] in (["x0", "y0"], ["y0", "x0"])    # not x0 x1 x2 first
+
+
+def test_judged_quality_penalises_clickbait_and_leaves_the_unjudged_unknown():
+    assert yp.judged_quality({"judged_at": None}) == (None, None)
+    row = {"judged_at": "2026-11-01", "worth": 6.0, "p_clickbait": 0.5, "appeal": 7.0}
+    assert yp.judged_quality(row) == (5.5, 7.0)
+
+
+def test_judge_writes_judgments_and_skips_done(db, monkeypatch):
+    add_channel(db, "UC_new", **classified())
+    add_videos(db, "UC_new", 6)
+    add_channel(db, "UC_done", **classified(judged_at="2026-01-01", worth=5.0, appeal=5.0))
+    add_videos(db, "UC_done", 6)
+    add_channel(db, "UC_gated")                       # unclassified: select skips it
+    add_videos(db, "UC_gated", 6)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test")
+    calls = []
+    monkeypatch.setattr(yp, "judgment_for", lambda http, state, lang: (
+        calls.append((state["channel"], len(state["titles"]), lang)) or
+        {"worth": 8.2, "appeal": 6.9, "p_clickbait": 0.1, "genre": "explainer"}))
+    yp.judge(db, "es", yp.Gates(), limit=10, workers=2)
+    assert calls == [("UC_new", 6, "es")]
+    row = db.execute("SELECT worth, appeal, p_clickbait, genre FROM channels "
+                     "WHERE channel_id='UC_new'").fetchone()
+    assert row == (8.2, 6.9, 0.1, "explainer")
+
+
+def test_select_reads_judgments_from_the_store(db):
+    """Same engagement, so only the stored judgment can order them."""
+    for cid, worth, bait in (("UC_bait", 6.0, 0.95), ("UC_solid", 6.0, 0.0)):
+        add_channel(db, cid, **classified(judged_at="2026-01-01", worth=worth,
+                                          appeal=6.0, p_clickbait=bait))
+        add_videos(db, cid, 6)
+    rows = yp.select(db, "es", yp.Gates(), top_n=1)
+    assert [r["channel_id"] for r in rows] == ["UC_solid", "UC_bait"]
 
 
 # ═════════════════════════════════════════════════════════════ stage: add ══
