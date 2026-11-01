@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { MAX_FOLDER_DEPTH, addFolder, moveNode, moveToRoot, reconcile, removeFolder, shift } from './tree';
+import { MAX_FOLDER_DEPTH, addFolder, drop, flatten, moveNode, moveToRoot, project, reconcile, removeFolder, shift } from './tree';
 import type { FolderNode, LayoutNode } from './tree';
 
 const item = (id: string): LayoutNode => ({ type: 'item', id });
@@ -40,4 +40,37 @@ it('shifts among siblings and moves to the top level', () => {
   expect(shift(tree, 'item:c', -1)).toEqual([item('a'), folder('f', item('c'), item('b'))]);
   expect(shift(tree, 'item:a', -1)).toEqual(tree);
   expect(moveToRoot(tree, 'item:c', 'start')).toEqual([item('c'), item('a'), folder('f', item('b'))]);
+});
+
+it('projects a dragged row into the folder it is dropped under', () => {
+  const open = { ...folder('f', item('c')), open: true };
+  const tree = [item('a'), folder('closed', item('x')), item('b'), open];
+  const rows = flatten(tree, true);
+  expect(rows.map((row) => `${row.key}@${row.depth}`)).toEqual(['item:a@0', 'folder:closed@0', 'item:b@0', 'folder:f@0', 'item:c@1']);
+  // Just under a closed folder: beside it, unless dragged right.
+  expect(project(rows, 'item:a', 'folder:closed', 0, 44)).toEqual({ depth: 0, parent: null, after: 'folder:closed' });
+  expect(project(rows, 'item:a', 'folder:closed', 50, 44)).toEqual({ depth: 1, parent: 'folder:closed', after: 'folder:closed' });
+  // Just under an open folder: into it, even dragged left.
+  expect(project(rows, 'item:a', 'folder:f', -200, 44)).toEqual({ depth: 1, parent: 'folder:f', after: 'folder:f' });
+  // Out of a folder at the bottom by dragging left.
+  expect(project(rows, 'item:c', 'item:c', -44, 44)).toEqual({ depth: 0, parent: null, after: 'folder:f' });
+});
+
+it('drops a row after another, into a folder, and carries a folder\'s contents', () => {
+  const tree = [item('a'), folder('closed', item('x')), item('b')];
+  expect(drop(tree, 'item:a', 'folder:closed', 'folder:closed')).toEqual([{ ...folder('closed', item('a'), item('x')), open: true }, item('b')]);
+  expect(drop(tree, 'item:b', null, null)).toEqual([item('b'), item('a'), folder('closed', item('x'))]);
+  expect(drop(tree, 'folder:closed', 'item:b', null)).toEqual([item('a'), item('b'), folder('closed', item('x'))]);
+});
+
+it('keeps folders within the nesting limit when dragging', () => {
+  let deep: LayoutNode[] = [{ ...folder('f0'), open: true }];
+  for (let level = 1; level < MAX_FOLDER_DEPTH; level++) deep = addFolder(deep, { ...folder(`f${level}`), open: true }, `f${level - 1}`);
+  deep = addFolder(deep, { ...folder('z'), open: true }, `f${MAX_FOLDER_DEPTH - 2}`);
+  const tree = [folder('x', folder('y')), ...deep];
+  const rows = flatten(tree, true, 'folder:x');
+  // Between f2 and its first row z, a two-level folder would be too deep.
+  expect(project(rows, 'folder:x', `folder:f${MAX_FOLDER_DEPTH - 2}`, 0, 44)).toBeNull();
+  // With nothing below forcing the depth, it settles where it fits.
+  expect(project(rows, 'folder:x', 'folder:f3', 500, 44)).toMatchObject({ depth: MAX_FOLDER_DEPTH - 2, parent: 'folder:f1' });
 });

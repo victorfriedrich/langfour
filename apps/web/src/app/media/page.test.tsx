@@ -77,7 +77,7 @@ it('moves an item into a folder from its menu and saves the layout', async () =>
   render(<MediaPage />);
   fireEvent.click(await screen.findByRole('button', { name: 'Actions for El tranvía vuelve' }));
   vi.useFakeTimers();
-  fireEvent.click(within(screen.getByRole('menu')).getByRole('button', { name: 'Songs' }));
+  fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Songs' }));
   await act(async () => { vi.runAllTimers(); });
   expect(saveLayout).toHaveBeenLastCalledWith(expect.anything(), 'es', [
     { type: 'item', id: 'ep' },

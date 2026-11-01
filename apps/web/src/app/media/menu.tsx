@@ -23,17 +23,17 @@ export function MenuPanel({ className = '', children }: { className?: string; ch
     <motion.div
       role="menu" initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -4 }}
       transition={{ duration: 0.12 }}
-      className={`absolute z-30 origin-top-right rounded-xl border border-gray-200 bg-white p-1 shadow-lg shadow-gray-900/5 ${className}`}
+      className={`absolute z-30 origin-top-right rounded-lg border border-gray-200 bg-white p-1 shadow-lg shadow-gray-900/5 ${className}`}
     >
       {children}
     </motion.div>
   );
 }
 
-export function MenuButton({ icon: Icon, onClick, danger = false, children }: { icon: LucideIcon; onClick: () => void; danger?: boolean; children: ReactNode }) {
+export function MenuButton({ icon: Icon, onClick, danger = false, children }: { icon?: LucideIcon; onClick: () => void; danger?: boolean; children: ReactNode }) {
   return (
     <button role="menuitem" onClick={onClick} className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm ${danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-100'}`}>
-      <Icon size={15} className={`shrink-0 ${danger ? '' : 'text-gray-400'}`}/>
+      {Icon && <Icon size={15} className={`shrink-0 ${danger ? '' : 'text-gray-400'}`}/>}
       {children}
     </button>
   );

@@ -3,7 +3,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronRight, Clapperboard, FileText, FolderPlus, Music, Plus, Puzzle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clapperboard, FileText, Music, Plus, Puzzle } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { UserContext } from '@/context/UserContext';
@@ -13,7 +13,7 @@ import { ImportedMediaSummary, getLibrary, saveLayout } from './api';
 import ImportDialog from './ImportDialog';
 import LibraryTree from './LibraryTree';
 import { MenuButton, MenuPanel, useDismiss } from './menu';
-import { FOLDER_COLORS, LayoutNode, addFolder, listFolders, newFolderId, reconcile } from './tree';
+import { LayoutNode, addFolder, newFolderId, reconcile } from './tree';
 
 // The same two buttons as the Practice page (TodayCard).
 const primary = 'inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700';
@@ -66,9 +66,7 @@ function MediaPageContent() {
 
   const createFolder = () => {
     const id = newFolderId();
-    // Each new folder takes the next colour, so a few in a row look distinct.
-    const color = FOLDER_COLORS[listFolders(tree).length % (FOLDER_COLORS.length - 1)];
-    change(addFolder(tree, { type: 'folder', id, name: 'New folder', color, open: true, children: [] }));
+    change(addFolder(tree, { type: 'folder', id, name: 'New folder', color: 'gray', open: true, children: [] }));
     setRenaming(id);
   };
 
@@ -79,7 +77,7 @@ function MediaPageContent() {
           <h1 className="text-2xl font-semibold text-gray-900">Media</h1>
           {media.length > 0 && (
             <div className="flex gap-2">
-              <button onClick={createFolder} className={secondary}><FolderPlus size={16}/>New folder</button>
+              <button onClick={createFolder} className={secondary}>New folder</button>
               <AddMenu extension={extension} onImport={() => setShowImport(true)}/>
             </div>
           )}
@@ -128,7 +126,7 @@ function AddMenu({ extension, onImport }: { extension: ExtensionStatus['state'];
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" className={primary}>
-        <Plus size={16}/>Add<ChevronDown size={14} className={`-mr-0.5 transition-transform ${open ? 'rotate-180' : ''}`}/>
+        Add<ChevronDown size={14} className="-mr-0.5"/>
       </button>
       <AnimatePresence>
         {open && (
