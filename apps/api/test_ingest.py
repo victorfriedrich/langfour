@@ -237,3 +237,60 @@ def test_run_mix_stops_when_the_queue_is_empty(corpus, monkeypatch):
     monkeypatch.setattr(ingest, "transcribe", lambda *a: pytest.fail("nothing to do"))
     tally = ingest.run_mix(None, "es", {"proxy": 100}, hours=5, sleep=lambda s: None)
     assert tally == {"proxy": {"done": 0, "failed": 0}}
+
+
+@pytest.mark.parametrize("error", [
+    "DownloadError: ERROR: Unable to download API page: Tunnel connection failed: "
+    "407 Proxy Authentication Required",
+    "Exception: Error in processing transcript: Jev HTTP 402: Insufficient credits",
+])
+def test_an_outage_hands_the_row_back_and_stops_the_run(corpus, monkeypatch, error):
+    """Failed rows are never retried, so a proxy out of traffic or OpenRouter
+    out of credits must not fail the rest of the queue one video at a time."""
+    monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
+    monkeypatch.setattr(ingest, "transcribe", lambda *_: ("failed", error))
+    sb = FakeSupabase([pending("a"), pending("b")])
+    with pytest.raises(ingest.Outage):
+        ingest.run(sb, "es", limit=5)
+    for vid in ("a", "b"):                       # b was claimed too, never tried
+        assert (sb.row(vid)["status"], sb.row(vid)["attempts"]) == ("pending", 0)
+
+
+def test_a_videos_own_failure_is_not_an_outage():
+    assert ingest.outage_of("DownloadError: Video unavailable. This video is private") is None
+    assert ingest.outage_of("Sign in to confirm your age") is None
+    assert ingest.outage_of(None) is None
+
+
+def test_publish_runs_before_done_and_its_failure_hands_the_row_back(corpus, monkeypatch, scored):
+    def transcribe(vid, lang, *_):
+        (corpus / f"{vid}_processed.json").write_text("{}")
+        return "done", None
+
+    monkeypatch.setattr(ingest, "transcribe", transcribe)
+    published = []
+    sb = FakeSupabase([pending("a"), pending("b")])
+    row = ingest.claim(sb, "es", 1)[0]
+    assert ingest.process(sb, row, "es", ingest._Scorer(),
+                          publish=lambda lang, vid: published.append(vid)) == "done"
+    assert published == ["a"] and sb.row("a")["status"] == "done"
+
+    def down(lang, vid):
+        raise ConnectionError("r2 unreachable")
+
+    row = ingest.claim(sb, "es", 1)[0]
+    with pytest.raises(ingest.Outage, match="publish"):
+        ingest.process(sb, row, "es", ingest._Scorer(), publish=down)
+    assert sb.row("b")["status"] == "pending" and scored == [("a", "es")]
+
+
+def test_run_mix_can_be_stopped_and_can_skip_the_cache_load(corpus, monkeypatch):
+    queue = [pending(f"v{i}") for i in range(5)]
+    monkeypatch.setattr(ingest, "claim", lambda sb, lang, n: [queue.pop(0)] if queue else [])
+    monkeypatch.setattr(ingest, "finish", lambda *a, **k: None)
+    monkeypatch.setattr(ingest, "prepare_cache", lambda: pytest.fail("the API's cache is loaded"))
+    monkeypatch.setattr(ingest, "transcribe", lambda *a: ("failed", "boom"))
+    stopped = iter([False, False, True])
+    tally = ingest.run_mix(None, "es", {"proxy": 5}, hours=1, sleep=lambda s: None,
+                           cache_ready=True, stopped=lambda: next(stopped))
+    assert tally == {"proxy": {"done": 0, "failed": 2}} and len(queue) == 3
