@@ -2,19 +2,22 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Clapperboard, FolderPlus, Plus, Puzzle } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { ChevronDown, ChevronRight, Clapperboard, FileText, FolderPlus, Music, Plus, Puzzle } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { UserContext } from '@/context/UserContext';
 import { useExtensionStatus } from '../hooks/useExtensionStatus';
+import type { ExtensionStatus } from '../hooks/useExtensionStatus';
 import { ImportedMediaSummary, getLibrary, saveLayout } from './api';
 import ImportDialog from './ImportDialog';
 import LibraryTree from './LibraryTree';
+import { MenuButton, MenuPanel, useDismiss } from './menu';
 import { FOLDER_COLORS, LayoutNode, addFolder, listFolders, newFolderId, reconcile } from './tree';
 
-// The same two buttons as the Practice page.
-const primary = 'inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700';
-const secondary = 'inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50';
+// The same two buttons as the Practice page (TodayCard).
+const primary = 'inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700';
+const secondary = 'inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50';
 
 // Rearranging saves the whole tree once the user pauses.
 const SAVE_DELAY_MS = 400;
@@ -72,27 +75,26 @@ function MediaPageContent() {
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
-        <header className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:flex-nowrap">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold text-gray-900">Media</h1>
-            <p className="mt-1 text-sm text-gray-500">Learn the words of an episode, article or song before you start.</p>
-          </div>
+        <header className="mb-8 flex min-h-9 flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold text-gray-900">Media</h1>
           {media.length > 0 && (
-            <div className="flex flex-wrap gap-3 sm:shrink-0">
+            <div className="flex gap-2">
               <button onClick={createFolder} className={secondary}><FolderPlus size={16}/>New folder</button>
-              <button onClick={() => setShowImport(true)} className={secondary}><Plus size={16}/>Import episode</button>
-              {extension === 'missing' && <Link href="/extension" className={primary}><Puzzle size={16}/>Get the extension</Link>}
+              <AddMenu extension={extension} onImport={() => setShowImport(true)}/>
             </div>
           )}
         </header>
 
         {error && <p className="mb-6 text-sm text-red-600">{error}</p>}
         {loading ? (
-          <div className="space-y-1" aria-label="Loading">
+          <div className="border-b border-gray-100" aria-label="Loading">
             {Array.from({ length: 3 }, (_, i) => (
-              <div key={i} className="flex h-11 items-center gap-2 pl-7">
-                <span className="h-7 w-7 animate-pulse rounded-lg bg-gray-100" />
-                <span className="h-3 w-56 animate-pulse rounded bg-gray-100" />
+              <div key={i} className="flex h-14 items-center gap-3 border-t border-gray-100">
+                <span className="h-8 w-8 animate-pulse rounded-lg bg-gray-100" />
+                <span className="space-y-1.5">
+                  <span className="block h-3 w-56 animate-pulse rounded bg-gray-100" />
+                  <span className="block h-3 w-32 animate-pulse rounded bg-gray-100" />
+                </span>
               </div>
             ))}
           </div>
@@ -107,14 +109,41 @@ function MediaPageContent() {
             </EmptyState>
           )
         ) : (
-          <>
-            <LibraryTree tree={tree} media={byId} onChange={change} renaming={renaming} onRename={setRenaming}/>
-            {extension === 'installed' && <AddFromReader className="mt-6 pl-1"/>}
-          </>
+          <LibraryTree tree={tree} media={byId} onChange={change} renaming={renaming} onRename={setRenaming}/>
         )}
       </div>
 
       {showImport && <ImportDialog language={languageCode} existing={media} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); refresh(); }}/>}
+    </div>
+  );
+}
+
+// Both ways into the Library: an episode transcript imported here, and
+// articles and songs added from the extension's reader.
+function AddMenu({ extension, onImport }: { extension: ExtensionStatus['state']; onImport: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(ref, open, close);
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" className={primary}>
+        <Plus size={16}/>Add<ChevronDown size={14} className={`-mr-0.5 transition-transform ${open ? 'rotate-180' : ''}`}/>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <MenuPanel className="right-0 top-full mt-1.5 w-72">
+            <MenuButton icon={FileText} onClick={() => { close(); onImport(); }}>Episode transcript…</MenuButton>
+            <div className="my-1 h-px bg-gray-100"/>
+            <div className="px-2.5 pb-2 pt-1.5">
+              <p className="flex items-center gap-2 text-sm text-gray-700"><Music size={15} className="text-gray-400"/>Article or song</p>
+              {extension === 'missing'
+                ? <Link href="/extension" onClick={close} className="ml-[23px] mt-1 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700">Get the extension<ChevronRight size={14}/></Link>
+                : <AddFromReader lead={false} className="ml-[23px] mt-1.5"/>}
+            </div>
+          </MenuPanel>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -125,7 +154,7 @@ function MediaPageContent() {
 // reader. iPads that report a Mac user agent are told apart by touch. Only
 // rendered after the extension has answered, so reading navigator here
 // cannot break hydration.
-function AddFromReader({ className = '' }: { className?: string }) {
+function AddFromReader({ className = '', lead = true }: { className?: string; lead?: boolean }) {
   const touch = navigator.maxTouchPoints > 1;
   const mac = /Mac/.test(navigator.userAgent);
   const key = 'inline-grid h-6 min-w-6 place-items-center rounded-md border border-gray-200 bg-white px-1.5 font-sans text-xs font-medium text-gray-700 shadow-[0_1px_0_rgb(0_0_0/0.04)]';
@@ -135,10 +164,10 @@ function AddFromReader({ className = '' }: { className?: string }) {
     : [<span key="keys" className="inline-flex items-center gap-1" aria-label={`Press ${keys.join(' ')}`}>{keys.map((k) => <kbd key={k} className={key}>{k}</kbd>)}</span>];
   return (
     <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-2 text-sm text-gray-500 ${className}`}>
-      <span>Any article or song</span>
-      {[...steps, <span key="add" className="font-medium text-gray-700">Add to Library</span>].map((step) => (
+      {lead && <span>Any article or song</span>}
+      {[...steps, <span key="add" className="font-medium text-gray-700">Add to Library</span>].map((step, i) => (
         <span key={step.key} className="inline-flex items-center gap-2.5">
-          <ChevronRight size={14} className="text-gray-300" aria-hidden/>
+          {(lead || i > 0) && <ChevronRight size={14} className="text-gray-300" aria-hidden/>}
           {step}
         </span>
       ))}

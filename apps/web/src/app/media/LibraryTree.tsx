@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent, ReactNode } from 'react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { LucideIcon } from 'lucide-react';
 import { ArrowDown, ArrowUp, Check, ChevronRight, CornerLeftUp, FileText, Film, Folder, FolderInput, FolderOpen, FolderPlus, GripVertical, MoreHorizontal, Music, Newspaper, Pencil, Trash2, Tv } from 'lucide-react';
 import type { ImportedMediaSummary, MediaKind } from './api';
+import { MenuButton, MenuPanel, useDismiss } from './menu';
 import {
   FOLDER_COLORS, MAX_FOLDER_DEPTH, addFolder, contains, countItems, findNode, keyOf, listFolders, moveNode, moveToRoot, newFolderId, removeFolder, shift, updateFolder,
 } from './tree';
@@ -126,7 +127,7 @@ export default function LibraryTree({ tree, media, onChange, renaming, onRename 
 
   return (
     <div onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDrop(null); }}>
-      <Level nodes={tree} depth={0} ctx={ctx}/>
+      <div className="border-b border-gray-100"><Level nodes={tree} depth={0} ctx={ctx}/></div>
       <AnimatePresence>
         {dragging && (
           <motion.div
@@ -134,7 +135,7 @@ export default function LibraryTree({ tree, media, onChange, renaming, onRename 
             onDragOver={(event) => { event.preventDefault(); if (drop?.key !== 'end') setDrop({ key: 'end', position: 'after' }); }}
             onDrop={(event) => { event.preventDefault(); commit(moveToRoot(tree, dragging, 'end'), dragging); endDrag(); }}
           >
-            <div className={`mt-2 flex h-10 items-center justify-center rounded-lg border-2 border-dashed text-sm transition-colors ${drop?.key === 'end' ? 'border-indigo-300 bg-indigo-50 text-indigo-600' : 'border-gray-200 text-gray-400'}`}>
+            <div className={`mt-3 flex h-10 items-center justify-center rounded-lg border-2 border-dashed text-sm transition-colors ${drop?.key === 'end' ? 'border-indigo-300 bg-indigo-50 text-indigo-600' : 'border-gray-200 text-gray-400'}`}>
               Move to the end
             </div>
           </motion.div>
@@ -163,7 +164,7 @@ function Level({ nodes, depth, ctx }: { nodes: LayoutNode[]; depth: number; ctx:
   return (
     <ul>
       {nodes.map((node) => (
-        <motion.li key={keyOf(node)} layout="position" transition={spring}>
+        <motion.li key={keyOf(node)} layout="position" transition={spring} className="border-t border-gray-100">
           {node.type === 'folder'
             ? <FolderRow folder={node} depth={depth} ctx={ctx}/>
             : ctx.media.has(node.id) && <ItemRow item={ctx.media.get(node.id)!} nodeKey={keyOf(node)} ctx={ctx}/>}
@@ -174,19 +175,21 @@ function Level({ nodes, depth, ctx }: { nodes: LayoutNode[]; depth: number; ctx:
 }
 
 // The shared shell of a row: drop line above or below, the glow after a
-// move, and a grip in the gutter on hover.
+// move, and a grip in the gutter on hover. It reaches 8px past the list on
+// each side so the hover fill has room, while the content lines up with the
+// page title.
 function RowShell({ nodeKey, node, ctx, children }: { nodeKey: string; node: LayoutNode; ctx: LevelContext; children: ReactNode }) {
   const target = ctx.drop?.key === nodeKey ? ctx.drop.position : null;
   return (
     <div
       {...ctx.dragProps(node)}
-      className={`group relative flex min-h-11 items-center gap-2 rounded-lg py-1.5 pl-1 pr-1 transition-colors ${
+      className={`group relative -mx-2 flex min-h-14 items-center gap-3 rounded-lg px-2 py-2 transition-colors ${
         ctx.dragging === nodeKey ? 'opacity-40' : ''} ${
         target === 'inside' ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-200' : ctx.moved === nodeKey ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
     >
-      <GripVertical size={14} aria-hidden className="absolute -left-5 hidden cursor-grab text-gray-300 opacity-0 group-hover:opacity-100 sm:block"/>
+      <GripVertical size={14} aria-hidden className="absolute -left-4 hidden cursor-grab text-gray-300 opacity-0 group-hover:opacity-100 sm:block"/>
       {(target === 'before' || target === 'after') && (
-        <span aria-hidden className={`pointer-events-none absolute left-6 right-0 z-10 h-0.5 rounded-full bg-indigo-500 ${target === 'before' ? '-top-px' : '-bottom-px'}`}>
+        <span aria-hidden className={`pointer-events-none absolute left-2 right-2 z-10 h-0.5 rounded-full bg-indigo-500 ${target === 'before' ? '-top-px' : '-bottom-px'}`}>
           <span className="absolute -left-1.5 -top-[3px] h-2 w-2 rounded-full border-2 border-indigo-500 bg-white"/>
         </span>
       )}
@@ -204,21 +207,17 @@ function FolderRow({ folder, depth, ctx }: { folder: FolderNode; depth: number; 
   return (
     <>
       <RowShell nodeKey={key} node={folder} ctx={ctx}>
-        <button onClick={toggle} aria-label={folder.open ? `Close ${folder.name}` : `Open ${folder.name}`} className="grid h-5 w-5 shrink-0 place-items-center rounded text-gray-400 hover:bg-gray-200/70 hover:text-gray-600">
-          <ChevronRight size={14} className={`transition-transform duration-200 ${folder.open ? 'rotate-90' : ''}`}/>
-        </button>
-        <span className="grid h-7 w-7 shrink-0 place-items-center">
-          <Icon size={19} strokeWidth={1.75} className={`${FOLDER_TONE[folder.color].icon} transition-transform duration-200 ${target ? '-rotate-6 scale-125' : ''}`}/>
+        <span className="grid h-8 w-8 shrink-0 place-items-center">
+          <Icon size={20} strokeWidth={1.75} className={`${FOLDER_TONE[folder.color].icon} transition-transform duration-200 ${target ? '-rotate-6 scale-125' : ''}`}/>
         </span>
         {ctx.renaming === folder.id ? (
           <RenameInput folder={folder} ctx={ctx}/>
         ) : (
-          <button onClick={toggle} onDoubleClick={() => ctx.onRename(folder.id)} aria-expanded={folder.open} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-            <span className="truncate text-sm font-medium text-gray-900">{folder.name}</span>
-            <span className="shrink-0 rounded-full bg-gray-100 px-1.5 text-xs font-medium tabular-nums leading-5 text-gray-500">{count}</span>
+          <button onClick={toggle} onDoubleClick={() => ctx.onRename(folder.id)} aria-expanded={folder.open} className="min-w-0 flex-1 self-stretch truncate text-left text-sm font-medium text-gray-900">
+            {folder.name}
           </button>
         )}
-        <RowMenu nodeKey={key} label={folder.name} ctx={ctx}>
+        <RowMenu nodeKey={key} label={folder.name} ctx={ctx} under={`${count} ${count === 1 ? 'item' : 'items'}`}>
           {(close) => (
             <>
               <MenuButton icon={Pencil} onClick={() => { close(); ctx.onRename(folder.id); }}>Rename</MenuButton>
@@ -256,15 +255,15 @@ function FolderRow({ folder, depth, ctx }: { folder: FolderNode; depth: number; 
             exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
           >
-            {/* The guide line sits under the chevron, as in an outliner. */}
-            <div className="ml-[13px] border-l border-gray-200/80 pl-2">
+            {/* Indented by one icon, so the hairlines show what is inside. */}
+            <div className="pl-11">
               {folder.children.length > 0 ? <Level nodes={folder.children} depth={depth + 1} ctx={ctx}/> : (
                 <div
                   onDragOver={(event) => { if (ctx.dragging && moveNode(ctx.tree, ctx.dragging, key, 'inside') !== ctx.tree) { event.preventDefault(); if (!target) ctx.setDrop({ key, position: 'inside' }); } }}
                   onDrop={(event) => { event.preventDefault(); if (ctx.dragging) ctx.commit(moveNode(ctx.tree, ctx.dragging, key, 'inside'), ctx.dragging); ctx.setDrop(null); }}
-                  className={`my-1 flex h-9 items-center rounded-lg border border-dashed pl-3 text-sm transition-colors ${target ? 'border-indigo-300 text-indigo-500' : 'border-gray-200 text-gray-400'}`}
+                  className={`flex h-11 items-center border-t border-gray-100 text-sm transition-colors ${target ? 'text-indigo-500' : 'text-gray-400'}`}
                 >
-                  Empty. Drag things in here.
+                  Empty
                 </div>
               )}
             </div>
@@ -280,18 +279,16 @@ function ItemRow({ item, nodeKey, ctx }: { item: ImportedMediaSummary; nodeKey: 
   const details = detailsOf(item);
   return (
     <RowShell nodeKey={nodeKey} node={{ type: 'item', id: item.id }} ctx={ctx}>
-      <span className="w-5 shrink-0"/>
-      <Link href={`/media/${encodeURIComponent(item.id)}`} draggable={false} aria-label={`Open vocabulary for ${item.title}`} className="flex min-w-0 flex-1 items-center gap-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
-        <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${tile}`} aria-label={label}>
-          <Icon size={15} strokeWidth={2}/>
+      <Link href={`/media/${encodeURIComponent(item.id)}`} draggable={false} aria-label={`Open vocabulary for ${item.title}`} className="flex min-w-0 flex-1 items-center gap-3 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tile}`} aria-label={label}>
+          <Icon size={16} strokeWidth={2}/>
         </span>
-        <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
-          <span className="truncate text-sm text-gray-900">{item.title}</span>
-          {details && <span className="truncate text-sm text-gray-400">{details}</span>}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-gray-900">{item.title}</span>
+          {details && <span className="block truncate text-sm text-gray-500">{details}</span>}
         </span>
-        <span className="hidden shrink-0 pl-2 text-sm tabular-nums text-gray-400 sm:block">{new Date(item.importedAt).toLocaleDateString()}</span>
       </Link>
-      <RowMenu nodeKey={nodeKey} label={item.title} ctx={ctx}>
+      <RowMenu nodeKey={nodeKey} label={item.title} ctx={ctx} under={new Date(item.importedAt).toLocaleDateString()}>
         {(close) => <MoveActions nodeKey={nodeKey} ctx={ctx} close={close}/>}
       </RowMenu>
     </RowShell>
@@ -354,46 +351,27 @@ function MoveActions({ nodeKey, ctx, close }: { nodeKey: string; ctx: LevelConte
   );
 }
 
-function RowMenu({ nodeKey, label, ctx, children }: { nodeKey: string; label: string; ctx: LevelContext; children: (close: () => void) => ReactNode }) {
+// The "…" button sits over the row's date (or a folder's count) and replaces
+// it on hover, so the right edge lines up with the header. Touch screens have
+// no hover: there the button always shows and the date is left out.
+function RowMenu({ nodeKey, label, under, ctx, children }: { nodeKey: string; label: string; under: string; ctx: LevelContext; children: (close: () => void) => ReactNode }) {
   const open = ctx.menu === nodeKey;
   const ref = useRef<HTMLDivElement>(null);
   const { setMenu } = ctx;
-  useEffect(() => {
-    if (!open) return;
-    const away = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) setMenu(null); };
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenu(null); };
-    document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', escape);
-    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', escape); };
-  }, [open, setMenu]);
+  const close = useCallback(() => setMenu(null), [setMenu]);
+  useDismiss(ref, open, close);
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div ref={ref} className="relative flex shrink-0 items-center justify-end sm:min-w-20">
       <button
         onClick={() => setMenu(open ? null : nodeKey)} aria-label={`Actions for ${label}`} aria-expanded={open}
-        className={`grid h-7 w-7 place-items-center rounded-md text-gray-400 hover:bg-gray-200/70 hover:text-gray-700 group-hover:opacity-100 [@media(hover:none)]:opacity-100 ${open ? 'bg-gray-200/70 opacity-100' : 'opacity-0 focus-visible:opacity-100'}`}
+        className={`peer grid h-7 w-7 place-items-center rounded-md text-gray-400 hover:bg-gray-200/70 hover:text-gray-700 group-hover:opacity-100 sm:absolute sm:right-0 sm:top-1/2 sm:-translate-y-1/2 [@media(hover:none)]:opacity-100 ${open ? 'bg-gray-200/70 opacity-100' : 'opacity-0 focus-visible:opacity-100'}`}
       >
         <MoreHorizontal size={16}/>
       </button>
+      <span className={`hidden text-sm tabular-nums text-gray-400 sm:block [@media(hover:none)]:invisible ${open ? 'invisible' : 'group-hover:invisible peer-focus-visible:invisible'}`}>{under}</span>
       <AnimatePresence>
-        {open && (
-          <motion.div
-            role="menu" initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -4 }}
-            transition={{ duration: 0.12 }}
-            className="absolute right-0 top-8 z-30 w-60 origin-top-right rounded-xl border border-gray-200 bg-white p-1 shadow-lg shadow-gray-900/5"
-          >
-            {children(() => setMenu(null))}
-          </motion.div>
-        )}
+        {open && <MenuPanel className="right-0 top-full mt-1 w-60">{children(close)}</MenuPanel>}
       </AnimatePresence>
     </div>
-  );
-}
-
-function MenuButton({ icon: Icon, onClick, danger = false, children }: { icon: LucideIcon; onClick: () => void; danger?: boolean; children: ReactNode }) {
-  return (
-    <button role="menuitem" onClick={onClick} className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm ${danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-100'}`}>
-      <Icon size={15} className={`shrink-0 ${danger ? '' : 'text-gray-400'}`}/>
-      {children}
-    </button>
   );
 }
