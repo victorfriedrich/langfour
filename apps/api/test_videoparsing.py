@@ -258,7 +258,7 @@ def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp
     monkeypatch.setattr(vp, "process_transcription",
                         lambda f, vid, *a: processed.append(Path(f).read_text()))
     download = []
-    monkeypatch.setattr(vp, "download_video", lambda info: download.append(info["url"]))
+    monkeypatch.setattr(vp, "download_video", lambda info, proxy=None: download.append(info["url"]))
 
     monkeypatch.setattr(vp, "caption_text", lambda vid, lang, proxied=None, proxy=None: "hola mundo")
     vp.main("https://www.youtube.com/watch?v=abc", "es")
@@ -326,9 +326,36 @@ def test_a_failed_download_from_proxied_info_rereads_on_our_own_ip(monkeypatch, 
     monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None, proxy=None: None)
     downloads = []
     monkeypatch.setattr(vp, "download_video",
-                        lambda info: (downloads.append(info["proxied"]), None)[1])
+                        lambda info, proxy=None: (downloads.append(info["proxied"]), None)[1])
     vp.main("https://www.youtube.com/watch?v=abc", "es")
     assert reads == [True, False] and downloads == [True, False]
+
+
+def test_audio_via_proxy_retries_the_download_through_the_videos_session(monkeypatch, tmp_path):
+    """On Koyeb our own IP is blocked outright: no re-read there, the retry
+    goes through the proxy session the metadata read used."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+    monkeypatch.setattr(vp, "AUDIO_VIA_PROXY", True)
+    reads = []
+    monkeypatch.setattr(vp, "read_info", lambda url, proxied: (reads.append(proxied), ({"url": url}, "S1"))[1])
+    monkeypatch.setattr(vp, "video_info", lambda *a, **k: pytest.fail("no read on our own IP"))
+    monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None, proxy=None: None)
+    downloads = []
+    monkeypatch.setattr(vp, "download_video", lambda info, proxy=None: downloads.append(proxy))
+    vp.main("https://www.youtube.com/watch?v=abc", "es")
+    assert reads == [True] and downloads == [None, "S1"]
+
+
+def test_a_failed_metadata_read_raises_so_ingest_records_why(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    def refused(url, proxied):
+        raise OSError("Tunnel connection failed: 407 Proxy Authentication Required")
+
+    monkeypatch.setattr(vp, "read_info", refused)
+    with pytest.raises(OSError, match="407"):
+        vp.main("https://www.youtube.com/watch?v=abc", "es")
 
 
 def test_own_ip_and_proxy_captions_are_spaced_and_paused_separately(captions):

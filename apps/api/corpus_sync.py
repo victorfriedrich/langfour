@@ -37,19 +37,31 @@ Configuration (first match wins):
 
 If neither is set the corpus is assumed to be on disk already, which is the
 normal case in local development.
+
+INCOMING — transcripts the API's own ingest worker makes (ingest_worker.py)
+would die with the container's disk, so each one is also uploaded on its own,
+gzipped, to <prefix>/incoming/<lang>/<id>_processed.json.gz. Boot pulls them
+in after the tarball. That needs the bucket configuration (listing is an S3
+call) and, for the upload only, a read-write token in
+LANGFIVE_CORPUS_WRITE_ACCESS_KEY_ID / LANGFIVE_CORPUS_WRITE_SECRET_ACCESS_KEY;
+the AWS_* token stays read-only. Repacking the tarballs from a disk that has
+pulled incoming/ folds them in.
 """
 
 from __future__ import annotations
 
+import gzip
 import logging
 import os
+import re
 import shutil
 import tarfile
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import IO
 
-from paths import DATA_DIR, PROCESSED_DIR
+from paths import DATA_DIR, PROCESSED_DIR, processed_dir, processed_file
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +78,30 @@ def _is_populated(language: str) -> bool:
     return (PROCESSED_DIR / language / MARKER).exists()
 
 
+def _key(name: str) -> str:
+    prefix = os.getenv("LANGFIVE_CORPUS_PREFIX", "").strip("/")
+    return f"{prefix}/{name}" if prefix else name
+
+
+def _s3(write: bool = False):
+    import boto3  # imported lazily so local dev needs no AWS SDK
+
+    creds = {}
+    if write:
+        key_id = os.getenv("LANGFIVE_CORPUS_WRITE_ACCESS_KEY_ID")
+        secret = os.getenv("LANGFIVE_CORPUS_WRITE_SECRET_ACCESS_KEY")
+        if not (key_id and secret):
+            raise RuntimeError("uploading needs LANGFIVE_CORPUS_WRITE_ACCESS_KEY_ID "
+                               "and LANGFIVE_CORPUS_WRITE_SECRET_ACCESS_KEY")
+        creds = {"aws_access_key_id": key_id, "aws_secret_access_key": secret}
+    return boto3.client(
+        "s3",
+        endpoint_url=os.getenv("LANGFIVE_CORPUS_ENDPOINT") or None,
+        region_name=os.getenv("AWS_REGION", "auto"),
+        **creds,
+    )
+
+
 def _open_stream(name: str) -> IO[bytes]:
     """Return a readable, streaming file object for one archive."""
     base_url = os.getenv("LANGFIVE_CORPUS_BASE_URL")
@@ -78,18 +114,10 @@ def _open_stream(name: str) -> IO[bytes]:
 
     bucket = os.getenv("LANGFIVE_CORPUS_BUCKET")
     if bucket:
-        import boto3  # imported lazily so local dev needs no AWS SDK
-
-        prefix = os.getenv("LANGFIVE_CORPUS_PREFIX", "").strip("/")
-        key = f"{prefix}/{name}" if prefix else name
+        key = _key(name)
         log.info("corpus: fetching s3://%s/%s", bucket, key)
-        s3 = boto3.client(
-            "s3",
-            endpoint_url=os.getenv("LANGFIVE_CORPUS_ENDPOINT") or None,
-            region_name=os.getenv("AWS_REGION", "auto"),
-        )
         # StreamingBody is already a chunked reader; tarfile pulls from it.
-        return s3.get_object(Bucket=bucket, Key=key)["Body"]
+        return _s3().get_object(Bucket=bucket, Key=key)["Body"]
 
     raise RuntimeError(
         "No corpus source configured. Set LANGFIVE_CORPUS_BASE_URL or "
@@ -164,6 +192,49 @@ def ensure_language(language: str, *, force: bool = False) -> bool:
     return True
 
 
+# Remote input like the tarball: only a bare transcript name becomes a path.
+INCOMING_NAME = re.compile(r"^([A-Za-z0-9_-]+)_processed\.json\.gz$")
+
+
+def upload_transcript(language: str, video_id: str) -> None:
+    """Copy one finished transcript to incoming/, so it outlives this disk."""
+    bucket = os.getenv("LANGFIVE_CORPUS_BUCKET")
+    if not bucket:
+        raise RuntimeError("uploading needs LANGFIVE_CORPUS_BUCKET")
+    body = gzip.compress(processed_file(language, video_id).read_bytes())
+    _s3(write=True).put_object(Bucket=bucket, Key=_key(f"incoming/{language}/{video_id}_processed.json.gz"),
+                               Body=body, ContentType="application/json", ContentEncoding="gzip")
+
+
+def pull_incoming(language: str) -> int:
+    """Fetch the incoming/ transcripts this disk lacks. Returns how many.
+
+    One small object each (~12 KB gzipped), so they come 8 at a time; the
+    tarball's single stream is what has to stay sequential."""
+    bucket = os.environ["LANGFIVE_CORPUS_BUCKET"]
+    s3 = _s3()
+    prefix = _key(f"incoming/{language}/")
+    wanted = []
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            match = INCOMING_NAME.match(obj["Key"][len(prefix):])
+            if match and not processed_file(language, match.group(1)).exists():
+                wanted.append((obj["Key"], match.group(1)))
+
+    def fetch(item: tuple[str, str]) -> None:
+        key, video_id = item
+        target = processed_file(language, video_id)
+        tmp = target.with_suffix(".part")
+        tmp.write_bytes(gzip.decompress(s3.get_object(Bucket=bucket, Key=key)["Body"].read()))
+        tmp.replace(target)
+
+    processed_dir(language).mkdir(parents=True, exist_ok=True)
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(fetch, wanted))
+    log.info("corpus: %s pulled %d incoming transcripts", language, len(wanted))
+    return len(wanted)
+
+
 def ensure_corpus(languages: Iterable[str] | None = None) -> None:
     """Fetch every configured language, sequentially.
 
@@ -192,6 +263,11 @@ def ensure_corpus(languages: Iterable[str] | None = None) -> None:
             ensure_language(language)
         except Exception:
             log.exception("corpus: failed to fetch %s", language)
+        if os.getenv("LANGFIVE_CORPUS_BUCKET"):
+            try:
+                pull_incoming(language)
+            except Exception:
+                log.exception("corpus: failed to pull incoming %s", language)
 
 
 def _configured_languages() -> tuple[str, ...]:
@@ -201,4 +277,4 @@ def _configured_languages() -> tuple[str, ...]:
     return LANGUAGES
 
 
-__all__ = ["LANGUAGES", "ensure_corpus", "ensure_language"]
+__all__ = ["LANGUAGES", "ensure_corpus", "ensure_language", "pull_incoming", "upload_transcript"]

@@ -120,12 +120,14 @@ def read_info(url: str, proxied: bool) -> tuple[dict, str | None]:
         return video_info(url, proxied=True, proxy=session), session
 
 
-def download_video(info):
-    """The audio track video_info() selected, as the file yt-dlp wrote."""
+def download_video(info, proxy: str | None = None):
+    """The audio track video_info() selected, as the file yt-dlp wrote.
+    `proxy` sends the download through that proxy session (AUDIO_VIA_PROXY)."""
     import yt_dlp
+    opts = dict(YDL_OPTS, proxy=proxy) if proxy else YDL_OPTS
     try:
         start_time = time.time()
-        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+        with yt_dlp.YoutubeDL(opts) as ydl:
             _share_player_js(ydl)
             ydl.process_info(info)
             audio_file = ydl.prepare_filename(info)
@@ -334,6 +336,11 @@ _DETECTOR = None
 #   CAPTION_COOLDOWN_S and videos go straight to Whisper instead of extending
 #   the block.
 CAPTION_PROXY_URL = os.getenv("CAPTION_PROXY_URL") or None
+# On a server whose own IP YouTube blocks outright (Koyeb), the re-read on our
+# own IP after a failed download cannot work. AUDIO_VIA_PROXY=1 retries the
+# download through the video's proxy session instead: ~2-5 MB of proxy traffic,
+# paid only for the ~8% of proxy videos that have no usable captions.
+AUDIO_VIA_PROXY = os.getenv("AUDIO_VIA_PROXY", "").lower() in ("1", "true", "yes")
 # Caption requests from our own IP and through the proxy are spaced, and
 # paused after a block, separately: an ingest mix can use both routes at once.
 CAPTION_MIN_INTERVAL_S = float(os.getenv("CAPTION_MIN_INTERVAL_S", "10"))
@@ -559,9 +566,11 @@ def main(url, language: str, use_captions=True, use_proxy=True):
         length = info.get("duration")  # Duration in seconds
         date_added = datetime.utcnow().isoformat()  # UTC timestamp
     except Exception as e:
+        # Raised, not swallowed: ingest records the reason on the row, and a
+        # proxy that refuses every read (407) has to stop the run rather than
+        # fail the queue one video at a time.
         print(f"Error extracting metadata for video {video_id}: {e}")
-        traceback.print_exc()
-        return
+        raise
 
     if os.path.exists(txt_filename):
         print(f"Transcription file {txt_filename} already exists. Processing...")
@@ -581,7 +590,10 @@ def main(url, language: str, use_captions=True, use_proxy=True):
             return
 
     audio_file = download_video(info)
-    if not audio_file and proxied:
+    if not audio_file and proxied and AUDIO_VIA_PROXY:
+        print(f"Retrying the download for {video_id} through the proxy")
+        audio_file = download_video(info, proxy=session)
+    elif not audio_file and proxied:
         # The format URL is signed for the proxy's IP. It downloaded from ours
         # when tested, but if Google enforces that, read the page again here.
         print(f"Retrying the download for {video_id} after a read on our own IP")

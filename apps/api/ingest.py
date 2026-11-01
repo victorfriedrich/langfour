@@ -14,7 +14,8 @@ files, which is the whole point: a video is ingested the same way whether
 discovery found it, a person typed it in, or a user submitted it from the app.
 The primary key is the dedup, so a submission that overlaps the corpus is free.
 
-Claims are compare-and-set on status, so several workers can share one queue.
+Claims are compare-and-set on status, so several workers can share one queue:
+the API runs one itself when INGEST_WORKER_MIX is set (ingest_worker.py).
 Every finished transcript is also rated with Jev (video_quality.py), which is
 what lets the recommender skip garbled and low-content videos.
 
@@ -101,6 +102,12 @@ def finish(sb, video_id: str, status: str, error: str | None = None) -> None:
     if status == "done":
         fields["done_at"] = now()
     sb.table(TABLE).update(fields).eq("video_id", video_id).execute()
+
+
+def release(sb, row: dict) -> None:
+    """Hand a claimed row back untouched: pending, its attempt not counted."""
+    (sb.table(TABLE).update({"status": "pending", "attempts": row.get("attempts") or 0})
+     .eq("video_id", row["video_id"]).eq("status", "processing").execute())
 
 
 def reclaim(sb, lang: str, older_than_minutes: int) -> int:
@@ -205,9 +212,31 @@ class _Scorer:
             self.http.close()
 
 
+class Outage(Exception):
+    """Something every video needs is down, so the next one would fail the
+    same way. The row goes back to the queue and the run stops, instead of
+    failing pending rows one by one (failed rows are never retried). This used
+    to be a watchdog grepping the logs and killing the workers."""
+
+
+# Proxy auth refused (Decodo out of traffic, or a changed password); OpenRouter
+# out of credits, which Jev passes on as its own 402.
+OUTAGES = ((re.compile(r"407 Proxy Authentication", re.I), "the caption proxy refuses requests (407)"),
+           (re.compile(r"HTTP 402"), "OpenRouter is out of credits (Jev HTTP 402)"))
+
+
+def outage_of(error: str | None) -> str | None:
+    return next((what for pattern, what in OUTAGES if error and pattern.search(error)), None)
+
+
 def process(sb, row: dict, lang: str, scorer: _Scorer,
-            captions: bool = True, proxy: bool = True) -> str:
-    """Transcribe, score and finish one claimed row; 'done' or 'failed'."""
+            captions: bool = True, proxy: bool = True, publish=None) -> str:
+    """Transcribe, score and finish one claimed row; 'done' or 'failed'.
+
+    `publish(lang, video_id)` copies a finished transcript somewhere lasting
+    before the row says done: on a server the local file is gone at the next
+    deploy. Raises Outage, with the row released, when the failure is not
+    this video's."""
     vid = row["video_id"]
     # A transcript that already exists (a legacy run, a retry) is done: the
     # file is the ground truth, the row only mirrors it.
@@ -215,6 +244,15 @@ def process(sb, row: dict, lang: str, scorer: _Scorer,
         status, error = "done", None
     else:
         status, error = transcribe(vid, lang, captions, proxy)
+    if what := outage_of(error):
+        release(sb, row)
+        raise Outage(f"{what}: {error}")
+    if status == "done" and publish:
+        try:
+            publish(lang, vid)
+        except Exception as exc:
+            release(sb, row)
+            raise Outage(f"could not publish the transcript: {type(exc).__name__}: {exc}") from exc
     if status == "done":
         scorer(sb, vid, lang)
     finish(sb, vid, status, error)
@@ -232,12 +270,19 @@ def run(sb, lang: str, limit: int, dry_run: bool = False,
     if rows and not dry_run:
         prepare_cache()
     scorer = _Scorer()
-    for n, row in enumerate(rows, 1):
-        print(f"[{n}/{len(rows)}] {row['video_id']}  {(row.get('title') or '')[:60]}", flush=True)
-        if dry_run:
-            continue
-        tally[process(sb, row, lang, scorer, captions)] += 1
-    scorer.close()
+    try:
+        for n, row in enumerate(rows, 1):
+            print(f"[{n}/{len(rows)}] {row['video_id']}  {(row.get('title') or '')[:60]}", flush=True)
+            if dry_run:
+                continue
+            try:
+                tally[process(sb, row, lang, scorer, captions)] += 1
+            except Outage:
+                for rest in rows[n:]:   # claimed up front, so hand them back too
+                    release(sb, rest)
+                raise
+    finally:
+        scorer.close()
     return tally
 
 
@@ -278,31 +323,39 @@ def hourly_order(mix: dict[str, int]) -> list[str]:
 
 
 def run_mix(sb, lang: str, mix: dict[str, int], hours: float,
-            clock=time.monotonic, sleep=time.sleep) -> dict[str, dict[str, int]]:
+            clock=time.monotonic, sleep=time.sleep, *, cache_ready: bool = False,
+            publish=None, stopped=lambda: False) -> dict[str, dict[str, int]]:
+    """cache_ready=True when the word cache is already loaded, as in the API:
+    initialize_cache() empties it while it reloads, under live requests.
+    `stopped()` is checked before each video, after its wait."""
     order = hourly_order(mix)
     gap = 3600 / len(order)
     tally = {name: {"done": 0, "failed": 0} for name in mix}
-    scorer, cache_ready = _Scorer(), False
+    scorer = _Scorer()
     start = clock()
-    for n in range(round(hours * len(order))):
-        wait = start + n * gap - clock()
-        if wait > 0:
-            sleep(wait)
-        method = order[n % len(order)]
-        rows = claim(sb, lang, 1)
-        if not rows:
-            print("queue empty", flush=True)
-            break
-        if not cache_ready:
-            prepare_cache()
-            cache_ready = True
-        row = rows[0]
-        print(f"[{n + 1}] {method:8} {row['video_id']}  {(row.get('title') or '')[:55]}", flush=True)
-        captions, proxy = METHODS[method]
-        tally[method][process(sb, row, lang, scorer, captions, proxy)] += 1
-        if (n + 1) % len(order) == 0:
-            print(f"hour {(n + 1) // len(order)}: {mix_summary(tally)}", flush=True)
-    scorer.close()
+    try:
+        for n in range(round(hours * len(order))):
+            wait = start + n * gap - clock()
+            if wait > 0:
+                sleep(wait)
+            if stopped():
+                break
+            method = order[n % len(order)]
+            rows = claim(sb, lang, 1)
+            if not rows:
+                print("queue empty", flush=True)
+                break
+            if not cache_ready:
+                prepare_cache()
+                cache_ready = True
+            row = rows[0]
+            print(f"[{n + 1}] {method:8} {row['video_id']}  {(row.get('title') or '')[:55]}", flush=True)
+            captions, proxy = METHODS[method]
+            tally[method][process(sb, row, lang, scorer, captions, proxy, publish)] += 1
+            if (n + 1) % len(order) == 0:
+                print(f"hour {(n + 1) // len(order)}: {mix_summary(tally)}", flush=True)
+    finally:
+        scorer.close()
     return tally
 
 
@@ -403,9 +456,15 @@ def main() -> None:
             sys.exit("the mix has proxy videos but CAPTION_PROXY_URL is not set")
         print(f"mix per hour: {', '.join(f'{k}={v}' for k, v in mix.items())}, "
               f"for {a.hours:g} h", flush=True)
-        print(mix_summary(run_mix(sb, lang, mix, a.hours)))
+        try:
+            print(mix_summary(run_mix(sb, lang, mix, a.hours)))
+        except Outage as exc:
+            sys.exit(f"stopped: {exc}")
     elif a.command == "run":
-        tally = run(sb, lang, a.limit, a.dry_run, captions=not a.no_captions)
+        try:
+            tally = run(sb, lang, a.limit, a.dry_run, captions=not a.no_captions)
+        except Outage as exc:
+            sys.exit(f"stopped: {exc}")
         if not a.dry_run:
             print(f"done {tally['done']}, failed {tally['failed']}")
     elif a.command == "seed-done":

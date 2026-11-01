@@ -153,6 +153,7 @@ async def stop_mcp():
 
 # Client now comes from supabase_client, which verifies the key is
 # service_role before the app is allowed to start.
+import ingest_worker
 from corpus_sync import ensure_corpus
 from paths import PROCESSED_DIR
 from supabase_client import supabase
@@ -255,6 +256,16 @@ async def startup_event():
 
     # now instantiate here, so import-time is fast
     app.state.recommender         = Recommender(base_folder=VIDEO_DIR)
+
+    # After initialize_cache(): the worker parses against the loaded cache.
+    # Off unless INGEST_WORKER_MIX is set (see ingest_worker.py).
+    app.state.ingest_stop = ingest_worker.start(supabase)
+
+
+@app.on_event("shutdown")
+async def stop_ingest_worker():
+    if stop := getattr(app.state, "ingest_stop", None):
+        stop.set()
 
 @app.post("/parse")
 async def parse_text(request: TextRequest):
