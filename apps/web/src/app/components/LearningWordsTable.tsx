@@ -187,7 +187,10 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
   }, []);
   const showStuck = view === 'stuck' && !!stuckWords;
   const toggleStuck = (id: number) =>
-    setStuckPicked(stuckSelected.includes(id) ? stuckSelected.filter((w) => w !== id) : [...stuckSelected, id]);
+    setStuckPicked((prev) => {
+      const picked = prev ?? preselected(stuckWords ?? []);
+      return picked.includes(id) ? picked.filter((w) => w !== id) : [...picked, id];
+    });
   /* source dropdown */
   const [sources, setSources] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState<string | null>(source);
@@ -405,8 +408,12 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
           )}
         </h2>
 
-        {/* right‑aligned group */}
-        <div className={`ml-auto flex items-center gap-1 ${showStuck ? 'hidden' : ''}`}>
+        {/* right‑aligned group; under the tabs when there are two, which leave it no room */}
+        <div
+          className={`ml-auto flex items-center gap-1 ${stuckWords?.length ? 'basis-full justify-end' : ''} ${
+            showStuck ? 'hidden' : ''
+          }`}
+        >
           <button
             onClick={toggleDirection}
             className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
@@ -452,10 +459,10 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
                     checked={stuckSelected.includes(w.word_id)}
                     onChange={() => toggleStuck(w.word_id)}
                     onClick={(e) => e.stopPropagation()}
-                    className="form-checkbox h-4 w-4 text-indigo-600"
+                    className="form-checkbox block h-4 w-4 text-indigo-600"
                   />
                 </td>
-                <td className="w-56 whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900">{w.word}</td>
+                <td className="whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900 sm:min-w-56">{w.word}</td>
                 <td className="w-full whitespace-nowrap py-2.5 text-gray-500">{w.translation}</td>
                 <td className="whitespace-nowrap py-2.5 pr-1 text-right text-xs text-gray-400">{evidence(w)}</td>
               </tr>
@@ -486,13 +493,13 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
                       type="checkbox"
                       checked={selectedWords.includes(w.word_id)}
                       onChange={(e) => handleRowClick(e as any, i, w.word_id)}
-                      className={`form-checkbox h-4 w-4 text-indigo-600 ${
+                      className={`form-checkbox block h-4 w-4 text-indigo-600 ${
                         selectedWords.length ? '' : 'opacity-0 group-hover:opacity-100'
                       }`}
                       onClick={(e) => e.stopPropagation()}
                     />
                   </td>
-                  <td className="w-56 whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900">
+                  <td className="whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900 sm:min-w-56">
                     {stages?.has(w.word_id) && (
                       <span
                         className={`mr-2.5 inline-block h-1.5 w-1.5 -translate-y-px rounded-full ${STAGE_DOT[stages.get(w.word_id)!].className}`}
