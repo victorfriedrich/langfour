@@ -23,6 +23,7 @@ def blank_recommender(base_folder=None):
     recommender.presence = {}
     recommender.total_words_per_doc = {}
     recommender.distinct_words_per_doc = {}
+    recommender.rows_by_video = {}
     return recommender
 
 
@@ -30,10 +31,10 @@ def make_recommender(rows, categories=None, titles=None):
     """Rows are times each word is spoken in a video."""
     recommender = blank_recommender()
     matrix = csr_matrix(np.asarray(rows, dtype=np.int16))
-    recommender._index_matrix("es", matrix)
     recommender.filenames = {
         "es": [f"video-{index}_processed.json" for index in range(matrix.shape[0])]
     }
+    recommender._index_matrix("es", matrix)
     recommender.categories = {
         "es": categories or ["Other"] * matrix.shape[0]
     }
@@ -213,6 +214,56 @@ def test_coverage_counts_every_word_and_new_words_are_distinct():
     assert ratios[0] == pytest.approx(2 / 199) and new[0] == 148 and known[0] == 2
 
 
+def test_scoring_some_rows_matches_scoring_all_of_them():
+    recommender = make_recommender([[50] + [1] * 149, [0, 3] + [1] * 148, [2] * 150])
+
+    every = recommender._score_documents_by_words([0, 1], "es")
+    some = recommender._score_documents_by_words([0, 1], "es", rows=[2, 0])
+    for full, part in zip(every, some, strict=True):
+        assert list(part) == pytest.approx([full[2], full[0]])
+
+
+def test_fit_scores_requested_videos_and_says_why_others_get_no_number():
+    # video-0 has a quarter of its speech in word 0; video-1 is a clip of 50
+    # different words; video-2 is hidden by the quality filter.
+    recommender = make_recommender([[50] + [1] * 149, [1] * 50 + [0] * 100, [1] * 150])
+    recommender.hidden_videos = {"video-2"}
+
+    fits = recommender.fit_videos(["video-0", "video-1", "video-2", "dQw4w9WgXcQ"], [0], "es")
+
+    assert fits == {
+        "video-0": {"status": "scored", "percentUnderstood": 25.13, "newWords": 149},
+        "video-1": {"status": "hidden"},
+        "video-2": {"status": "hidden"},
+        "dQw4w9WgXcQ": {"status": "unindexed"},
+    }
+    # The same numbers the recommendations show.
+    [video] = recommender.recommend_videos_by_words([0], "es")
+    assert (video["percentUnderstood"], video["newWords"]) == (25.13, 149)
+
+
+def test_fit_maps_ids_to_rows_from_a_cached_matrix(tmp_path):
+    from scipy.sparse import save_npz
+    language_dir = tmp_path / "es"
+    language_dir.mkdir()
+    filenames = ["aaa_processed.json", "bbb_processed.json"]
+    for name in filenames:
+        (language_dir / name).write_text("{}", encoding="utf-8")
+    save_npz(language_dir / "document_term_counts.npz",
+             csr_matrix(np.asarray([[1] * 150 + [0], [0] * 150 + [3]], dtype=np.int16)))
+    (language_dir / "document_term_counts.npz.meta.json").write_text(json.dumps({
+        "filenames": filenames, "categories": ["Other"] * 2, "titles": ["A", "B"],
+        "max_word_id": 150, "weights": "counts",
+    }), encoding="utf-8")
+
+    recommender = blank_recommender(str(tmp_path))
+    recommender.hidden_videos = set()
+    assert recommender._try_load_cached_language("es")
+    assert recommender.rows_by_video["es"] == {"aaa": 0, "bbb": 1}
+    assert recommender.fit_videos(["bbb"], [150], "es") == {"bbb": {"status": "hidden"}}
+    assert recommender.fit_videos(["aaa"], [0], "es")["aaa"]["newWords"] == 149
+
+
 def test_words_to_learn_rank_by_videos_not_repeats():
     # Word 0 is said 50 times in one video; word 1 once in each of two.
     recommender = make_recommender([[50, 1], [0, 1]])
@@ -285,3 +336,37 @@ def test_videos_by_words_skip_clips_and_can_rank_by_distinct_targets():
 
     chart = recommender.recommend_videos_by_words(targets, "es", distinct=False)
     assert "newWords" not in chart[0] and chart[0]["percentUnderstood"] > 0
+
+
+def test_known_words_page_past_any_row_cap():
+    # PostgREST returns at most its max-rows whatever range is asked for.
+    class Capped:
+        def __init__(self, rows, cap):
+            self.rows, self.cap, self.requests = rows, cap, 0
+
+        def table(self, _name):
+            return self
+
+        def select(self, *_):
+            return self
+
+        def eq(self, *_):
+            return self
+
+        def order(self, *_):
+            return self
+
+        def range(self, start, end):
+            self.span = (start, end)
+            return self
+
+        def execute(self):
+            from types import SimpleNamespace
+            self.requests += 1
+            start, end = self.span
+            return SimpleNamespace(data=self.rows[start:min(end + 1, start + self.cap)])
+
+    recommender = blank_recommender()
+    recommender.supabase = Capped([{"word_id": w} for w in range(7)], cap=3)
+    assert sorted(recommender.known_word_ids("user")) == list(range(7))
+    assert recommender.supabase.requests == 4  # 3 + 3 + 1, then an empty page

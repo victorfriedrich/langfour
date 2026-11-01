@@ -1,0 +1,97 @@
+"""/api/videos/fit and /api/videos/queue: signed-in only, ids checked before
+they reach the recommender or the queue."""
+import os
+from types import SimpleNamespace
+
+os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
+os.environ.setdefault("REQUIRE_SERVICE_ROLE", "0")
+os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
+os.environ.setdefault("DEEPINFRA_API_KEY", "test-key")
+os.environ.setdefault(
+    "SUPABASE_KEY",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIn0.test-signature",
+)
+
+import pytest
+from fastapi.testclient import TestClient
+
+import auth
+import video_fit_routes
+from app import app
+from conftest import FakeSupabase
+from conftest import queued as pending
+
+AUTH = {"authorization": "Bearer ordinary-session"}
+USER = "11111111-1111-1111-1111-111111111111"
+A, B, C = "aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"
+
+
+class FakeRecommender:
+    languages = ["es"]
+
+    def __init__(self):
+        self.asked = []
+
+    def known_word_ids(self, user_id):
+        self.asked.append(("known", user_id))
+        return [7]
+
+    def fit_videos(self, video_ids, word_ids, language):
+        self.asked.append(("fit", video_ids, word_ids, language))
+        fits = {A: {"status": "scored", "percentUnderstood": 97.1, "newWords": 12},
+                B: {"status": "hidden"}}
+        return {v: fits.get(v, {"status": "unindexed"}) for v in video_ids}
+
+
+@pytest.fixture
+def recommender(monkeypatch):
+    monkeypatch.setattr(auth, "verify_token", lambda t: SimpleNamespace(id=USER, is_anonymous=False))
+    app.state.recommender = FakeRecommender()
+    return app.state.recommender
+
+
+client = TestClient(app)
+
+
+def test_fit_scores_each_id_once_with_the_users_known_words(recommender):
+    response = client.post("/api/videos/fit", headers=AUTH,
+                           json={"language": "es", "video_ids": [A, B, C, A]})
+    assert response.status_code == 200
+    assert response.json() == {"videos": {
+        A: {"status": "scored", "percentUnderstood": 97.1, "newWords": 12},
+        B: {"status": "hidden"},
+        C: {"status": "unindexed"},
+    }}
+    assert recommender.asked == [("known", USER), ("fit", [A, B, C], [7], "es")]
+
+
+def test_fit_refuses_bad_ids_too_many_ids_and_unknown_languages(recommender):
+    def fit(language, ids):
+        return client.post("/api/videos/fit", headers=AUTH,
+                           json={"language": language, "video_ids": ids}).status_code
+
+    assert fit("es", ["not an id"]) == 422
+    assert fit("es", []) == 422
+    assert fit("es", [A] * (video_fit_routes.MAX_FIT_IDS + 1)) == 422
+    assert fit("xx", [A]) == 422
+    assert fit("de", [A]) == 404  # a language without a corpus here
+    assert recommender.asked == []
+
+
+def test_queue_adds_the_video_at_the_user_tier(recommender, monkeypatch):
+    sb = FakeSupabase([pending(B, status="done")])
+    monkeypatch.setattr(video_fit_routes, "supabase", sb)
+
+    response = client.post("/api/videos/queue", headers=AUTH, json={"language": "es", "video_id": A})
+    assert response.json() == {"status": "pending"}
+    assert sb.row(A)["priority"] == 10 and sb.row(A)["submitted_by"] == USER
+    response = client.post("/api/videos/queue", headers=AUTH, json={"language": "es", "video_id": B})
+    assert response.json() == {"status": "done"}
+    assert client.post("/api/videos/queue", headers=AUTH,
+                       json={"language": "es", "video_id": "x"}).status_code == 422
+
+
+def test_requires_a_session(recommender):
+    assert client.post("/api/videos/fit", json={"language": "es", "video_ids": [A]}).status_code == 401
+    assert client.post("/api/videos/queue", json={"language": "es", "video_id": A}).status_code == 401

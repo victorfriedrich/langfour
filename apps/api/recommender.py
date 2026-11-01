@@ -29,6 +29,8 @@ MATRIX_FILE = "document_term_counts.npz"
 # Videos with fewer distinct words are clips; counting repeats would put them
 # near 100% for everyone.
 MIN_DISTINCT_WORDS = 100
+# Rows asked for per user_known_words request; see known_word_ids.
+KNOWN_WORDS_PAGE = 50_000
 
 class Recommender:
     def __init__(self, base_folder: str):
@@ -53,6 +55,7 @@ class Recommender:
         self.presence = {}             # same sparsity, cell = 1
         self.total_words_per_doc = {}  # words spoken
         self.distinct_words_per_doc = {}
+        self.rows_by_video = {}        # video id -> matrix row
 
         # Supabase
         from supabase_client import supabase as _shared_supabase
@@ -192,6 +195,11 @@ class Recommender:
         )
         self.total_words_per_doc[language] = np.asarray(matrix.sum(axis=1)).ravel()
         self.distinct_words_per_doc[language] = np.diff(matrix.indptr)
+        # Callers set filenames first; rows follow their order.
+        self.rows_by_video[language] = {
+            filename.replace("_processed.json", ""): row
+            for row, filename in enumerate(self.filenames.get(language, [])[:matrix.shape[0]])
+        }
 
     def get_categories(self, language: str) -> list[dict[str, Any]]:
         """Return stable category metadata without reopening transcript files."""
@@ -208,6 +216,7 @@ class Recommender:
         word_ids: list[int],
         language: str,
         distinct: bool = True,
+        rows: list[int] | None = None,
     ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
         """Per row: the share of words spoken that are in `word_ids`, how many
         distinct words are not, and how many distinct words are.
@@ -215,11 +224,17 @@ class Recommender:
         The share counts every repeat, which is what a viewer hears; the two
         counts are of distinct words, which is what there is to learn. This is
         the one fit calculation every surface shows. distinct=False skips the
-        second product and returns None for both counts."""
+        second product and returns None for both counts. `rows` scores only
+        those rows, in that order, rather than the whole matrix."""
         self._ensure_language_loaded(language)
 
         matrix = self.matrices[language]
+        presence = self.presence[language]
         total_words = self.total_words_per_doc[language]
+        distinct_words = self.distinct_words_per_doc[language]
+        if rows is not None:
+            matrix, presence = matrix[rows], presence[rows]
+            total_words, distinct_words = total_words[rows], distinct_words[rows]
         # int32: the products are sums of counts, far past int8 and int16.
         word_vector = np.zeros(matrix.shape[1], dtype=np.int32)
         valid_word_ids = [word_id for word_id in word_ids if 0 <= word_id < matrix.shape[1]]
@@ -235,8 +250,8 @@ class Recommender:
         )
         if not distinct:
             return ratios, None, None
-        known_distinct = self.presence[language].dot(word_vector).astype(np.int32)
-        new_distinct = self.distinct_words_per_doc[language] - known_distinct
+        known_distinct = presence.dot(word_vector).astype(np.int32)
+        new_distinct = distinct_words - known_distinct
         return ratios, new_distinct, known_distinct
 
     def calculate_vocabulary_coverage(
@@ -454,18 +469,28 @@ class Recommender:
         """Words the user knows: declared known, or learned in reviews
         (sql/known_words.sql). A word only saved, or still being learned,
         does not count, so it shows up as new in a video."""
+        return self.known_word_ids(user_id)
+
+    def known_word_ids(self, user_id: str) -> list[int]:
+        """get_known_words without the coroutine, for a worker thread: the
+        Supabase client blocks, and on the event loop it would stall every
+        other request while the pages come in."""
         start_time = time.time()
         try:
             known_word_ids = set()
-            page = 0
+            # Ask for far more than PostgREST's row cap and carry on from what
+            # came back, so one or two round trips do whatever the cap is.
+            # Fixed pages of 1,000 took five sequential requests (~300 ms) for
+            # 4,000 words, which every fit badge batch waited on.
+            offset = 0
             while True:
                 response = (self.supabase.table("user_known_words").select("word_id")
                             .eq("user_id", user_id).order("word_id")
-                            .range(page*1000, (page+1)*1000-1).execute())
+                            .range(offset, offset + KNOWN_WORDS_PAGE - 1).execute())
                 if not response.data:
                     break
                 known_word_ids.update(word['word_id'] for word in response.data)
-                page += 1
+                offset += len(response.data)
 
             end_time = time.time()
             logger.debug(
@@ -599,6 +624,46 @@ class Recommender:
 
         return videos
     
+    def fit_videos(
+        self,
+        video_ids: list[str],
+        word_ids: list[int],
+        language: str,
+    ) -> dict[str, dict[str, Any]]:
+        """How well `word_ids` cover each of `video_ids`, scoring only their
+        rows: the thumbnail badges ask for a page of cards at a time.
+
+        Each id gets a status. "scored" carries percentUnderstood (heard
+        coverage) and newWords (distinct); "unindexed" means no transcript;
+        "hidden" is indexed but never recommended (the quality filter, or a
+        clip under MIN_DISTINCT_WORDS), so it gets no number either."""
+        self._ensure_language_loaded(language)
+        rows_by_video = self.rows_by_video[language]
+        distinct_words = self.distinct_words_per_doc[language]
+
+        fits: dict[str, dict[str, Any]] = {}
+        scored: list[tuple[str, int]] = []
+        for video_id in video_ids:
+            row = rows_by_video.get(video_id)
+            if row is None:
+                fits[video_id] = {"status": "unindexed"}
+            elif video_id in self.hidden_videos or distinct_words[row] < MIN_DISTINCT_WORDS:
+                fits[video_id] = {"status": "hidden"}
+            else:
+                scored.append((video_id, row))
+
+        if scored:
+            ratios, new_words, _ = self._score_documents_by_words(
+                word_ids, language, rows=[row for _, row in scored]
+            )
+            for index, (video_id, _) in enumerate(scored):
+                fits[video_id] = {
+                    "status": "scored",
+                    "percentUnderstood": round(float(ratios[index]) * 100, 2),
+                    "newWords": int(new_words[index]),
+                }
+        return fits
+
     def count_documents(self, language: str, filter_category: str | None = None) -> int:
         self._ensure_language_loaded(language)
         cats = self.categories[language]
