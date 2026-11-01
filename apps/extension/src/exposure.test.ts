@@ -3,7 +3,7 @@ import { CAPTION_TICKS, CaptionWords, ExposureQueue, mediaKey, msToRead, tokensO
 
 describe('tokensOf', () => {
   it('splits on everything but letters', () => {
-    expect(tokensOf("¿Qué tal? l'homme, 4K niño")).toEqual(['Qué', 'tal', 'l', 'homme', 'K', 'niño']);
+    expect(tokensOf('¿Qué tal? l\'homme, 4K niño')).toEqual(['Qué', 'tal', 'l', 'homme', 'K', 'niño']);
   });
 });
 
