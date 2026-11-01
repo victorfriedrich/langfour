@@ -202,7 +202,7 @@
       .language-button { border-color: #374151; }
       .language-button.active { background-color: rgba(129, 140, 248, 0.18); }
       #userInfo { color: #d1d5db; }
-      .form-message, .sent-text { color: #d1d5db; }
+      .form-message, .sent-text, .stuck-row { color: #d1d5db; }
       .sent-icon { background: rgba(129, 140, 248, 0.18); color: #a5b4fc; }
       .link-btn { color: #a5b4fc; }
       .form-message.error { color: #fca5a5; }
@@ -327,6 +327,7 @@
     .quick-link:hover { background-color: rgba(79, 70, 229, 0.08); }
     .quick-link.primary { background-color: #4f46e5; color: #fff; }
     .quick-link.primary:hover { background-color: #4338ca; }
+    .stuck-row { margin-top: 12px; font-size: 13px; color: #555; }
     .footer {
       margin-top: 20px;
       display: flex;
@@ -454,6 +455,7 @@
       <button type="button" id="reviewBtn" class="quick-link primary">Review flashcards</button>
       <button type="button" id="openAppBtn" class="quick-link">Open Langfour</button>
     </div>
+    <p id="stuckRow" class="stuck-row hidden"><span id="stuckText"></span> · <button type="button" id="stuckBtn" class="link-btn">Review</button></p>
     <div class="footer">
       <div id="userInfo"></div>
       <button id="logoutBtn">Logout</button>

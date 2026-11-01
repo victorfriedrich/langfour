@@ -187,6 +187,10 @@ const LanguageAppOnboarding: React.FC<LanguageAppOnboardingProps> = ({
             </button>
           ))}
         </div>
+        {/* The first lever of feature 6 in docs/plans/youtube-plan.md. */}
+        <p className="mt-6 text-sm text-gray-500">
+          Watch YouTube with a Google account you use only for {selectedLanguage?.name}, so its recommendations stay in {selectedLanguage?.name}.
+        </p>
       </div>
     </div>
   );
