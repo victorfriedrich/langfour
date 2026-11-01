@@ -1,6 +1,6 @@
 # Langfour on YouTube
 
-Status as of 2026-10-31: plan, nothing built. People learn a language on YouTube by watching
+Status as of 2026-11-01: plan, nothing built; revised after the UX audit of this PR. People learn a language on YouTube by watching
 hours of videos they can mostly follow, and they stay for channels they love. This plan makes
 Langfour good at both: it knows which videos you can follow, learns which channels you love,
 and stays out of the way while you watch. Mockups and charts are in `docs/plans/youtube-plan/`.
@@ -52,6 +52,23 @@ for beginners, the people who most need to hear "you can watch this".
 20 picks are 98.8% heard, have a median of 5 new words and run 4.9 minutes. The 95–98% band holds
 over half the corpus for that learner, at a median of 45 new words and 12.9 minutes.
 
+**Why every word, not distinct words.** Distinct-word coverage punishes length: a longer video
+collects more rare words said once, so it scores lower even though each minute is just as easy.
+At every vocabulary size, every-word coverage is the same for short and long videos:
+
+| Learner | Rank correlation with video length: distinct / every word | Shortest quarter of videos | Longest quarter |
+|---|---|---|---|
+| 1,000 words | −0.58 / 0.01 | 75.0% / 88.7% | 62.2% / 88.8% |
+| 3,000 words | −0.46 / −0.02 | 89.8% / 95.7% | 83.2% / 95.5% |
+| 5,000 words | −0.43 / −0.04 | 94.4% / 97.7% | 90.2% / 97.5% |
+
+That is why the app's top picks are short clips. The comprehension thresholds in the research
+(95% to follow, 98% to follow comfortably) are also counted over running words. So the % becomes
+every-word coverage, and "N new" stays a count of *distinct* unknown words, because that is how
+many words there are to learn. One trade-off is that a single unknown word said often weighs heavily: for a 3,000-word
+learner, in 5% of videos one word makes up a quarter or more of what they don't understand. That
+is honest, because they miss it every time, and it is what core words (8) fix.
+
 **With real accounts.** Real learners don't know exactly the top N words, so the same numbers on
 the accounts with real Spanish vocabulary:
 
@@ -80,25 +97,48 @@ Other things that hold today:
 
 ## 1. Known words that stay honest
 
-*Fix the basics · M · needs 2 for the "heard" evidence*
+*Fix the basics · M · ships alone, first*
 
 Every number in Langfour depends on knowing which words you know. Words stuck in "learning" make
 every video look harder than it is, so recommendations come out too easy and the badges discourage.
+The stuck words aren't one account's problem: 15+ accounts have 20–123 of the top 500 words in
+learning, never reviewed.
 
 ![A one-time prompt offering stuck common words as known](youtube-plan/f1-known-words.png)
 
-*A one-time prompt in the extension popup and on the Vocabulary page. Words you've looked up stay
-unticked. The "heard" counts are illustrative; feature 2 is what collects them.*
+*A filter on the Vocabulary page's Learning table, with its checkboxes and the dark pill; the
+extension popup links to it once. Words you've looked up stay unticked. The "heard" counts come from exposure logging: since PR 109 the extension records each
+learning word once per video when its caption is on screen, and once per page in the reader.*
 
 - **One-time cleanup:** learning words in the top 500 by corpus frequency that were never reviewed
   are offered as known.
-- **Ongoing rule:** a learning word heard in 10 or more watched videos without a look-up becomes a
-  suggestion, never an automatic change. Accepting goes through the same path as the MCP's
-  `set_word_status`.
-- **Coverage on words heard:** the matrix stores the count instead of 1. The transcripts already
-  have counts, the number of non-zeros doesn't change, and every percentage in the app becomes the
-  blue line.
+- **Ongoing rule:** a learning word seen in 10 or more videos (`word_events` exposure rows) without
+  a look-up becomes a suggestion, never an automatic change. Accepting goes through the same path
+  as the MCP's `set_word_status`. "Without a look-up" needs look-ups logged, which nothing writes
+  yet.
+- **Onboarding:** suggest a Google account used only for Spanish now (the first lever in 6); it costs copy,
+  not code.
 - The same screen can show the known form-versus-root mismatches (`caía`/`caer`).
+
+**Coverage on words heard.** The matrix stores each word's count instead of 1 (the reasons are in
+section 0). It is not a one-line change, but it stays small and contained in `recommender.py`:
+
+1. Build the matrix as `int16` with counts. Today it is `int8` with `D[i, wid] = 1`, and `+= 1`
+   would overflow: one video says a word 771 times.
+2. Keep a binary view next to it that shares the counts matrix's `indices` and `indptr`, with an
+   `int8` array of ones. `newWords` (distinct unknown words) and `recommend_words_to_learn` (number
+   of videos per word) read the view, so both keep their meaning.
+3. Write `"weights": "counts"` into `document_term_matrix.npz.meta.json`, and require it in both
+   `_try_load_cached_language` and the reuse check in `_create_document_term_matrix`. Today a
+   binary npz with the same shape loads silently.
+4. Repack and upload the corpus in the same release. The tarball carries the transcripts, so an
+   old bundle would rebuild on Koyeb at boot rather than serve wrong numbers, but slowly.
+5. Add a test with a repeated word to `test_recommender.py`.
+
+Measured on the full corpus: memory for the matrix goes from 22.3 MB to about 33 MB (28.6 for the
+counts, 4.8 for the view), and the two products per request take about 7 ms. With `int32` counts,
+memory would be 43 MB. Row and column sums already come back as `int64`, so totals can't
+overflow.
 
 **Measure:** median heard coverage of the videos people finish. With honest data it should sit
 near 95%.
@@ -113,24 +153,36 @@ watching.
 
 ![Watch signal sources, filter and uses](youtube-plan/f2-sources.png)
 
-*Four ways to learn what someone watched, from most precise to most complete. Everything outside
+*Three ways to learn what someone watched, from most precise to most complete. Everything outside
 the learning language is dropped on arrival and never stored.*
 
 | Source | What it gives | Limits |
 |---|---|---|
 | Extension on desktop | Seconds actually played, look-ups | Desktop only |
 | `youtube.com/feed/history`, read by the extension with the learner's own sign-in | Every watch on any device; the red progress bar gives a rough share watched | Runs only when the desktop browser is open |
-| Google's Data Portability API, scope `dataportability.myactivity.youtube` | YouTube activity, server-side, without a desktop | Restricted scope, so Google's app verification; consent lasts 30 or 180 days; one export per 24 h; supported countries still to check |
 | Google Takeout watch-history file | A one-off first import | Manual upload |
 
-The YouTube Data API has returned no watch history since 2016 (the `HL` playlist is empty), so the
-Data Portability API is the only official server-side route.
+The YouTube Data API has returned no watch history since 2016 (the `HL` playlist is empty).
+Google's Data Portability API could fetch history server-side, but it is ruled out: its restricted
+scope needs Google's app review and a yearly security re-check, and consent expires after 30 or
+180 days. So phone watching reaches Langfour only through the history page, whenever the desktop
+browser is open.
 
 ![Per-account approval and a recap of phone watching](youtube-plan/f2-approval-and-recap.png)
 
-*Left: the per-account approval. Right: a recap of phone watching on the Practice page and in the
-extension popup the next day. Kept words go to reviews (or RemNote) with a line from the video as
-context.*
+*Left: the per-account approval. Right: the recap of phone watching, on the Practice page and in
+the extension popup the next day.*
+
+The recap has to be simple and fast: one glance, at most one tap, never a chore.
+
+- One line on what was watched, the new words in a single comma-separated row, and one button that
+  adds them all. Tapping a word drops it. No per-word Keep/Skip, no questions about learning words.
+- Learning words that came up need no decision: they count as exposure, like caption words on
+  desktop.
+- Only words that came up in at least two of the videos, or three times or more, up to 8. With
+  none, there is no recap.
+- Ignoring it is fine. It is replaced the next day, and nothing piles up.
+- Added words go to reviews (or RemNote) with a line from the video as context.
 
 - 70% played on desktop marks a video watched and replaces the manual "Hide & mark as seen".
 - A `watch_events` table: learner, video, watched at, share played when known, source. Own rows
@@ -147,8 +199,10 @@ minutes and leave. Badges answer that before the click, everywhere on YouTube.
 
 ![YouTube search with fit badges](youtube-plan/f3-fit-badges.png)
 
-*Badges show heard coverage and new words, coloured by band: green 95–98%, amber 90–95%, red below
-90%. The Your level chip dims the rest; unindexed videos show "Add to Langfour" on hover.*
+*Badges show heard coverage and new words; unindexed videos show "Add to Langfour" on hover.
+For now there are no bands and no "too easy" state: the higher the number, the more you'll
+understand, and every list sorts highest first. Bands can come back once completion data shows
+where people actually give up.*
 
 - A content-script observer collects video ids from Home, Search, channel pages and the watch-page
   sidebar as they render. One batched call, `POST /api/videos/fit` with up to 50 ids, returns
@@ -172,6 +226,14 @@ it stays private, and Langfour has indexed a median of 10 videos per channel.
 Langfour tab lists channels that learners at your level also favourited. The one-tap question
 appears after a learner's first few videos from a channel.*
 
+The button is a plain toggle: outline when off, filled when on, like today's Bookmark button.
+Indexing progress is shown, but not on the button. The queue will be processed on the server, so a
+favourited channel's videos arrive within hours, and the progress is real feedback that the
+favourite did something. It lives on the channel's Langfour tab, phrased as what the learner gets:
+"34 of 212 videos added · 9 at your level so far". The line updates as videos land and disappears
+once the channel is done. If a channel stalls (no captions, failed downloads), the line drops the
+total rather than showing a number that never moves: "34 videos added".
+
 What a favourite does:
 
 - **For you:** the channel gets the biggest share of your feed (5).
@@ -188,8 +250,17 @@ How a channel is described:
   Spanish videos (`video_quality.py`): A, the grammar level (A1–C1); C, content in the words; D,
   developed thought; E, transferable language. A channel's profile is the median of its videos, so
   it covers the whole corpus with no backfill.
+- **Pace, roughly, from what is stored:** words per minute of video (transcript words divided by
+  the video's `length`). It works for every video, captioned or Whispered, and the corpus median is
+  150. It is a rough number: neither path keeps timings. Caption cues arrive with `tStartMs`, but
+  `json3_text` keeps only the text, and Whisper returns plain text per piece. So intros, music and
+  pauses all count as slow speech. Good enough for a fast/slow hint for the existing corpus.
+  Transcripts ingested from now on keep their timings (`cues` and `cueSource` in the processed
+  JSON, on branch `feat/caption-timings`): a caption track's own cues, or Whisper's 15–28 s
+  pieces. Speaking rate is words over the time the cues cover, with overlaps merged, since
+  automatic tracks roll. The same cues give clip times for moment cards.
 - **From learners:** "Yes, clear / Too fast / Hard accent", asked after a learner's first few
-  videos from a channel. The only signal on pronunciation and pace, which a transcript can't show.
+  videos from a channel. The only signal on pronunciation and accent.
 - **Country:** from `channels.list` (1 quota unit).
 
 **Measure:** share of learners with at least one favourite after two weeks, and how much of their
@@ -282,14 +353,14 @@ channel opens up.
 ![Core words card for a channel](youtube-plan/f8-core-words.png)
 
 *Real numbers: a learner with 2,449 known words and the 13 indexed videos from BasiCH. The bars
-count videos they can follow (90% or more heard). Shown on the channel's Langfour tab after a
-favourite, and on a series page in the Library.*
+show how much of the channel's speech they'd understand, now and after the 25 words. Shown on the
+channel's Langfour tab after a favourite, and on a series page in the Library.*
 
 - Core words: unknown words that appear in at least half of a channel's (or series') videos,
   ordered by how often they're spoken, up to 25.
 - It pays off for channels with a narrow topic. Across channels with 12 or more videos, the typical
   gain from 25 words was about 2 points of heard coverage, against 9 for BasiCH and a beading
-  channel. The card only appears when the gain is real, for example 3 more videos you can follow.
+  channel. The card only appears when the gain is real, for example 3 points or more.
 - "Add to my reviews" goes to Langfour's scheduler or RemNote, with a line from the channel as
   context.
 - Netflix and Prime series work the same way from the Library's episodes, which carry series and
@@ -299,11 +370,13 @@ favourite, and on a series page in the Library.*
 
 | Phase | Weeks | Features |
 |---|---|---|
-| Fix the basics | 1–3 | 1 counts in the matrix and stuck-word cleanup · 2 desktop watched mark and history-page read · 3 fit badges · 4 Favourite button and queue bump |
+| Honest numbers | 1 | 1 alone: counts in the matrix, stuck-word cleanup, learning-account advice in onboarding |
+| Fix the basics | 2–3 | 2 desktop watched mark and history-page read · 3 fit badges · 4 Favourite button and queue bump |
 | Feed | 3–6 | 5 per-learner feed and Home shelf · 6 labels, feedback and history cleanup · 4 channel profiles and "also love" · 2 recaps of phone watching |
-| Watch and keep | 6–10 | 7 flow panel with autoplay · 8 core words · 2 Data Portability API, if desktop-less learners matter |
+| Watch and keep | 6–10 | 7 flow panel with autoplay · 8 core words |
 
-Honest numbers and the watch signal come first because everything else reads them. The Favourite
+Honest numbers ship alone in week 1 because every other feature reads them, and they help today's
+Videos page right away. The watch signal follows for the same reason. The Favourite
 button ships early so likes are piling up when the feed is built.
 
 ## Later
