@@ -85,6 +85,21 @@ alter table public.grammar_events add constraint grammar_events_check
 
 create index if not exists grammar_events_user_time on public.grammar_events (user_id, occurred_at);
 
+-- A mistake no concept covers is filed under a topic, a short label the AI app
+-- chooses, instead of a concept; the overview lists the topics so it reuses
+-- them. Such events have no concept_id, so they carry their language. Every
+-- event is about exactly one concept or one topic: a result naming several
+-- concepts becomes one event each.
+alter table public.grammar_events alter column concept_id drop not null;
+alter table public.grammar_events
+    add column if not exists topic    text check (char_length(topic) <= 60),
+    add column if not exists language text check (language in ('es', 'de', 'it', 'fr'));
+alter table public.grammar_events drop constraint if exists grammar_events_subject_check;
+alter table public.grammar_events add constraint grammar_events_subject_check
+    check ((concept_id is null) <> (topic is null) and (topic is null or language is not null));
+create index if not exists grammar_events_user_topic
+    on public.grammar_events (user_id, language, occurred_at) where topic is not null;
+
 alter table public.user_grammar_chapters enable row level security;
 alter table public.user_grammar_concepts enable row level security;
 alter table public.grammar_events enable row level security;
@@ -111,7 +126,8 @@ revoke insert, update, delete, truncate on public.grammar_events from anon, auth
 
 -- One session's report, in one transaction. Every argument is a JSON array of
 -- rows the API already computed:
---   p_events    [{concept_id, kind, correct, self_reported, sentence, note}]
+--   p_events    [{concept_id, topic, language, kind, correct, self_reported,
+--                 sentence, note}]: concept_id or topic, not both
 --   p_concepts  full user_grammar_concepts rows, minus user_id
 --   p_chapters  full user_grammar_chapters rows, minus user_id
 -- Each concept/chapter row includes `previous`: the row read by the API, or
@@ -204,13 +220,13 @@ begin
             produced_count = excluded.produced_count,
             error_count = excluded.error_count;
 
-    insert into public.grammar_events (user_id, concept_id, kind, correct, self_reported,
-                                       sentence, note, source)
-    select p_user_id, r.concept_id, r.kind, r.correct, coalesce(r.self_reported, false),
-           r.sentence, r.note, 'chatgpt'
+    insert into public.grammar_events (user_id, concept_id, topic, language, kind, correct,
+                                       self_reported, sentence, note, source)
+    select p_user_id, r.concept_id, r.topic, r.language, r.kind, r.correct,
+           coalesce(r.self_reported, false), r.sentence, r.note, 'chatgpt'
     from jsonb_to_recordset(p_events)
-         as r(concept_id text, kind text, correct boolean, self_reported boolean, sentence text,
-              note text);
+         as r(concept_id text, topic text, language text, kind text, correct boolean,
+              self_reported boolean, sentence text, note text);
     get diagnostics v_inserted = row_count;
 
     return v_inserted;
