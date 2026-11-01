@@ -15,7 +15,7 @@ discovery found it, a person typed it in, or a user submitted it from the app.
 The primary key is the dedup, so a submission that overlaps the corpus is free.
 
 Claims are compare-and-set on status, so several workers can share one queue:
-the API runs one itself when INGEST_WORKER_MIX is set (ingest_worker.py).
+the API runs its own when INGEST_WORKER_MIX is set (ingest_worker.py).
 Every finished transcript is also rated with Jev (video_quality.py), which is
 what lets the recommender skip garbled and low-content videos.
 

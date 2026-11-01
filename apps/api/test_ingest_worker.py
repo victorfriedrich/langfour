@@ -72,6 +72,24 @@ def test_the_worker_is_off_unless_configured(monkeypatch):
     assert ingest_worker.start(FakeSupabase()) is None    # typo: logged, not raised
 
 
+def test_two_workers_share_one_stop(monkeypatch):
+    started = []
+    monkeypatch.setattr(ingest_worker, "run_forever",
+                        lambda sb, lang, mix, stop, name: started.append((name, stop)))
+    monkeypatch.setenv("INGEST_WORKER_MIX", "proxy=300")
+    monkeypatch.setenv("CAPTION_PROXY_URL", "http://proxy")
+    monkeypatch.delenv("INGEST_WORKER_COUNT", raising=False)
+    stop = ingest_worker.start(FakeSupabase())
+    for t in threading.enumerate():
+        if t.name.startswith("ingest-worker-"):
+            t.join(1)
+    assert sorted(name for name, _ in started) == ["ingest worker 1", "ingest worker 2"]
+    assert all(s is stop for _, s in started)
+
+    monkeypatch.setenv("INGEST_WORKER_COUNT", "0")
+    assert ingest_worker.start(FakeSupabase()) is None    # logged, not raised
+
+
 class FakeS3:
     def __init__(self):
         self.objects = {}

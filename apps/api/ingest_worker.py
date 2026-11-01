@@ -2,11 +2,17 @@
 ingest_worker.py - drain the video queue from inside the API.
 
 `ingest.py run --mix` on a laptop needed a shell loop to restart it, a
-watchdog to stop it, and the laptop awake. Here one daemon thread runs the
-same mix in hour-long chunks for as long as the API is up:
+watchdog to stop it, and the laptop awake. Here daemon threads run the same
+mix in hour-long chunks for as long as the API is up:
 
-    INGEST_WORKER_MIX=proxy=300     videos per hour per method; unset = off
+    INGEST_WORKER_MIX=proxy=300     videos per hour per method, per worker; unset = off
     INGEST_WORKER_LANG=es
+    INGEST_WORKER_COUNT=2           worker threads; default 2
+
+A video is mostly waiting -- on the proxy, YouTube, Jev and Supabase -- so
+one worker managed ~200 an hour (14.6 s a video on 2026-11-01) and a second
+thread doubles that without a second instance. Claims are compare-and-set
+(ingest.claim), so the threads never take the same row.
 
 Only `proxy` belongs in a server's mix: YouTube blocks cloud IPs outright, so
 `captions` and `whisper` (both on our own IP) would fail every video. Set
@@ -42,6 +48,7 @@ EMPTY_PAUSE_S = 15 * 60
 ERROR_PAUSE_S = 60
 OUTAGE_PAUSE_S = 60 * 60
 RECLAIM_AFTER_MIN = 60
+DEFAULT_COUNT = 2
 # ~190 KB a transcript, 300 an hour: ~1.3 GB a day on a disk that also holds
 # the corpus. Pausing beats the API failing to write anything.
 MIN_FREE_BYTES = 1 << 30
@@ -56,43 +63,52 @@ def configured() -> tuple[str, dict[str, int]] | None:
     return require_code(os.getenv("INGEST_WORKER_LANG", "es")), ingest.parse_mix(raw)
 
 
+def count() -> int:
+    raw = os.getenv("INGEST_WORKER_COUNT", "").strip() or str(DEFAULT_COUNT)
+    if not raw.isdigit() or int(raw) < 1:
+        raise ValueError(f"INGEST_WORKER_COUNT={raw!r}: use a whole number of workers, 1 or more")
+    return int(raw)
+
+
 def run_forever(sb, lang: str, mix: dict[str, int], stop: threading.Event,
-                publish=None, free_bytes=lambda: shutil.disk_usage(DATA_DIR).free) -> None:
+                publish=None, free_bytes=lambda: shutil.disk_usage(DATA_DIR).free,
+                name: str = "ingest worker") -> None:
     if publish is None:
         from corpus_sync import upload_transcript as publish
     while not stop.is_set():
         pause = 0
         try:
             if free_bytes() < MIN_FREE_BYTES:
-                log.warning("ingest worker: under 1 GB of disk left, pausing")
+                log.warning("%s: under 1 GB of disk left, pausing", name)
                 pause = OUTAGE_PAUSE_S
             else:
                 if n := ingest.reclaim(sb, lang, RECLAIM_AFTER_MIN):
-                    print(f"ingest worker: reclaimed {n} stale rows", flush=True)
+                    print(f"{name}: reclaimed {n} stale rows", flush=True)
                 tally = ingest.run_mix(sb, lang, mix, CHUNK_HOURS, sleep=stop.wait,
                                        cache_ready=True, publish=publish, stopped=stop.is_set)
-                print(f"ingest worker: {ingest.mix_summary(tally)}", flush=True)
+                print(f"{name}: {ingest.mix_summary(tally)}", flush=True)
                 if not sum(t["done"] + t["failed"] for t in tally.values()):
                     pause = EMPTY_PAUSE_S
         except ingest.Outage as exc:
-            log.warning("ingest worker: paused for %d min: %s", OUTAGE_PAUSE_S // 60, exc)
+            log.warning("%s: paused for %d min: %s", name, OUTAGE_PAUSE_S // 60, exc)
             pause = OUTAGE_PAUSE_S
         except Exception:
-            log.exception("ingest worker: chunk failed")
+            log.exception("%s: chunk failed", name)
             pause = ERROR_PAUSE_S
         if pause:
             stop.wait(pause)
 
 
 def start(sb) -> threading.Event | None:
-    """Start the worker thread if INGEST_WORKER_MIX is set; the Event stops it.
+    """Start the worker threads if INGEST_WORKER_MIX is set; the Event stops them all.
 
     Call after initialize_cache(): parsing reads the API's word cache, and
     the worker never reloads it (a reload empties it under live requests)."""
     try:
         config = configured()
+        workers = count() if config else 0
     except ValueError as exc:
-        log.error("ingest worker: not started, bad INGEST_WORKER_MIX: %s", exc)
+        log.error("ingest worker: not started, bad setting: %s", exc)
         return None
     if config is None:
         return None
@@ -105,9 +121,11 @@ def start(sb) -> threading.Event | None:
         log.warning("ingest worker: %s run on this server's own IP, which YouTube "
                     "may block", ", ".join(sorted(mix.keys() - {"proxy"})))
     stop = threading.Event()
-    threading.Thread(target=run_forever, args=(sb, lang, mix, stop),
-                     name="ingest-worker", daemon=True).start()
+    for i in range(1, workers + 1):
+        threading.Thread(target=run_forever, args=(sb, lang, mix, stop),
+                         kwargs={"name": f"ingest worker {i}"},
+                         name=f"ingest-worker-{i}", daemon=True).start()
     # print, like ingest.py: the app configures no logging, so info is dropped.
-    print(f"ingest worker: started, {', '.join(f'{k}={v}' for k, v in mix.items())} "
-          f"for {lang}", flush=True)
+    print(f"ingest worker: started {workers}, each "
+          f"{', '.join(f'{k}={v}' for k, v in mix.items())} for {lang}", flush=True)
     return stop
