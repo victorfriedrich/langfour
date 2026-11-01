@@ -16,6 +16,13 @@ export type KnownWordsEvent = {
   words: string[];
 };
 
+// Caption words the injected script saw on screen while a video played
+// (exposure.ts), for the content script to pass on to the background.
+export type CaptionExposureEvent = {
+  media: string;
+  tokens: string[];
+};
+
 // Relays a backend call from a MAIN-world script (which has no
 // chrome.runtime) to the content script, which forwards it to the
 // background as a BACKEND_FETCH message and answers with the response event.

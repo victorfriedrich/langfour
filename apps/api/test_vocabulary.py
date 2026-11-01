@@ -42,11 +42,17 @@ class FakeStore:
         return {t: CLASSES[t] for t in tokens if t in CLASSES}
 
     def words(self, word_ids):
-        return {w: {"id": w, "root": WORDS[w], "translation": f"t{w}"} for w in word_ids}
+        return {w: {"id": w, "root": WORDS[w], "translation": f"t{w}"}
+                for w in word_ids if w in WORDS}
 
     def insert_events(self, rows):
         self.events.extend(rows)
         return len(rows)
+
+    def exposed(self, user_id, media, word_ids):
+        return {e["word_id"] for e in self.events
+                if e["user_id"] == user_id and e["kind"] == "exposure"
+                and (e.get("context") or {}).get("media") == media and e["word_id"] in word_ids}
 
     # The user's list: word_id -> root. 7 and 8 are homographs.
     LIST = {2: "el perro", 4: "la", 7: "de", 8: "de", 10: "encontrar"}
@@ -122,6 +128,29 @@ def test_record_exposure_logs_learning_and_new_words_once_each():
         {"user_id": USER, "word_id": 2, "kind": "exposure", "source": "chatgpt"},
         {"user_id": USER, "word_id": 5, "kind": "exposure", "source": "chatgpt"},
     ]
+
+
+def test_record_seen_logs_each_word_once_per_media():
+    store = FakeStore()
+    req = vocabulary.SeenRequest(source="video", media="youtube:abc", word_ids=[5, 2, 5])
+    assert vocabulary.record_seen(store, USER, req).recorded == 2
+    assert store.events == [
+        {"user_id": USER, "word_id": w, "kind": "exposure", "source": "video",
+         "context": {"media": "youtube:abc"}}
+        for w in (2, 5)
+    ]
+    # Sent again (a retry, or the same line later in the video): nothing new.
+    assert vocabulary.record_seen(store, USER, req).recorded == 0
+    # Another video counts again.
+    other = req.model_copy(update={"media": "youtube:xyz"})
+    assert vocabulary.record_seen(store, USER, other).recorded == 2
+
+
+def test_record_seen_drops_words_no_longer_in_the_dictionary():
+    store = FakeStore()
+    req = vocabulary.SeenRequest(source="reader", media="https://example.com/a", word_ids=[2, 999])
+    assert vocabulary.record_seen(store, USER, req).recorded == 1
+    assert [e["word_id"] for e in store.events] == [2]
 
 
 def test_set_word_status_moves_every_listed_word_with_that_root():
