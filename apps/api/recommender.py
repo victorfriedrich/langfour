@@ -6,15 +6,22 @@ from typing import Any
 
 import numpy as np
 from dotenv import load_dotenv
-from scipy.sparse import csr_matrix, lil_matrix, load_npz, save_npz
+from scipy.sparse import csr_matrix, load_npz, save_npz
 from supabase import Client
 
-from file_manager import load_documents
+from file_manager import Document, load_documents
 from languages import require_code
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# What a matrix cell holds, written into the .meta.json next to the cached
+# .npz. Cells used to be 1 for "word appears", so a percentage was the share of
+# *distinct* words known, which falls with video length (rank correlation
+# about -0.5) while the share of words heard doesn't. A cache without this
+# marker is a binary matrix of the same shape and would load silently.
+MATRIX_WEIGHTS = "counts"
 
 class Recommender:
     def __init__(self, base_folder: str):
@@ -35,9 +42,11 @@ class Recommender:
         self.categories = {}
         self.titles = {}
         self.max_word_ids = {}
-        self.matrices = {}
-        self.total_words_per_doc = {}
-        
+        self.matrices = {}             # cell = times the word is spoken
+        self.presence = {}             # same sparsity, cell = 1
+        self.total_words_per_doc = {}  # words spoken
+        self.distinct_words_per_doc = {}
+
         # Supabase
         from supabase_client import supabase as _shared_supabase
         self.supabase: Client = _shared_supabase
@@ -59,7 +68,7 @@ class Recommender:
         matrix_bytes = sum(
             m.data.nbytes + m.indices.nbytes + m.indptr.nbytes
             for m in self.matrices.values()
-        )
+        ) + sum(p.data.nbytes for p in self.presence.values())
         logger.info(
             "Recommender initialized | %d languages | %d documents | %.1f MB resident matrices",
             len(self.matrices),
@@ -83,6 +92,9 @@ class Recommender:
             categories = meta.get("categories")
             titles = meta.get("titles")
             max_word_id = meta.get("max_word_id")
+            if meta.get("weights") != MATRIX_WEIGHTS:
+                logger.info("Cached matrix for '%s' is binary; rebuilding with counts.", language)
+                return False
             if (
                 not filenames
                 or categories is None
@@ -119,8 +131,7 @@ class Recommender:
             self.categories[language] = categories
             self.titles[language] = titles
             self.max_word_ids[language] = int(max_word_id or matrix.shape[1] - 1)
-            self.matrices[language] = matrix
-            self.total_words_per_doc[language] = np.asarray(matrix.sum(axis=1)).ravel()
+            self._index_matrix(language, matrix)
             self.documents[language] = None
             logger.info("Document-term matrix and metadata for '%s' loaded from disk.", language)
             return True
@@ -155,11 +166,25 @@ class Recommender:
         self.categories[language] = cats
         self.titles[language] = titles
         self.max_word_ids[language] = self._determine_max_word_id(docs)
-        self.matrices[language] = self._create_document_term_matrix(language, docs)
-        self.total_words_per_doc[language] = np.asarray(self.matrices[language].sum(axis=1)).ravel()
+        self._index_matrix(language, self._create_document_term_matrix(language, docs))
         # Keep only the compact sparse representation after startup. Holding both
-        # the Python list-of-lists and CSR matrix nearly doubles dataset memory.
+        # the per-document arrays and the CSR matrix doubles dataset memory.
         self.documents[language] = None
+
+    def _index_matrix(self, language: str, matrix: csr_matrix) -> None:
+        """Register a count matrix and what is derived from it.
+
+        The presence view shares the matrix's index arrays and adds one byte
+        per cell, so distinct-word counts ("N new", videos per word) cost
+        ~5 MB rather than a second matrix."""
+        matrix = matrix.tocsr()
+        self.matrices[language] = matrix
+        self.presence[language] = csr_matrix(
+            (np.ones(matrix.nnz, dtype=np.int8), matrix.indices, matrix.indptr),
+            shape=matrix.shape,
+        )
+        self.total_words_per_doc[language] = np.asarray(matrix.sum(axis=1)).ravel()
+        self.distinct_words_per_doc[language] = np.diff(matrix.indptr)
 
     def get_categories(self, language: str) -> list[dict[str, Any]]:
         """Return stable category metadata without reopening transcript files."""
@@ -175,27 +200,33 @@ class Recommender:
         self,
         word_ids: list[int],
         language: str,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Return known-word counts and comprehension ratios for every row."""
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Per row: the share of words spoken that are in `word_ids`, how many
+        distinct words are not, and how many distinct words are.
+
+        The share counts every repeat, which is what a viewer hears; the two
+        counts are of distinct words, which is what there is to learn. This is
+        the one fit calculation every surface shows."""
         self._ensure_language_loaded(language)
 
         matrix = self.matrices[language]
         total_words = self.total_words_per_doc[language]
-        word_vector = np.zeros(matrix.shape[1], dtype=np.int8)
+        # int32: the products are sums of counts, far past int8 and int16.
+        word_vector = np.zeros(matrix.shape[1], dtype=np.int32)
         valid_word_ids = [word_id for word_id in word_ids if 0 <= word_id < matrix.shape[1]]
         if valid_word_ids:
             word_vector[valid_word_ids] = 1
 
-        # int8 accumulation overflows for documents containing more than 127
-        # matching words. Keep the explicit upcast even though it is temporary.
-        known_words = matrix.dot(word_vector.astype(np.int32)).astype(np.int32)
+        known_spoken = matrix.dot(word_vector)
+        known_distinct = self.presence[language].dot(word_vector).astype(np.int32)
         ratios = np.divide(
-            known_words,
+            known_spoken,
             total_words,
-            out=np.zeros_like(known_words, dtype=float),
+            out=np.zeros(matrix.shape[0], dtype=float),
             where=total_words != 0,
         )
-        return known_words, ratios
+        new_distinct = self.distinct_words_per_doc[language] - known_distinct
+        return ratios, new_distinct, known_distinct
 
     def calculate_vocabulary_coverage(
         self,
@@ -208,7 +239,7 @@ class Recommender:
         In particular, this prevents legacy ``*.npz.meta.json`` rows from
         affecting the result without consulting any transcript JSON.
         """
-        _, ratios = self._score_documents_by_words(word_ids, language)
+        ratios, _, _ = self._score_documents_by_words(word_ids, language)
         nonempty_rows = self.total_words_per_doc[language] > 0
         percentages = ratios[nonempty_rows] * 100
 
@@ -289,17 +320,9 @@ class Recommender:
         
         return filtered_docs, filtered_files, filtered_cats, filtered_titles
     
-    def _determine_max_word_id(self, documents: list[list[int]]) -> int:
-        """
-        Determine the maximum word ID across all documents.
-        Documents now are lists of integer IDs.
-        """
-        max_id = 0
-        for doc in documents:
-            for word_id in doc:
-                if word_id is not None:
-                    max_id = max(max_id, word_id)
-        return max_id
+    def _determine_max_word_id(self, documents: list[Document]) -> int:
+        """The largest word id in any document (each document's ids are sorted)."""
+        return max((int(ids[-1]) for ids, _ in documents if ids.size), default=0)
 
     def _write_matrix_metadata(self, language: str, max_word_id: int) -> None:
         meta_path = os.path.join(
@@ -312,6 +335,7 @@ class Recommender:
                     "categories": self.categories[language],
                     "titles": self.titles[language],
                     "max_word_id": int(max_word_id),
+                    "weights": MATRIX_WEIGHTS,
                 },
                 fh,
                 ensure_ascii=False,
@@ -321,7 +345,7 @@ class Recommender:
     def _create_document_term_matrix(
         self, 
         language: str, 
-        documents: list[list[int]]
+        documents: list[Document]
     ) -> csr_matrix:
         """
         Build (or load) the CSR document-term matrix for one language and
@@ -351,6 +375,7 @@ class Recommender:
             or (D.shape[1] - 1) < current_max_id      # new larger IDs
             or meta.get("filenames") != self.filenames[language]  # order/content drift
             or meta.get("categories") != self.categories[language]
+            or meta.get("weights") != MATRIX_WEIGHTS              # a binary cache
             )
 
             # Always rebuild when *blacklist.txt* is newer than the cache
@@ -376,16 +401,16 @@ class Recommender:
 
         num_docs     = len(documents)
         max_word_id  = self._determine_max_word_id(documents)
-        D            = lil_matrix((num_docs, max_word_id + 1), dtype=np.int8)
-
-        for i, doc in enumerate(documents):
-            for wid in doc:
-                if wid is not None and wid <= max_word_id:
-                    D[i, wid] = 1                       # binary presence
-            if (i + 1) % 1000 == 0 or (i + 1) == num_docs:
-                logger.debug("  processed %d/%d docs", i + 1, num_docs)
-
-        D = D.tocsr()
+        # Times each word is spoken. int16 holds it: the most in one video is
+        # 771. Documents arrive as sorted (ids, counts), which is CSR already.
+        indptr = np.zeros(num_docs + 1, dtype=np.int64)
+        np.cumsum([ids.size for ids, _ in documents], out=indptr[1:])
+        indices = np.concatenate([ids for ids, _ in documents] or [np.empty(0, np.int32)])
+        counts = np.concatenate([c for _, c in documents] or [np.empty(0, np.int32)])
+        D = csr_matrix(
+            (np.minimum(counts, np.iinfo(np.int16).max).astype(np.int16), indices, indptr),
+            shape=(num_docs, max_word_id + 1),
+        )
         logger.info("Finished in %.2fs - caching to disk", time.time() - start)
 
         # Save NPZ
@@ -491,49 +516,12 @@ class Recommender:
         files = self.filenames[language]
         cats = self.categories[language]
         titles = self.titles[language]
-        
-        # Debug matrix dimensions
-        logger.debug(
-            "Matrix shape: %s, Max word ID: %s", D.shape, self.max_word_ids[language]
-        )
-        
-        # Create user known words vector with same dimensions as matrix
-        matrix_vocab_size = D.shape[1]  # Number of columns in the matrix
-        user_vector = np.zeros(matrix_vocab_size, dtype=np.int8)
-        
-        # Filter out word IDs that are beyond our matrix dimensions
-        valid_known_words = [word_id for word_id in user_known_words if word_id < matrix_vocab_size]
-        filtered_count = len(user_known_words) - len(valid_known_words)
-        
-        if filtered_count > 0:
-            logger.debug(
-                "Filtered %d word IDs that exceed matrix dimensions (matrix has %d columns)",
-                filtered_count, matrix_vocab_size,
-            )
+        distinct_words_per_doc = self.distinct_words_per_doc[language]
 
-        for word_id in valid_known_words:
-            user_vector[word_id] = 1
+        comprehension_ratios, new_words_per_doc, _ = self._score_documents_by_words(
+            user_known_words, language
+        )
 
-        logger.debug(
-            "Using %d known words out of %d total",
-            len(valid_known_words), len(user_known_words),
-        )
-        
-        # Vectorized operations on the entire matrix
-        # Calculate total words per document (row sums)
-        total_words_per_doc = self.total_words_per_doc[language]
-        
-        # Calculate known words per document (matrix-vector multiplication)
-        known_words_per_doc = D.dot(user_vector.astype(np.int32)).astype(np.int32)
-        
-        # Calculate comprehension ratios
-        comprehension_ratios = np.divide(
-            known_words_per_doc, 
-            total_words_per_doc, 
-            out=np.zeros_like(known_words_per_doc, dtype=float), 
-            where=total_words_per_doc != 0
-        )
-        
         # Create boolean masks for filtering
         seen_video_ids = set(seen_videos)
         valid_indices = []
@@ -567,7 +555,7 @@ class Recommender:
                 continue
                 
             # Skip if too few words (less than 100 unique words)
-            if total_words_per_doc[i] < 100:
+            if distinct_words_per_doc[i] < 100:
                 continue
                 
             valid_indices.append(i)
@@ -589,13 +577,12 @@ class Recommender:
             if len(videos) >= top_n:
                 break
 
-            new_words = total_words_per_doc[doc_index] - known_words_per_doc[doc_index]
             videos.append({
                 "id": files[doc_index].replace("_processed.json", ""),
-                "percentUnderstood": round(ratio * 100, 2),
+                "percentUnderstood": round(float(ratio) * 100, 2),
                 "category": cats[doc_index],
                 "title": titles[doc_index],
-                "newWords": int(new_words),
+                "newWords": int(new_words_per_doc[doc_index]),
             })
 
         end_time = time.time()
@@ -619,7 +606,9 @@ class Recommender:
         ) -> list[dict[str, Any]]:
         self._ensure_language_loaded(language)
 
-        D = self.matrices[language]
+        # The presence view: a word's rank is how many videos it appears in,
+        # not how often it is said in a few of them.
+        D = self.presence[language]
         cats = self.categories[language]
 
         if filter_category is None:
@@ -644,7 +633,7 @@ class Recommender:
             return []
 
         # Most videos first; ties go to the lower word id, which is the more
-        # common word. CSR is binary, so document count and frequency are the same.
+        # common word.
         order = np.lexsort((candidate_ids, -doc_counts[candidate_ids]))[:n_words]
         total_docs = matrix.shape[0]
         return [
@@ -684,7 +673,9 @@ class Recommender:
         start_time = time.time()
 
         try:
-            known_words_per_doc, ratios = self._score_documents_by_words(word_ids, language)
+            ratios, new_words_per_doc, known_words_per_doc = self._score_documents_by_words(
+                word_ids, language
+            )
         except ValueError:
             logger.warning("recommend_videos_by_words: unsupported language %r", language)
             return []
@@ -693,7 +684,6 @@ class Recommender:
         files = self.filenames[language]
         cats = self.categories[language]
         titles = self.titles[language]
-        total_words_per_doc = self.total_words_per_doc[language]
 
         valid_indices = []
         for doc_index in range(min(D.shape[0], len(files))):
@@ -706,15 +696,13 @@ class Recommender:
         valid_indices.sort(key=lambda i: ratios[i], reverse=True)
         videos = []
         for doc_index in valid_indices[:top_n]:
-            known_words = int(known_words_per_doc[doc_index])
-            total_words = int(total_words_per_doc[doc_index])
             videos.append({
                 "id": files[doc_index].replace("_processed.json", ""),
                 "percentUnderstood": round(float(ratios[doc_index]) * 100, 2),
                 "category": cats[doc_index],
                 "title": titles[doc_index],
-                "newWords": max(total_words - known_words, 0),
-                "knownWords": known_words,
+                "newWords": int(new_words_per_doc[doc_index]),
+                "knownWords": int(known_words_per_doc[doc_index]),
             })
 
         end_time = time.time()

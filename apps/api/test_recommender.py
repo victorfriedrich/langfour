@@ -9,11 +9,28 @@ from scipy.sparse import csr_matrix
 from recommender import Recommender
 
 
-def make_recommender(rows, categories=None, titles=None):
+def blank_recommender(base_folder=None):
     recommender = Recommender.__new__(Recommender)
-    matrix = csr_matrix(np.asarray(rows, dtype=np.int8))
+    recommender.base_folder = base_folder
     recommender.languages = ["es"]
-    recommender.matrices = {"es": matrix}
+    recommender.blacklisted_files = set()
+    recommender.documents = {}
+    recommender.filenames = {}
+    recommender.categories = {}
+    recommender.titles = {}
+    recommender.max_word_ids = {}
+    recommender.matrices = {}
+    recommender.presence = {}
+    recommender.total_words_per_doc = {}
+    recommender.distinct_words_per_doc = {}
+    return recommender
+
+
+def make_recommender(rows, categories=None, titles=None):
+    """Rows are times each word is spoken in a video."""
+    recommender = blank_recommender()
+    matrix = csr_matrix(np.asarray(rows, dtype=np.int16))
+    recommender._index_matrix("es", matrix)
     recommender.filenames = {
         "es": [f"video-{index}_processed.json" for index in range(matrix.shape[0])]
     }
@@ -24,9 +41,6 @@ def make_recommender(rows, categories=None, titles=None):
         "es": titles or [f"Video {index}" for index in range(matrix.shape[0])]
     }
     recommender.max_word_ids = {"es": max(matrix.shape[1] - 1, 0)}
-    recommender.total_words_per_doc = {
-        "es": np.asarray(matrix.sum(axis=1)).ravel()
-    }
     recommender.hidden_videos = set()
     return recommender
 
@@ -173,36 +187,78 @@ def test_matrix_manifest_persists_titles_and_loads_without_transcripts(tmp_path)
     transcript_path = language_dir / "abc_processed.json"
     transcript_path.write_text(json.dumps(transcript), encoding="utf-8")
 
-    recommender = Recommender.__new__(Recommender)
-    recommender.base_folder = str(tmp_path)
-    recommender.languages = ["es"]
-    recommender.blacklisted_files = set()
-    recommender.documents = {}
-    recommender.filenames = {}
-    recommender.categories = {}
-    recommender.titles = {}
-    recommender.max_word_ids = {}
-    recommender.matrices = {}
-    recommender.total_words_per_doc = {}
+    recommender = blank_recommender(str(tmp_path))
     recommender._ensure_language_loaded("es")
 
     manifest_path = language_dir / "document_term_matrix.npz.meta.json"
     assert json.loads(manifest_path.read_text(encoding="utf-8"))["titles"] == ["A trip"]
 
     transcript_path.write_text("not valid JSON", encoding="utf-8")
-    loaded = Recommender.__new__(Recommender)
-    loaded.base_folder = str(tmp_path)
-    loaded.blacklisted_files = set()
-    loaded.documents = {}
-    loaded.filenames = {}
-    loaded.categories = {}
-    loaded.titles = {}
-    loaded.max_word_ids = {}
-    loaded.matrices = {}
-    loaded.total_words_per_doc = {}
+    loaded = blank_recommender(str(tmp_path))
 
     assert loaded._try_load_cached_language("es") is True
     assert loaded.titles["es"] == ["A trip"]
+
+
+def test_coverage_counts_every_word_and_new_words_are_distinct():
+    # Word 0 is said 50 times among 150 different words, 199 words heard in
+    # all: knowing it covers a quarter of the speech, one word of the 150.
+    recommender = make_recommender([[50] + [1] * 149])
+
+    [video] = recommender.recommend_videos_by_words([0], "es")
+    assert video["percentUnderstood"] == pytest.approx(50 / 199 * 100, abs=0.01)
+    assert video["newWords"] == 149 and video["knownWords"] == 1
+
+    ratios, new, known = recommender._score_documents_by_words([1, 2], "es")
+    assert ratios[0] == pytest.approx(2 / 199) and new[0] == 148 and known[0] == 2
+
+
+def test_words_to_learn_rank_by_videos_not_repeats():
+    # Word 0 is said 50 times in one video; word 1 once in each of two.
+    recommender = make_recommender([[50, 1], [0, 1]])
+
+    recs = recommender.recommend_words_to_learn("es", [])
+    assert [(r["word_id"], r["frequency"]) for r in recs] == [(1, 2), (0, 1)]
+
+
+def test_too_short_videos_are_judged_on_distinct_words():
+    # 300 words spoken, but only 50 different ones: still too short to recommend.
+    recommender = make_recommender([[6] * 50 + [0] * 100, [1] * 150])
+
+    async def none(_user_id):
+        return []
+
+    recommender.get_known_words = none
+    recommender.get_seen_videos = none
+    assert [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es"))] == ["video-1"]
+
+
+def test_a_binary_cache_is_rebuilt_with_counts(tmp_path):
+    from scipy.sparse import save_npz
+    language_dir = tmp_path / "es"
+    language_dir.mkdir()
+    (language_dir / "abc_processed.json").write_text(json.dumps({
+        "category": "Travel", "title": "A trip",
+        "content": [{"id": 4}, {"content": " "}, {"id": 4}, {"id": 9}],
+    }), encoding="utf-8")
+    # What every cache looked like before counts: same shape, ones, no marker.
+    save_npz(language_dir / "document_term_matrix.npz",
+             csr_matrix(np.asarray([[0, 0, 0, 0, 1, 0, 0, 0, 0, 1]], dtype=np.int8)))
+    (language_dir / "document_term_matrix.npz.meta.json").write_text(json.dumps({
+        "filenames": ["abc_processed.json"], "categories": ["Travel"],
+        "titles": ["A trip"], "max_word_id": 9,
+    }), encoding="utf-8")
+
+    recommender = blank_recommender(str(tmp_path))
+    assert recommender._try_load_cached_language("es") is False
+    recommender._ensure_language_loaded("es")
+
+    assert recommender.matrices["es"].toarray()[0, [4, 9]].tolist() == [2, 1]
+    assert recommender.total_words_per_doc["es"].tolist() == [3]
+    assert recommender.distinct_words_per_doc["es"].tolist() == [2]
+    meta = json.loads((language_dir / "document_term_matrix.npz.meta.json").read_text())
+    assert meta["weights"] == "counts"
+    assert blank_recommender(str(tmp_path))._try_load_cached_language("es") is True
 
 
 
