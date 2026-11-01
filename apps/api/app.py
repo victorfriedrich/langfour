@@ -387,6 +387,7 @@ async def get_rank_blended_recommendations(
         language=language,
         filter_category=video_category,
         top_n=top_n,
+        rank_by_distinct=True,
     )
     max_useful = len(useful_videos)
     useful_rank_map = {
@@ -693,6 +694,7 @@ async def get_chart_data(
                 language=language,
                 filter_category=category,
                 top_n=50,
+                distinct=False,
             )
             if ordered_recommendations:
                 avg_percent_ordered = sum(rec["percentUnderstood"] for rec in ordered_recommendations) / len(ordered_recommendations)
@@ -707,6 +709,7 @@ async def get_chart_data(
                 language=language,
                 filter_category=category,
                 top_n=50,
+                distinct=False,
             )
             if random_recommendations:
                 avg_percent_random = sum(rec["percentUnderstood"] for rec in random_recommendations) / len(random_recommendations)
@@ -728,7 +731,8 @@ async def get_chart_data(
                     word_ids=category_word_ids,
                     language=language,
                     filter_category=category,
-                    top_n=50
+                    top_n=50,
+                    distinct=False,
                 )
                 if category_videos:
                     avg_percent_category = sum(rec["percentUnderstood"] for rec in category_videos) / len(category_videos)

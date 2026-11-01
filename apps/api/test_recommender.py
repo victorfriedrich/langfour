@@ -190,7 +190,7 @@ def test_matrix_manifest_persists_titles_and_loads_without_transcripts(tmp_path)
     recommender = blank_recommender(str(tmp_path))
     recommender._ensure_language_loaded("es")
 
-    manifest_path = language_dir / "document_term_matrix.npz.meta.json"
+    manifest_path = language_dir / "document_term_counts.npz.meta.json"
     assert json.loads(manifest_path.read_text(encoding="utf-8"))["titles"] == ["A trip"]
 
     transcript_path.write_text("not valid JSON", encoding="utf-8")
@@ -233,7 +233,7 @@ def test_too_short_videos_are_judged_on_distinct_words():
     assert [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es"))] == ["video-1"]
 
 
-def test_a_binary_cache_is_rebuilt_with_counts(tmp_path):
+def test_a_binary_cache_is_left_alone_and_counts_are_built(tmp_path):
     from scipy.sparse import save_npz
     language_dir = tmp_path / "es"
     language_dir.mkdir()
@@ -241,13 +241,13 @@ def test_a_binary_cache_is_rebuilt_with_counts(tmp_path):
         "category": "Travel", "title": "A trip",
         "content": [{"id": 4}, {"content": " "}, {"id": 4}, {"id": 9}],
     }), encoding="utf-8")
-    # What every cache looked like before counts: same shape, ones, no marker.
-    save_npz(language_dir / "document_term_matrix.npz",
-             csr_matrix(np.asarray([[0, 0, 0, 0, 1, 0, 0, 0, 0, 1]], dtype=np.int8)))
-    (language_dir / "document_term_matrix.npz.meta.json").write_text(json.dumps({
-        "filenames": ["abc_processed.json"], "categories": ["Travel"],
-        "titles": ["A trip"], "max_word_id": 9,
-    }), encoding="utf-8")
+    # The cache from before counts: ones, under the old name, which older
+    # code (a rollback) keeps reading.
+    old_matrix = language_dir / "document_term_matrix.npz"
+    save_npz(old_matrix, csr_matrix(np.asarray([[0, 0, 0, 0, 1, 0, 0, 0, 0, 1]], dtype=np.int8)))
+    old_meta = json.dumps({"filenames": ["abc_processed.json"], "categories": ["Travel"],
+                           "titles": ["A trip"], "max_word_id": 9})
+    (language_dir / "document_term_matrix.npz.meta.json").write_text(old_meta, encoding="utf-8")
 
     recommender = blank_recommender(str(tmp_path))
     assert recommender._try_load_cached_language("es") is False
@@ -256,46 +256,32 @@ def test_a_binary_cache_is_rebuilt_with_counts(tmp_path):
     assert recommender.matrices["es"].toarray()[0, [4, 9]].tolist() == [2, 1]
     assert recommender.total_words_per_doc["es"].tolist() == [3]
     assert recommender.distinct_words_per_doc["es"].tolist() == [2]
-    meta = json.loads((language_dir / "document_term_matrix.npz.meta.json").read_text())
+    meta = json.loads((language_dir / "document_term_counts.npz.meta.json").read_text())
     assert meta["weights"] == "counts"
+    assert (language_dir / "document_term_matrix.npz.meta.json").read_text() == old_meta
     assert blank_recommender(str(tmp_path))._try_load_cached_language("es") is True
 
+    # A counts-named cache without the marker is not trusted either.
+    meta.pop("weights")
+    (language_dir / "document_term_counts.npz.meta.json").write_text(json.dumps(meta))
+    assert blank_recommender(str(tmp_path))._try_load_cached_language("es") is False
 
 
-def test_saved_words_page_through_the_users_list():
-    rows = [{"user_id": "me", "word_id": i} for i in range(1500)]
-    rows.append({"user_id": "other", "word_id": 9999})
+def test_videos_by_words_skip_clips_and_can_rank_by_distinct_targets():
+    rows = [
+        [60] + [0] * 39 + [1] * 110,        # target word 0 said 60 times
+        [0] + [1] * 40 + [1] * 109,         # targets 1-40, once each
+        [1] * 41 + [0] * 109,               # every target, but a 41-word clip
+    ]
+    recommender = make_recommender(rows)
+    targets = list(range(41))
 
-    class Query:
-        def __init__(self):
-            self.filters = {}
+    by_share = recommender.recommend_videos_by_words(targets, "es")
+    assert [v["id"] for v in by_share] == ["video-0", "video-1"]      # clip left out
 
-        def select(self, _cols):
-            return self
+    by_distinct = recommender.recommend_videos_by_words(targets, "es", rank_by_distinct=True)
+    # video-0 has word 0 and, at the start of its tail, word 40.
+    assert [(v["id"], v["knownWords"]) for v in by_distinct] == [("video-1", 40), ("video-0", 2)]
 
-        def eq(self, column, value):
-            self.filters[column] = value
-            return self
-
-        def order(self, _column):
-            return self
-
-        def range(self, start, end):
-            self.window = (start, end)
-            return self
-
-        def execute(self):
-            matching = [r for r in rows if all(r[k] == v for k, v in self.filters.items())]
-            start, end = self.window
-            return type("Response", (), {"data": matching[start:end + 1]})
-
-    class Client:
-        def table(self, name):
-            assert name == "userwords"
-            return Query()
-
-    recommender = make_recommender([[1]])
-    recommender.supabase = Client()
-
-    saved = asyncio.run(recommender.get_saved_words("me"))
-    assert sorted(saved) == list(range(1500))
+    chart = recommender.recommend_videos_by_words(targets, "es", distinct=False)
+    assert "newWords" not in chart[0] and chart[0]["percentUnderstood"] > 0

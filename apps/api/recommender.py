@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 # about -0.5) while the share of words heard doesn't. A cache without this
 # marker is a binary matrix of the same shape and would load silently.
 MATRIX_WEIGHTS = "counts"
+# The counts cache has its own name, so code from before counts (a rollback,
+# an older checkout sharing the data dir) never loads it as 0/1: it keeps
+# reading or rebuilding document_term_matrix.npz.
+MATRIX_FILE = "document_term_counts.npz"
+# Videos with fewer distinct words are clips; counting repeats would put them
+# near 100% for everyone.
+MIN_DISTINCT_WORDS = 100
 
 class Recommender:
     def __init__(self, base_folder: str):
@@ -79,7 +86,7 @@ class Recommender:
 
 
     def _try_load_cached_language(self, language: str) -> bool:
-        matrix_path = os.path.join(self.base_folder, language, "document_term_matrix.npz")
+        matrix_path = os.path.join(self.base_folder, language, MATRIX_FILE)
         meta_path = matrix_path + ".meta.json"
         if not (os.path.exists(matrix_path) and os.path.exists(meta_path)):
             return False
@@ -200,13 +207,15 @@ class Recommender:
         self,
         word_ids: list[int],
         language: str,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        distinct: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
         """Per row: the share of words spoken that are in `word_ids`, how many
         distinct words are not, and how many distinct words are.
 
         The share counts every repeat, which is what a viewer hears; the two
         counts are of distinct words, which is what there is to learn. This is
-        the one fit calculation every surface shows."""
+        the one fit calculation every surface shows. distinct=False skips the
+        second product and returns None for both counts."""
         self._ensure_language_loaded(language)
 
         matrix = self.matrices[language]
@@ -218,13 +227,15 @@ class Recommender:
             word_vector[valid_word_ids] = 1
 
         known_spoken = matrix.dot(word_vector)
-        known_distinct = self.presence[language].dot(word_vector).astype(np.int32)
         ratios = np.divide(
             known_spoken,
             total_words,
             out=np.zeros(matrix.shape[0], dtype=float),
             where=total_words != 0,
         )
+        if not distinct:
+            return ratios, None, None
+        known_distinct = self.presence[language].dot(word_vector).astype(np.int32)
         new_distinct = self.distinct_words_per_doc[language] - known_distinct
         return ratios, new_distinct, known_distinct
 
@@ -239,7 +250,7 @@ class Recommender:
         In particular, this prevents legacy ``*.npz.meta.json`` rows from
         affecting the result without consulting any transcript JSON.
         """
-        ratios, _, _ = self._score_documents_by_words(word_ids, language)
+        ratios, _, _ = self._score_documents_by_words(word_ids, language, distinct=False)
         nonempty_rows = self.total_words_per_doc[language] > 0
         percentages = ratios[nonempty_rows] * 100
 
@@ -326,7 +337,7 @@ class Recommender:
 
     def _write_matrix_metadata(self, language: str, max_word_id: int) -> None:
         meta_path = os.path.join(
-            self.base_folder, language, "document_term_matrix.npz.meta.json"
+            self.base_folder, language, MATRIX_FILE + ".meta.json"
         )
         with open(meta_path, "w", encoding="utf-8") as fh:
             json.dump(
@@ -353,9 +364,7 @@ class Recommender:
         dataset.  A tiny *.meta.json* file is stored alongside the *.npz*
         cache so we can validate the relationship on every start-up.
         """
-        matrix_path = os.path.join(
-            self.base_folder, language, "document_term_matrix.npz"
-        )
+        matrix_path = os.path.join(self.base_folder, language, MATRIX_FILE)
         meta_path = matrix_path + ".meta.json"
 
         # ------------------------------------------------------------------
@@ -555,7 +564,7 @@ class Recommender:
                 continue
                 
             # Skip if too few words (less than 100 unique words)
-            if distinct_words_per_doc[i] < 100:
+            if distinct_words_per_doc[i] < MIN_DISTINCT_WORDS:
                 continue
                 
             valid_indices.append(i)
@@ -669,12 +678,25 @@ class Recommender:
             logger.error("Exception in get_random_words", exc_info=True)
             return []
         
-    def recommend_videos_by_words(self, word_ids: list[int], language: str, filter_category: str | None = None, top_n: int = 60) -> list[dict[str, Any]]:
+    def recommend_videos_by_words(
+        self,
+        word_ids: list[int],
+        language: str,
+        filter_category: str | None = None,
+        top_n: int = 60,
+        rank_by_distinct: bool = False,
+        distinct: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Videos ordered by the share of their speech `word_ids` cover, or,
+        with rank_by_distinct (words to learn), by how many different words
+        of `word_ids` they contain, so one word said 60 times doesn't win.
+        distinct=False leaves out newWords/knownWords and the product behind
+        them, for callers that only read percentUnderstood."""
         start_time = time.time()
 
         try:
             ratios, new_words_per_doc, known_words_per_doc = self._score_documents_by_words(
-                word_ids, language
+                word_ids, language, distinct=distinct or rank_by_distinct
             )
         except ValueError:
             logger.warning("recommend_videos_by_words: unsupported language %r", language)
@@ -684,6 +706,7 @@ class Recommender:
         files = self.filenames[language]
         cats = self.categories[language]
         titles = self.titles[language]
+        distinct_words_per_doc = self.distinct_words_per_doc[language]
 
         valid_indices = []
         for doc_index in range(min(D.shape[0], len(files))):
@@ -691,19 +714,26 @@ class Recommender:
                 continue
             if files[doc_index].replace("_processed.json", "") in self.hidden_videos:
                 continue
+            if distinct_words_per_doc[doc_index] < MIN_DISTINCT_WORDS:
+                continue
             valid_indices.append(doc_index)
 
-        valid_indices.sort(key=lambda i: ratios[i], reverse=True)
+        if rank_by_distinct:
+            valid_indices.sort(key=lambda i: (known_words_per_doc[i], ratios[i]), reverse=True)
+        else:
+            valid_indices.sort(key=lambda i: ratios[i], reverse=True)
         videos = []
         for doc_index in valid_indices[:top_n]:
-            videos.append({
+            video = {
                 "id": files[doc_index].replace("_processed.json", ""),
                 "percentUnderstood": round(float(ratios[doc_index]) * 100, 2),
                 "category": cats[doc_index],
                 "title": titles[doc_index],
-                "newWords": int(new_words_per_doc[doc_index]),
-                "knownWords": int(known_words_per_doc[doc_index]),
-            })
+            }
+            if known_words_per_doc is not None:
+                video["newWords"] = int(new_words_per_doc[doc_index])
+                video["knownWords"] = int(known_words_per_doc[doc_index])
+            videos.append(video)
 
         end_time = time.time()
         logger.debug("Total recommendation time: %.2f seconds", end_time - start_time)
