@@ -83,8 +83,9 @@ DERIVED        user_known_words (view); later word_knowledge
 - **No counting twice.** A recall that was applied to a card exists as a review. Scoring reads
   `srs_reviews` + `word_events`, minus recall events whose outbox row is `applied`. Skipped
   recalls stay in as evidence from outside the flashcard systems.
-- **Exposure counts only what the user chose to read or hear** (text they asked ChatGPT for, not
-  every word ChatGPT wrote). If the reader ever logs every word on every page, store that as daily
+- **Exposure counts only what the user chose to read or hear** (text they asked ChatGPT for, or a
+  reply the AI app judges from the user's answer they took in whole; not every word ChatGPT
+  wrote). If the reader ever logs every word on every page, store that as daily
   counts in its own table then, not in `word_events`.
 
 ### Not doing

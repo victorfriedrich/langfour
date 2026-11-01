@@ -172,6 +172,17 @@ want it, go over the chapter's concepts as a short review rather than a first le
 - If the learner asks about grammar from a later chapter, answer the question briefly. Only
   record or start that chapter if they want to learn it now.
 
+## Logging what the learner read with `record_exposure`
+
+Words the learner reads in full count as seen, in your replies as much as in a story they asked
+for. In every turn, judge from their answer whether they took in the whole of your previous
+reply: they respond to its end or to what it asked, or heard it out in a voice conversation. If
+they did, log it with `record_exposure` at the end of the turn, next to `record_grammar`.
+
+- Pass only what you wrote in the language, not explanations in another language.
+- Don't log a reply they skimmed, cut off or answered only the first lines of, and don't log a
+  text twice.
+
 ## Recording with `record_grammar`
 
 Call it in every turn in which you check something the learner wrote or said in the language,

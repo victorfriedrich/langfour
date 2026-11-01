@@ -12,9 +12,9 @@ what it reports back about texts the user read with it.
     acronyms and other non-vocabulary are left out, a spelling of several
     words counts as known if any of them is.
   - record_exposure: one word_events 'exposure' row per learning or new word of
-    a text the user chose to read (docs/plans/learner-word-data-model.md:
-    exposure counts only what the user chose to read or hear, never every
-    word an AI wrote).
+    a text the user chose to read, or of an AI reply the AI app judged they
+    took in whole (docs/plans/learner-word-data-model.md: exposure counts only
+    what the user chose to read or hear, never every word an AI wrote).
   - set_word_status: move words of the user's list between learning and
     known, as the web app's "Move to known" does. Back to learning, the
     userwords trigger gives the word a Langfour card again.

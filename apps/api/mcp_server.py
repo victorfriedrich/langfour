@@ -70,7 +70,11 @@ mcp = FastMCP(
         "vocabulary with the user, pick words with get_vocabulary (due words first); at the end "
         "of the session, report the results with record_practice. When you write a text for "
         "the user to read in the language, check its level with score_text, and once they have "
-        "read it, log it with record_exposure. Take the user at their word about what they "
+        "read it, log it with record_exposure. Your replies count too: in every turn, judge "
+        "from the user's answer whether they took in the whole of your previous reply (they "
+        "respond to its end or what it asked, or heard it out in a voice conversation), and "
+        "if they did, log the parts of it written in the language with record_exposure. "
+        "Take the user at their word about what they "
         "know: words they know outright go to known with set_word_status, and words they say "
         "they can read but not produce get a correct 'recognize' answer, self_reported, with "
         "record_practice. Don't quiz them first unless they ask. When the user asks to add "
@@ -194,8 +198,14 @@ async def record_exposure_tool(
     have read it. Langfour notes each word they're learning or haven't met as seen; it
     doesn't change their flashcard schedule.
 
-    Only for texts the user chose to read (a story or article they asked for), not for
-    everything you wrote in the conversation.
+    Log a text the user asked for (a story, an article) once they've read it, and your
+    own replies when the user took them in. In every turn, judge from the user's answer
+    whether they engaged with the whole of your previous reply: they respond to its end
+    or to what it asked, or heard it out in a voice conversation. If they did, log it in
+    this turn; if they skimmed it, cut you off or answered only its first lines, don't.
+    Pass only the parts written in the target language, never explanations in another
+    language (their words would be read as the target language's), and never a text
+    you already logged.
     """
     return await asyncio.to_thread(record_exposure, get_vocabulary_store(), _user_id(ctx),
                                    language, text)
