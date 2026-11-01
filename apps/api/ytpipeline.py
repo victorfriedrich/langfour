@@ -50,6 +50,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from bisect import bisect_left
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1501,38 +1502,79 @@ def judged_quality(r: dict) -> tuple[float | None, float | None]:
     return worth, r["appeal"]
 
 
-def blend(rows: list[dict], quality: dict[str, tuple[float | None, float | None]]) -> list[dict]:
+def placed(values: Sequence[float | None], reference: Sequence[float | None]) -> list[float]:
+    """percentiles(), but positioned among `reference` rather than among the
+    values themselves: a value in the reference gets exactly its percentile
+    there, one between two gets the interpolated position, one outside is
+    clamped to 0 or 1. None, or a reference with no spread, is 0.5."""
+    known = sorted({v for v in reference if v is not None})
+    if len(known) < 2:
+        return [0.5] * len(values)
+    top = len(known) - 1
+    out = []
+    for v in values:
+        i = None if v is None else bisect_left(known, v)
+        if i is None:
+            out.append(0.5)
+        elif i == 0 or i > top:
+            out.append(0.0 if i == 0 else 1.0)
+        elif known[i] == v:
+            out.append(i / top)
+        else:
+            lo, hi = known[i - 1], known[i]
+            out.append((i - 1 + (v - lo) / (hi - lo)) / top)
+    return out
+
+
+def blend(rows: list[dict], quality: dict[str, tuple[float | None, float | None]],
+          reference_top: int | None = TOP_N) -> list[dict]:
     """Rescore queue_rows() output by engagement x judged quality, best first.
 
     `rows` must be best-first, as queue_rows() returns them, so a channel's
     videos are met in its own order. An unjudged channel's percentiles are 0.5
     (neutral, as percentiles() treats any unknown); with nothing judged the
-    order is engagement's, apart from CHANNEL_SPREAD."""
+    order is engagement's, apart from CHANNEL_SPREAD.
+
+    Percentiles are taken among each channel's best `reference_top` videos,
+    not among `rows`: a push ranks every candidate (top_n=None, ~10x the rows)
+    and a dry run only the top-n cut, and against their own populations the
+    same video scored differently in each, so the dry run did not show what
+    the push would queue. A fixed reference gives a video one score in both."""
+    position: Counter = Counter()
+    rank_in_channel = []
+    for r in rows:
+        rank_in_channel.append(position[r["channel_id"]])
+        position[r["channel_id"]] += 1
+    reference = [r for r, n in zip(rows, rank_in_channel, strict=True)
+                 if reference_top is None or n < reference_top]
     unknown = (None, None)
-    engagement = percentiles([r["score"] for r in rows])
-    worth = percentiles([quality.get(r["channel_id"], unknown)[0] for r in rows])
-    appeal = percentiles([quality.get(r["channel_id"], unknown)[1] for r in rows])
+
+    def signal(get) -> list[float]:
+        return placed([get(r) for r in rows], [get(r) for r in reference])
+
+    engagement = signal(lambda r: r["score"])
+    worth = signal(lambda r: quality.get(r["channel_id"], unknown)[0])
+    appeal = signal(lambda r: quality.get(r["channel_id"], unknown)[1])
     w, f = BLEND_WEIGHTS, BLEND_FLOOR
-    seen: Counter = Counter()
-    for r, e, q, a in zip(rows, engagement, worth, appeal, strict=True):
+    for r, n, e, q, a in zip(rows, rank_in_channel, engagement, worth, appeal, strict=True):
         mean = ((e + f) ** w["engagement"] * (q + f) ** w["worth"]
                 * (a + f) ** w["appeal"]) / (1 + f)
-        r["score"] = round(mean - CHANNEL_SPREAD * seen[r["channel_id"]], 4)
-        seen[r["channel_id"]] += 1
+        r["score"] = round(mean - CHANNEL_SPREAD * n, 4)
     rows.sort(key=lambda v: -v["score"])
     return rows
 
 
 def select(db: sqlite3.Connection, lang: str, g: Gates,
-           top_n: int | None = TOP_N) -> list[dict]:
+           top_n: int | None = TOP_N, reference_top: int = TOP_N) -> list[dict]:
     """The deliverable: queue rows for every channel that cleared the gates,
-    ordered so the transcription budget goes to the best creators first."""
+    ordered so the transcription budget goes to the best creators first.
+    `reference_top` is blend()'s; pass the same in a dry run and a push."""
     passed, _funnel = qualified(db, lang, g, need_llm=True)
     keep = {r["channel_id"] for r in passed}
     rank = rank_channels(passed)
     videos = [v for v in usable_videos(db, lang) if v[0] in keep]
     out = blend(queue_rows(lang, videos, rank, top_n),
-                {r["channel_id"]: judged_quality(r) for r in passed})
+                {r["channel_id"]: judged_quality(r) for r in passed}, reference_top)
     unjudged = sum(1 for r in passed if r["judged_at"] is None)
     if unjudged:
         print(f"  {unjudged:,} channels not judged yet: neutral quality (run judge)")
@@ -1763,11 +1805,11 @@ def main() -> None:
             # Every candidate, not the top-n cut: sync() fills each channel's
             # free slots, which are fewer than top-n once some are transcribed.
             # --out then gets what was actually queued.
-            rows, deleted = sync(a.lang, select(db, a.lang, g, None), a.top)
+            rows, deleted = sync(a.lang, select(db, a.lang, g, None, a.top), a.top)
             print(f"queue synced: {len(rows):,} pending rows written, "
                   f"{deleted:,} replaced")
         else:
-            rows = select(db, a.lang, g, a.top)
+            rows = select(db, a.lang, g, a.top, a.top)
         if a.out:
             a.out.parent.mkdir(parents=True, exist_ok=True)
             a.out.write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")

@@ -965,6 +965,34 @@ def test_judge_writes_judgments_and_skips_done(db, monkeypatch):
     assert row == (8.2, 6.9, 0.1, "explainer")
 
 
+def test_placed_agrees_with_percentiles_on_the_reference_and_interpolates_between():
+    reference = [1, 2, 3, None]
+    assert yp.placed(reference, reference) == yp.percentiles(reference)
+    assert yp.placed([1.5, 0, 9, None], reference) == [0.25, 0.0, 1.0, 0.5]
+    assert yp.placed([4], [7, 7]) == [0.5]                     # no spread to give
+
+
+def test_select_scores_a_video_the_same_in_a_dry_run_and_a_push(db):
+    """The push ranks every candidate, the dry run the top-n cut. When each
+    took percentiles among its own rows, the dry run showed history explainers
+    first and the push queued cooking channels first."""
+    for i, (worth, appeal) in enumerate([(8.0, 7.0), (3.0, 6.0), (6.0, 2.0), (5.0, 5.0)]):
+        cid = f"UC{i}"
+        add_channel(db, cid, subs=20_000 * (i + 1), **classified(
+            judged_at="2026-01-01", worth=worth, appeal=appeal, p_clickbait=0.0))
+        add_videos(db, cid, 8, views=2_000 * (i + 1))
+        db.executemany("UPDATE videos SET views=? WHERE video_id=?",
+                       [(500 * (j + 1) * (i + 1), f"vUC{i}{j}") for j in range(8)])
+    db.commit()
+    dry = yp.select(db, "es", yp.Gates(), top_n=3, reference_top=3)
+    push = yp.select(db, "es", yp.Gates(), top_n=None, reference_top=3)
+    assert len(push) > len(dry)
+    pushed = {r["video_id"]: r["score"] for r in push}
+    assert all(pushed[r["video_id"]] == r["score"] for r in dry)
+    assert [r["video_id"] for r in push if r["video_id"] in {d["video_id"] for d in dry}] \
+        == [r["video_id"] for r in dry]
+
+
 def test_select_reads_judgments_from_the_store(db):
     """Same engagement, so only the stored judgment can order them."""
     for cid, worth, bait in (("UC_bait", 6.0, 0.95), ("UC_solid", 6.0, 0.0)):
