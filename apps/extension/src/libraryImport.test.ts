@@ -16,6 +16,11 @@ describe('buildLibraryImport', () => {
     expect(payload).toMatchObject({ media_type: 'song', title: 'Tití Me Preguntó', artist: 'Bad Bunny', site: 'genius.com', chunks: [{ text: 'Línea uno\nlínea dos' }] });
   });
 
+  it('files a song the reader recognised on any site under songs', () => {
+    const payload = buildLibraryImport(article({ url: 'https://blog.example.com/letra', title: 'Calle de noche', byline: 'Los Ejemplos', kind: 'song' }), [{ text: 'Una línea' }], 'es');
+    expect(payload).toMatchObject({ media_type: 'song', title: 'Calle de noche', artist: 'Los Ejemplos' });
+  });
+
   it('returns null for an empty page', () => {
     expect(buildLibraryImport(article(), [{ text: ' ' }, { text: '' }], 'es')).toBeNull();
   });

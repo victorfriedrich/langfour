@@ -7,6 +7,7 @@
 // page's DOM stays exactly as React left it, and streaming answers keep
 // working while they are marked.
 
+import { requestBackend } from './api-service';
 import { getPrefs } from './preferencePopup/prefs';
 import { Language, LANGUAGES, toLanguage } from './languages';
 import { readFileSync } from 'fs';
@@ -112,6 +113,152 @@ async function classify(tokens: string[], lang: Language): Promise<boolean> {
   return true;
 }
 
+// ====================== Language check ======================
+//
+// The dictionary says "me", "bus" or "Irregular" are Spanish words, and they
+// are, but ChatGPT's answers mix in English where they are English. For
+// accounts with the language check on (userdata.chatgpt_language_check),
+// each paragraph's words to mark go to the API, which asks Jev which of them
+// are in the language in that spot. A paragraph is sent once its text has
+// stopped changing, so a streaming answer isn't checked token by token; until
+// then its words stay unmarked. If a check fails, they are marked as before.
+
+const BLOCK = 'p, li, td, th, h1, h2, h3, h4, h5, h6, blockquote, dt, dd';
+const CONTEXT_BLOCKS = 2;
+// The API's limits (language_check.py).
+const MAX_TEXT = 4000;
+const MAX_CONTEXT = 1000;
+const MAX_WORDS = 80;
+const MAX_BLOCKS = 40;
+
+type CheckBlock = { text: string; before: string; after: string; words: [number, number][] };
+type CheckAnswer = { blocks: ({ in_language: boolean[] } | null)[] };
+
+let languageCheck = false;
+// Per paragraph text and words asked about: which of them stay marked, or
+// null when the check failed (all of them do).
+const checked = new Map<string, boolean[] | null>();
+// Each paragraph's text at the last run, to tell when it stopped changing.
+let lastText = new WeakMap<Element, string>();
+
+async function loadLanguageCheck(): Promise<boolean> {
+  const response = await requestBackend('/api/language-check');
+  if (!response.ok) return false;
+  try {
+    return (JSON.parse(response.body) as { enabled?: unknown }).enabled === true;
+  } catch {
+    return false;
+  }
+}
+
+function blockOf(node: Text): Element {
+  return node.parentElement!.closest(BLOCK) ?? node.parentElement!;
+}
+
+/** Where each of the block's text nodes starts in its textContent. */
+function textOffsets(block: Element): Map<Text, number> {
+  const offsets = new Map<Text, number>();
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  let at = 0;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    offsets.set(node as Text, at);
+    at += (node as Text).data.length;
+  }
+  return offsets;
+}
+
+async function askLanguageCheck(blocks: CheckBlock[], lang: Language): Promise<(boolean[] | null)[]> {
+  const answers: (boolean[] | null)[] = [];
+  for (let i = 0; i < blocks.length; i += MAX_BLOCKS) {
+    const part = blocks.slice(i, i + MAX_BLOCKS);
+    const response = await requestBackend('/api/language-check', { language: lang, blocks: part });
+    if (response.status === 403) languageCheck = false;
+    let parsed: CheckAnswer | null = null;
+    if (response.ok) {
+      try {
+        parsed = JSON.parse(response.body) as CheckAnswer;
+      } catch {
+        parsed = null;
+      }
+    } else {
+      console.warn('Langfour: language check failed:', response.status, response.statusText);
+    }
+    part.forEach((_, j) => answers.push(parsed?.blocks[j]?.in_language ?? null));
+  }
+  return answers;
+}
+
+/**
+ * The words to leave unmarked: those the check said are not in the language,
+ * and those of paragraphs not checked yet. Asks about paragraphs that have
+ * stopped changing; returns whether some are still waiting for that.
+ */
+async function wordsInOtherLanguages(all: WordRange[], toMark: WordRange[], lang: Language): Promise<{ skip: Set<WordRange>; waiting: boolean }> {
+  const skip = new Set<WordRange>();
+  const order: Element[] = [];
+  const texts = new Map<Element, string>();
+  for (const w of all) {
+    const block = blockOf(w.node);
+    if (!texts.has(block)) {
+      texts.set(block, block.textContent ?? '');
+      order.push(block);
+    }
+  }
+  const byBlock = new Map<Element, WordRange[]>();
+  for (const w of toMark) {
+    const block = blockOf(w.node);
+    byBlock.set(block, [...(byBlock.get(block) ?? []), w]);
+  }
+
+  let waiting = false;
+  const pending: { key: string; block: CheckBlock }[] = [];
+  const keys = new Map<WordRange[], string[]>();
+  for (const [block, words] of byBlock) {
+    const text = texts.get(block)!;
+    const stable = lastText.get(block) === text;
+    const offsets = textOffsets(block);
+    const spans = words.map((w) => [offsets.get(w.node)! + w.start, offsets.get(w.node)! + w.end] as [number, number]);
+    const chunkKeys: string[] = [];
+    for (let i = 0; i < spans.length; i += MAX_WORDS) {
+      const chunk = spans.slice(i, i + MAX_WORDS);
+      const key = `${lang}\u0000${text}\u0000${chunk.join(';')}`;
+      chunkKeys.push(key);
+      if (checked.has(key) || pending.some((p) => p.key === key)) continue;
+      if (text.length > MAX_TEXT) {
+        checked.set(key, null);
+      } else if (!stable) {
+        waiting = true;
+      } else {
+        const at = order.indexOf(block);
+        const near = (from: number, to: number) => order.slice(Math.max(0, from), to).map((b) => texts.get(b)).join('\n');
+        pending.push({ key, block: {
+          text,
+          before: near(at - CONTEXT_BLOCKS, at).slice(-MAX_CONTEXT),
+          after: near(at + 1, at + 1 + CONTEXT_BLOCKS).slice(0, MAX_CONTEXT),
+          words: chunk,
+        } });
+      }
+    }
+    keys.set(words, chunkKeys);
+  }
+  for (const block of order) lastText.set(block, texts.get(block)!);
+
+  if (pending.length) {
+    const answers = await askLanguageCheck(pending.map((p) => p.block), lang);
+    pending.forEach((p, i) => checked.set(p.key, answers[i]));
+  }
+
+  for (const [words, chunkKeys] of keys) {
+    words.forEach((w, i) => {
+      const key = chunkKeys[Math.floor(i / MAX_WORDS)];
+      if (!checked.has(key)) skip.add(w);
+      else if (checked.get(key)?.[i % MAX_WORDS] === false) skip.add(w);
+    });
+  }
+  return { skip, waiting };
+}
+
 async function markConversation(): Promise<void> {
   if (!enabled || !language) return;
   const words = wordsIn(document);
@@ -122,11 +269,25 @@ async function markConversation(): Promise<void> {
     console.info(`Langfour: ${words.length} words on the page, ${byToken.size} checked as ${LANGUAGES[language].name}`);
   }
 
+  const toMark = words.filter(({ token }) => {
+    const status = byToken.get(token)?.status;
+    return status === 'new' || status === 'learning';
+  });
+  let skip = new Set<WordRange>();
+  if (languageCheck) {
+    const result = await wordsInOtherLanguages(words, toMark, language);
+    if (!enabled) return;
+    skip = result.skip;
+    // Nothing on the page may change again; look once more after a pause.
+    if (result.waiting) scheduleRefresh();
+  }
+
   const newRanges: Range[] = [];
   const learningRanges: Range[] = [];
-  for (const { node, start, end, token } of words) {
-    const word = byToken.get(token);
-    if (!word || (word.status !== 'new' && word.status !== 'learning')) continue;
+  for (const w of toMark) {
+    if (skip.has(w)) continue;
+    const { node, start, end, token } = w;
+    const word = byToken.get(token)!;
     // The text may have changed while the background was answering.
     if (!node.isConnected || node.data.slice(start, end) !== token) continue;
     const range = new Range();
@@ -175,7 +336,8 @@ async function turnOn(): Promise<void> {
   // time marking is switched on it starts from what the background says now.
   byToken.clear();
   reported = false;
-  language = await loadLanguage();
+  lastText = new WeakMap();
+  [language, languageCheck] = await Promise.all([loadLanguage(), loadLanguageCheck()]);
   if (!enabled) return;
   if (!language) {
     setButton('failed');

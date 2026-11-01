@@ -3,7 +3,7 @@
 // transcripts, with untimed passages instead of subtitle cues.
 
 import { Language } from './languages';
-import { hostOf } from './pageTitle';
+import { hostOf, isLyricsPage } from './pageTitle';
 import { StoredArticle } from './readerArticles';
 
 export type LibraryKind = 'article' | 'song';
@@ -26,12 +26,9 @@ export interface LibraryImport {
   chunks: Passage[];
 }
 
-// Lyrics pages read like articles to the extractor, but belong under Music.
-const LYRICS_HOSTS = ['genius.com', 'letras.com', 'letras.mus.br', 'musixmatch.com', 'azlyrics.com', 'lyrics.com', 'songtexte.com', 'paroles.net', 'testitesti.org', 'angolotesti.it'];
-
+/** For articles saved before the reader said what they were. */
 export function kindOf(url: string | null | undefined): LibraryKind {
-  const host = hostOf(url);
-  return host && LYRICS_HOSTS.some((h) => host === h || host.endsWith(`.${h}`)) ? 'song' : 'article';
+  return isLyricsPage(url) ? 'song' : 'article';
 }
 
 /**
@@ -44,7 +41,7 @@ export function buildLibraryImport(article: StoredArticle, passages: Passage[], 
     .map(({ text, block }) => ({ text: text.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim(), ...(block && { block }) }))
     .filter((passage) => passage.text);
   if (chunks.length === 0) return null;
-  const kind = kindOf(article.url);
+  const kind = article.kind ?? kindOf(article.url);
   const site = article.siteName || hostOf(article.url) || null;
   // "Tití Me Preguntó Lyrics" on Genius; the song is the part before.
   const rawTitle = (article.title || '').trim() || chunks[0].text.slice(0, 80);

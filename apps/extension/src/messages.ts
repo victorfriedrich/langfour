@@ -13,6 +13,8 @@ export type ArticleData = {
   url?: string | null;
   siteName?: string | null;
   byline?: string | null;
+  /** A song's byline is its artist, and its paragraphs are stanzas. */
+  kind?: 'article' | 'song';
 };
 
 export type ArticleExtractionResponse = {
@@ -55,6 +57,9 @@ export type ClassifyWordsResponse =
   | { ok: true; words: ClassifiedWord[] }
   | { ok: false; error: string };
 
+// Where words were read, as word_events.source has it.
+export type ExposureSource = 'reader' | 'video';
+
 // The user's history with one word, from word_progress
 // (apps/api/sql/word_progress.sql). Timestamps are ISO strings.
 export type WordProgress = {
@@ -90,6 +95,9 @@ export type BackgroundMessage =
   | { type: 'OPEN_READER'; tabId: number }
   | { type: 'REFRESH_KNOWN_WORDS'; language: string }
   | { type: 'CLASSIFY_WORDS'; language: string; tokens: string[] }
+  // Words the user read (exposure.ts); the background keeps the learning
+  // and new ones and logs them.
+  | { type: 'RECORD_EXPOSURE'; language: string; tokens: string[]; source: ExposureSource; media: string }
   | { type: 'WORD_PROGRESS'; wordId: number }
   | { type: 'GET_ACCOUNT' }
   | { type: 'SET_LANGUAGE'; language: Language }

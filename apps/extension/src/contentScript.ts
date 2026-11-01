@@ -5,7 +5,7 @@ import { Language, toLanguage } from './languages';
 import { extractArticle, layoutJudge } from './articleExtraction';
 import { getStoredWords } from './wordstorage';
 import { BackendRequest, BackendResponse, ContentScriptMessage, sendToBackground } from './messages';
-import { BackendRequestEvent, BackendResponseEvent, KnownWordsEvent } from './types';
+import { BackendRequestEvent, BackendResponseEvent, CaptionExposureEvent, KnownWordsEvent } from './types';
 import { isAllowedHost } from './siteApi';
 import { getErrorMessage } from './errors';
 
@@ -142,6 +142,7 @@ document.addEventListener('backend-request', ((event: CustomEvent<BackendRequest
 // active tab. Only install the subtitle UI on the sites it actually supports;
 // unsupported pages need the EXTRACT_ARTICLE listener below and nothing else.
 if (isAllowedHost(location.host)) {
+  relayCaptionExposure();
   if (process.env.EXTENSION_TARGET === 'safari') {
     // Safari applies the page's CSP to <script>/<link> tags pointing at the
     // extension, and YouTube's script-src blocks them. So the Safari manifest
@@ -156,6 +157,24 @@ if (isAllowedHost(location.host)) {
       injectJs('src/youtubeBookmark.js');
     }
   }
+}
+
+// Caption words index.ts saw watched (captionExposure.ts), on to the
+// background to be logged as seen. Like the backend relay, `event.detail` is
+// page-controlled: the host page can log words as seen for the signed-in
+// user, nothing more, so the shape is checked and the rest left to the
+// server's limits.
+const MAX_EXPOSURE_TOKENS = 2000;
+function relayCaptionExposure(): void {
+  document.addEventListener('caption-exposure', ((event: CustomEvent<CaptionExposureEvent>) => {
+    const { media, tokens } = event.detail ?? {};
+    const language = prefs && determineLanguage(prefs);
+    if (!language || typeof media !== 'string' || !media || media.length > 500) return;
+    if (!Array.isArray(tokens)) return;
+    const words = tokens.filter((t): t is string => typeof t === 'string' && t.length <= 64).slice(0, MAX_EXPOSURE_TOKENS);
+    if (!words.length) return;
+    sendToBackground({ type: 'RECORD_EXPOSURE', language, tokens: words, source: 'video', media });
+  }) as EventListener);
 }
 
 /**

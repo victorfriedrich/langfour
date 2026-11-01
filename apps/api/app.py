@@ -12,9 +12,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, confloat, conint
 
 from auth import AuthMiddleware, get_current_user
-from database import initialize_cache
+from database import cached_word_id, initialize_cache
+from exposure_routes import router as exposure_router
 from flashcards import router as flashcards_router
 from grammar_routes import router as grammar_router
+from language_check import router as language_check_router
 from languages import require_code
 from mcp_auth import router as mcp_auth_router
 from mcp_server import mcp
@@ -41,7 +43,7 @@ from remnote_sync import sync_router as remnote_sync_router
 from remnote_sync import web_router as remnote_web_router
 from text_article_parsing import parse_article
 from tts import router as tts_router
-from utils import get_video_words
+from utils import get_video_words, is_special_character
 from videoparsing import main as process_video
 
 app = FastAPI()
@@ -134,6 +136,8 @@ app.include_router(remnote_pair_router, prefix="/pair/remnote", tags=["remnote"]
 app.include_router(mcp_auth_router)
 app.include_router(tts_router, tags=["tts"])
 app.include_router(grammar_router, tags=["grammar"])
+app.include_router(language_check_router, tags=["language-check"])
+app.include_router(exposure_router, tags=["exposure"])
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 
@@ -577,6 +581,13 @@ async def get_imported_media(
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
+def _tokens_from_cache(text: str, language: str) -> list[dict]:
+    """Like parse(), but only from the word cache: no model calls, nothing written."""
+    return [{"content": group, "id": cached_word_id(group, language)}
+            if group.strip() and not is_special_character(group) else {"content": group}
+            for group in group_text(text)]
+
+
 @app.get("/api/media/{media_id}")
 async def get_imported_media_item(
     media_id: str,
@@ -586,7 +597,7 @@ async def get_imported_media_item(
 ):
     """One of the signed-in user's Library items, with its text."""
     try:
-        return {"media": get_media(store, str(current_user.id), media_id, language)}
+        return {"media": get_media(store, str(current_user.id), media_id, language, _tokens_from_cache)}
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Media not found: {media_id}") from exc
     except ValueError as error:

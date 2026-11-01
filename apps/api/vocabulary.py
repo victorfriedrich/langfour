@@ -15,6 +15,9 @@ what it reports back about texts the user read with it.
     a text the user chose to read (docs/plans/learner-word-data-model.md:
     exposure counts only what the user chose to read or hear, never every
     word an AI wrote).
+  - record_seen: the same rows for words the extension saw the user read in
+    the reader or in a video's captions, once per word per page or video
+    (context.media), however often the client sends them.
   - set_word_status: move words of the user's list between learning and
     known, as the web app's "Move to known" does. Back to learning, the
     userwords trigger gives the word a Langfour card again.
@@ -33,7 +36,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from practice import PracticeStore
 from supabase_client import supabase
@@ -41,6 +44,8 @@ from supabase_client import supabase
 Language = Literal["es", "de", "it", "fr"]
 SOURCE = "chatgpt"
 MAX_TEXT = 20_000
+MAX_MEDIA = 500
+MAX_SEEN = 2000  # word ids per record_seen call
 # Words listed per status in a text's score; the percentages cover all.
 LISTED = 40
 
@@ -108,6 +113,15 @@ class ExposureSummary(BaseModel):
     recorded: int  # distinct learning or new words logged as read
 
 
+class SeenRequest(BaseModel):
+    source: Literal["reader", "video"]
+    # Where it was read: "youtube:<id>" or the page's URL. Words are logged
+    # once per media.
+    media: str = Field(min_length=1, max_length=MAX_MEDIA)
+    # Learning and new words, as the extension classified them.
+    word_ids: list[int] = Field(min_length=1, max_length=MAX_SEEN)
+
+
 class StatusChange(BaseModel):
     changed: list[str]    # now in the requested status, including any already in it
     not_found: list[str]  # not in the user's list in that language, or turned off
@@ -161,6 +175,16 @@ class VocabularyStore:
             res = self.db.table("words").select("id, root, translation").in_("id", chunk).execute()
             for r in res.data or []:
                 out[r["id"]] = r
+        return out
+
+    def exposed(self, user_id: str, media: str, word_ids: list[int]) -> set[int]:
+        """Which of these words already have an exposure logged for this media."""
+        out: set[int] = set()
+        for chunk in _chunks(word_ids, _IN_CHUNK):
+            res = (self.db.table("word_events").select("word_id")
+                   .eq("user_id", user_id).eq("kind", "exposure")
+                   .eq("context->>media", media).in_("word_id", chunk).execute())
+            out |= {r["word_id"] for r in res.data or []}
         return out
 
     def insert_events(self, rows: list[dict]) -> int:
@@ -282,6 +306,21 @@ def record_exposure(store: VocabularyStore, user_id: str, language: str,
     recorded = store.insert_events([
         {"user_id": user_id, "word_id": w, "kind": "exposure", "source": SOURCE}
         for w in word_ids
+    ])
+    return ExposureSummary(recorded=recorded)
+
+
+def record_seen(store: VocabularyStore, user_id: str, req: SeenRequest) -> ExposureSummary:
+    asked = sorted(set(req.word_ids))
+    # Words merged away since the extension's dictionary was downloaded are
+    # dropped rather than failing the whole batch on the foreign key.
+    known_ids = set(store.words(asked))
+    fresh = [w for w in asked if w in known_ids]
+    logged = store.exposed(user_id, req.media, fresh) if fresh else set()
+    recorded = store.insert_events([
+        {"user_id": user_id, "word_id": w, "kind": "exposure", "source": req.source,
+         "context": {"media": req.media}}
+        for w in fresh if w not in logged
     ])
     return ExposureSummary(recorded=recorded)
 

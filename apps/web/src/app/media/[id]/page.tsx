@@ -32,7 +32,7 @@ function MediaVocabularyContent() {
     else router.push('/media');
   }, [router]);
 
-  if (error) return <div className="min-h-screen bg-white"><div className="max-w-3xl px-4 py-10 sm:px-8"><p className="text-sm text-red-600">{error}</p><button onClick={() => router.push('/media')} className="mt-4 text-sm text-indigo-600 hover:text-indigo-700">Back to Media</button></div></div>;
+  if (error) return <div className="min-h-screen bg-white"><div className="mx-auto max-w-3xl px-4 py-10 sm:px-8"><p className="text-sm text-red-600">{error}</p><button onClick={() => router.push('/media')} className="mt-4 text-sm text-indigo-600 hover:text-indigo-700">Back to Media</button></div></div>;
   if (!media) return <div className="flex min-h-screen items-center justify-center bg-white"><Loader2 className="h-6 w-6 animate-spin text-gray-400"/></div>;
 
   return <><Wordpanel videoId={media.id} videoTitle={media.title} transcript={media.chunks} variant="page" source="media" eyebrow={KIND[media.type] ?? 'Text'} onClose={close}/>{confirmationCount > 0 && <ConfirmationPopup count={confirmationCount} onClose={() => router.push('/media')}/>}</>;

@@ -4,15 +4,15 @@ import type { CardLike } from '../../../../remnote-plugin/src/stats';
 import ProgressOverview from './ProgressOverview';
 
 const DAY_MS = 86_400_000;
-const word = (root: string, addedAt: number | null, cards: CardLike[] = [], translation: string | null = null) => ({
+const word = (root: string, cards: CardLike[] = [], translation: string | null = null) => ({
   remId: root,
   wordId: 0,
   root,
   language: 'es',
   translation,
   cards,
-  addedAt,
 });
+const saved = (root: string, addedAt: number) => ({ wordId: 0, root, language: 'es', addedAt });
 /** A card answered "again" at each of these days ago, due again tomorrow. */
 const forgotten = (...daysAgo: number[]): CardLike => ({
   remId: 'r',
@@ -21,14 +21,14 @@ const forgotten = (...daysAgo: number[]): CardLike => ({
 });
 
 it('lists only the days of this week on which words were saved', () => {
-  render(<ProgressOverview words={[word('el techo', Date.now() - 1000), word('el vino', Date.now() - 1000)]} />);
+  render(<ProgressOverview words={[word('el techo')]} saved={[saved('el techo', Date.now() - 1000), saved('el vino', Date.now() - 1000)]} />);
   const rows = screen.getAllByRole('listitem');
   expect(rows).toHaveLength(1);
   expect(rows[0]).toHaveTextContent('Today2el techo, el vino');
 });
 
 it('says so when no words were saved this week', () => {
-  render(<ProgressOverview words={[word('el techo', null)]} />);
+  render(<ProgressOverview words={[word('el techo')]} saved={[saved('el vino', Date.now() - 8 * DAY_MS)]} />);
   expect(screen.queryByRole('listitem')).toBeNull();
   expect(screen.getByText('No words saved in the last seven days.')).toBeInTheDocument();
 });
@@ -36,7 +36,8 @@ it('says so when no words were saved this week', () => {
 it('lists forgotten words, most often forgotten first, with meaning and when', () => {
   render(
     <ProgressOverview
-      words={[word('la llave', null, [forgotten(9)], 'the key'), word('el techo', null, [forgotten(20, 3, 1)], 'the roof')]}
+      words={[word('la llave', [forgotten(9)], 'the key'), word('el techo', [forgotten(20, 3, 1)], 'the roof')]}
+      saved={[]}
     />,
   );
   const section = screen.getByRole('heading', { name: /Forgotten recently/ }).closest('section')!;
@@ -48,8 +49,8 @@ it('lists forgotten words, most often forgotten first, with meaning and when', (
 });
 
 it('shows five forgotten words until asked for all', () => {
-  const words = Array.from({ length: 7 }, (_, i) => word(`w${i}`, null, [forgotten(2)]));
-  render(<ProgressOverview words={words} />);
+  const words = Array.from({ length: 7 }, (_, i) => word(`w${i}`, [forgotten(2)]));
+  render(<ProgressOverview words={words} saved={[]} />);
   const section = screen.getByRole('heading', { name: /Forgotten recently/ }).closest('section')!;
   expect(within(section).getAllByRole('listitem')).toHaveLength(5);
   fireEvent.click(within(section).getByRole('button', { name: 'Show all 7' }));
@@ -63,7 +64,7 @@ it('lists learned words whose review is late, and how many dropped this week', (
     repetitionHistory: [{ date: Date.now() - daysAgo * DAY_MS, score: 1 }],
     nextRepetitionTime: Date.now() - (daysAgo - 30) * DAY_MS,
   });
-  render(<ProgressOverview words={[word('la lámpara', null, [late(60)], 'the lamp'), word('el vino', null, [late(48)])]} />);
+  render(<ProgressOverview words={[word('la lámpara', [late(60)], 'the lamp'), word('el vino', [late(48)])]} saved={[]} />);
   const section = screen.getByRole('heading', { name: /Overdue/ }).closest('section')!;
   const rows = within(section).getAllByRole('listitem');
   expect(rows[0]).toHaveTextContent('el vino3 days ago');

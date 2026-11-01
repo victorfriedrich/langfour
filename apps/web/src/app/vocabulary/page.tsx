@@ -57,11 +57,15 @@ const PracticePage = () => {
   const { status: remnote, error: remnoteError, disconnect } = useRemnoteConnection();
   const { user, language } = useContext(UserContext);
   const languageCode = language?.code;
-  const { words: allProgressWords, error: progressError } = usePracticeProgress(provider, refreshTrigger);
+  const { words: allProgressWords, saved: allSavedWords, error: progressError } = usePracticeProgress(provider, refreshTrigger);
   // The language chosen in the sidebar, like everything else in the app.
   const progressWords = useMemo(
     () => allProgressWords && (languageCode ? allProgressWords.filter((w) => w.language === languageCode) : allProgressWords),
     [allProgressWords, languageCode],
+  );
+  const savedWords = useMemo(
+    () => allSavedWords && (languageCode ? allSavedWords.filter((w) => w.language === languageCode) : allSavedWords),
+    [allSavedWords, languageCode],
   );
   const { words: overdueWords, isLoading: overdueLoading, error: overdueError } = useOverdueWords(refreshTrigger, { source: sourceFilter ?? undefined });
 
@@ -133,7 +137,7 @@ const PracticePage = () => {
     <ProtectedRoute>
       <div className="min-h-screen bg-white">
         {/* Flat: no cards. Sections are separated by space and a hairline. */}
-        <div className="max-w-3xl px-4 py-10 sm:px-8">
+        <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
           <header className="mb-10 flex min-h-9 flex-wrap items-center justify-between gap-3">
             <h1 className="text-2xl font-semibold text-gray-900">Practice</h1>
             {revealed && provider && (
@@ -172,7 +176,7 @@ const PracticePage = () => {
                 {progressError ? (
                   <p className="text-sm text-red-600">{progressError}</p>
                 ) : (
-                  progressWords && <ProgressOverview words={progressWords} />
+                  progressWords && savedWords && <ProgressOverview words={progressWords} saved={savedWords} />
                 )}
               </section>
             )}

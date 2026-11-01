@@ -79,7 +79,8 @@ mcp = FastMCP(
         "for them or teach grammar, read get_grammar_overview once and follow the guide it "
         "returns; fetch get_grammar_details only for the chapters the conversation is about. "
         "Teach in the guide's small lessons, one step per message, and don't move on until "
-        "a concept is learned. Whenever the user writes or says something in the language "
+        "a concept is learned. A lesson on a broad topic too: concept by concept, with "
+        "exercises after each one, never the whole topic explained first. Whenever the user writes or says something in the language "
         "you correct, in a lesson or not, record it with record_grammar in that same turn: "
         "every sentence and exercise answer, with each grammar mistake in it (several "
         "concepts on one result when one note covers them, and a mistake no concept covers "
@@ -259,8 +260,9 @@ async def add_words_tool(
     title="See grammar progress", readOnlyHint=True, openWorldHint=False,
 ))
 async def get_grammar_overview_tool(ctx: Context, language: Language | None = None) -> GrammarOverview:
-    """Where the user is in their grammar book: every chapter in teaching order, which
-    ones they started or finished, how many concepts they've learned and how many are
+    """Where the user is in their grammar book: every chapter in teaching order with the
+    id and title of each of its concepts, which chapters they started or finished, how
+    many concepts they've learned and how many are
     fading (due to be worked back in), the mistakes they made that are still to revise,
     with a note on each, plus a guide for teaching from it.
 

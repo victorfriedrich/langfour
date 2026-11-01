@@ -28,7 +28,12 @@ interface MissingWord {
 const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, variant = 'panel', transcript = [], eyebrow = 'Episode vocabulary', source = 'videos' }) => {
   const [selectedWords, setSelectedWords] = useState<number[]>([]);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
-  const { recommendedWords, flaggedWords, isLoading, error } = useMissingWords(videoId, source);
+  const missing = useMissingWords(videoId, source);
+  const { isLoading, error } = missing;
+  // Beside the text, the list follows it: each word where it first appears.
+  const firstSeen = useMemo(() => firstAppearance(transcript), [transcript]);
+  const recommendedWords = useMemo(() => inTextOrder(missing.recommendedWords, firstSeen), [missing.recommendedWords, firstSeen]);
+  const flaggedWords = useMemo(() => inTextOrder(missing.flaggedWords, firstSeen), [missing.flaggedWords, firstSeen]);
   const allWords = useMemo(() => [...recommendedWords, ...flaggedWords], [recommendedWords, flaggedWords]);
   const { addWordsToUserwords } = useUpdateUserwords();
   const { seenVideos, markVideoAsSeen } = useSeenVideos(0);
@@ -92,7 +97,7 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
         {!fullPage && <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={0} fullPage={false} onClose={onClose} />}
         {isLoading
           ? <div className={`flex flex-1 items-center justify-center ${fullPage ? 'min-h-[70vh]' : ''}`}><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
-          : <p className={fullPage ? 'max-w-3xl px-4 py-10 text-sm text-red-600 sm:px-8' : 'mx-auto mt-8 max-w-xl rounded-xl border border-red-200 bg-red-50 p-5 text-center text-red-700'}>{error}</p>}
+          : <p className={fullPage ? 'mx-auto max-w-3xl px-4 py-10 text-sm text-red-600 sm:px-8' : 'mx-auto mt-8 max-w-xl rounded-xl border border-red-200 bg-red-50 p-5 text-center text-red-700'}>{error}</p>}
       </div>
     );
   }
@@ -101,16 +106,19 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
     <WordGroup label="Recommended" words={recommendedWords} startIndex={0} selectedWords={selectedWords} fullPage={fullPage} toggleGroup={() => toggleWordGroup(recommendedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />
     {flaggedWords.length > 0 && <WordGroup label="Flagged" words={flaggedWords} startIndex={recommendedWords.length} selectedWords={selectedWords} fullPage={fullPage} collapsible toggleGroup={() => toggleWordGroup(flaggedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
   </>;
+  const header = <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={allWords.length} fullPage={fullPage} wide={showText} onClose={onClose} />;
+  // Beside the text, the list is a column of its own: it starts level with the
+  // page's top, stays put while the text scrolls and scrolls on its own,
+  // down to the window's bottom edge.
   const body = !showText
-    ? <div className={fullPage ? 'max-w-3xl flex-1 space-y-10 px-4 pb-32 sm:px-8' : 'flex-1 space-y-4 overflow-y-auto'}>{list}</div>
-    : <div className="px-4 pb-32 sm:px-8 lg:grid lg:grid-cols-[minmax(0,42rem)_20rem] lg:items-start lg:gap-16">
-      <MediaText chunks={transcript} newIds={newIds} selectedIds={selectedWords} onWordClick={toggleWordSelection} />
-      <aside className="mt-12 space-y-10 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">{list}</aside>
+    ? <>{header}<div className={fullPage ? 'mx-auto max-w-3xl flex-1 space-y-10 px-4 pb-32 sm:px-8' : 'flex-1 space-y-4 overflow-y-auto'}>{list}</div></>
+    : <div className="mx-auto max-w-[70rem] px-4 sm:px-8 lg:grid lg:grid-cols-[minmax(0,42rem)_20rem] lg:items-start lg:gap-16">
+      <div className="pb-12 lg:pb-32">{header}<MediaText chunks={transcript} newIds={newIds} selectedIds={selectedWords} onWordClick={toggleWordSelection} /></div>
+      <aside className="space-y-10 pb-32 lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto lg:pb-10 lg:pt-10">{list}</aside>
     </div>;
 
   return (
     <div className={`${shell} ${isShiftPressed ? 'select-none' : ''}`} onClick={(event) => event.stopPropagation()}>
-      <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={allWords.length} fullPage={fullPage} wide={showText} onClose={onClose} />
       {body}
       {/* The page uses the app's floating selection pill; the panel keeps its bar for the Seen button. */}
       {fullPage
@@ -122,9 +130,26 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
 
 function Header({ videoTitle, eyebrow, wordCount, fullPage, wide = false, onClose }: { videoTitle: string; eyebrow: string; wordCount: number; fullPage: boolean; wide?: boolean; onClose: (count: number) => void }) {
   if (fullPage) {
-    return <header className={`${wide ? 'max-w-[42rem]' : 'max-w-3xl'} px-4 pb-8 pt-10 sm:px-8`}><button onClick={() => onClose(0)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900"><ArrowLeft size={16}/>Back to Media</button><h1 className="text-2xl font-semibold text-gray-900">{videoTitle}</h1><p className="mt-1 text-sm text-gray-500">{eyebrow}{wordCount > 0 && ` · ${wordCount} new ${wordCount === 1 ? 'word' : 'words'}`}</p></header>;
+    // Wide, it sits in the text's column, which already has the page gutter.
+    return <header className={`${wide ? '' : 'mx-auto max-w-3xl px-4 sm:px-8'} pb-8 pt-10`}><button onClick={() => onClose(0)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900"><ArrowLeft size={16}/>Back to Media</button><h1 className="text-2xl font-semibold text-gray-900">{videoTitle}</h1><p className="mt-1 text-sm text-gray-500">{eyebrow}{wordCount > 0 && ` · ${wordCount} new ${wordCount === 1 ? 'word' : 'words'}`}</p></header>;
   }
   return <header className="border-b p-4"><div className="flex items-center justify-between"><button onClick={() => onClose(0)} aria-label="Close" className="order-2 text-gray-500 hover:text-gray-700"><X size={24}/></button><div className="min-w-0 flex-1"><h1 className="text-lg font-semibold">{videoTitle}</h1></div></div></header>;
+}
+
+/** Each word id's first place in the text, as [chunk, offset]. */
+function firstAppearance(chunks: TranscriptChunk[]): Map<number, [number, number]> {
+  const seen = new Map<number, [number, number]>();
+  chunks.forEach((chunk, index) => {
+    for (const [start, , id] of chunk.words ?? []) if (!seen.has(id)) seen.set(id, [index, start]);
+  });
+  return seen;
+}
+
+/** Words in the order they first appear; any the text doesn't mark keep their order, after the rest. */
+function inTextOrder(words: MissingWord[], seen: Map<number, [number, number]>): MissingWord[] {
+  if (seen.size === 0) return words;
+  const at = (word: MissingWord) => seen.get(word.id) ?? [Infinity, 0];
+  return [...words].sort((a, b) => at(a)[0] - at(b)[0] || at(a)[1] - at(b)[1]);
 }
 
 // Every word is already in the learner's vocabulary (or there were none).
@@ -135,13 +160,13 @@ function NothingNew({ fullPage, onClose }: { fullPage: boolean; onClose: (count:
 function WordGroup({ label, words, startIndex, selectedWords, fullPage, collapsible = false, toggleGroup, handleWordClick, toggleWordSelection }: { label: string; words: MissingWord[]; startIndex: number; selectedWords: number[]; fullPage: boolean; collapsible?: boolean; toggleGroup: () => void; handleWordClick: (event: React.MouseEvent, word: MissingWord, index: number) => void; toggleWordSelection: (id: number) => void }) {
   const [expanded, setExpanded] = useState(!collapsible);
   const allSelected = words.length > 0 && words.every((word) => selectedWords.includes(word.id));
-  return <section><div className={fullPage ? 'flex w-full items-center justify-between border-b border-gray-100 pb-2 text-sm' : 'flex w-full items-center justify-between border-b bg-gray-50 px-4 py-2 text-sm'}><button onClick={() => collapsible ? setExpanded((current) => !current) : undefined} className={`flex items-center gap-2 ${collapsible ? 'hover:text-indigo-700' : 'cursor-default'}`} aria-expanded={expanded}>{fullPage ? <span className="font-medium text-gray-900">{label}<span className="ml-1.5 tabular-nums text-gray-400">{words.length}</span></span> : <span className="font-medium">Select {label} ({words.length})</span>}{collapsible && (expanded ? <ChevronUp size={16}/> : <ChevronDown size={16}/>)}</button>{expanded && <button onClick={toggleGroup} className={fullPage ? 'text-indigo-600 hover:text-indigo-700' : 'font-semibold text-indigo-600'}>{allSelected ? 'Clear all' : 'Select all'}</button>}</div>{expanded && <ul className={fullPage ? 'divide-y divide-gray-100' : 'space-y-2 p-4'}>{words.map((word, index) => <WordItem key={word.id} word={word} index={startIndex + index} selected={selectedWords.includes(word.id)} fullPage={fullPage} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection}/>)}</ul>}</section>;
+  return <section><div className={fullPage ? 'flex w-full items-center justify-between border-b border-gray-100 pb-2 text-sm' : 'flex w-full items-center justify-between border-b bg-gray-50 px-4 py-2 text-sm'}><button onClick={() => collapsible ? setExpanded((current) => !current) : undefined} className={`flex items-center gap-2 ${collapsible ? 'hover:text-indigo-700' : 'cursor-default'}`} aria-expanded={expanded}>{fullPage ? <span className="font-medium text-gray-900">{label}<span className="ml-1.5 tabular-nums text-gray-400">{words.length}</span></span> : <span className="font-medium">Select {label} ({words.length})</span>}{collapsible && (expanded ? <ChevronUp size={16}/> : <ChevronDown size={16}/>)}</button>{expanded && <button onClick={toggleGroup} className={fullPage ? 'text-indigo-600 hover:text-indigo-700' : 'font-semibold text-indigo-600'}>{allSelected ? 'Clear all' : 'Select all'}</button>}</div>{/* On the page, words and translations line up in columns, as on Vocabulary. */}{expanded && <ul className={fullPage ? 'grid grid-cols-[auto_fit-content(11rem)_minmax(0,1fr)] divide-y divide-gray-100' : 'space-y-2 p-4'}>{words.map((word, index) => <WordItem key={word.id} word={word} index={startIndex + index} selected={selectedWords.includes(word.id)} fullPage={fullPage} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection}/>)}</ul>}</section>;
 }
 
 function WordItem({ word, index, selected, fullPage, handleWordClick, toggleWordSelection }: { word: MissingWord; index: number; selected: boolean; fullPage: boolean; handleWordClick: (event: React.MouseEvent, word: MissingWord, index: number) => void; toggleWordSelection: (id: number) => void }) {
   const checkbox = <input type="checkbox" checked={selected} onChange={() => toggleWordSelection(word.id)} className={fullPage ? 'mt-0.5 h-4 w-4 shrink-0 text-indigo-600' : 'form-checkbox ml-3 h-5 w-5 text-indigo-600'} onClick={(event) => event.stopPropagation()}/>;
   if (fullPage) {
-    return <li className="flex cursor-pointer items-start gap-3 py-3 pl-1 text-sm hover:bg-gray-50" onClick={(event) => handleWordClick(event, word, index)}>{checkbox}<p className="min-w-0"><span className="font-medium text-gray-900">{word.content}</span><span className="ml-3 text-gray-500">{word.translation || 'No translation'}</span></p></li>;
+    return <li className="col-span-3 grid cursor-pointer grid-cols-subgrid items-start gap-x-3 py-3 pl-1 text-sm hover:bg-gray-50" onClick={(event) => handleWordClick(event, word, index)}>{checkbox}<span className="min-w-0 font-medium text-gray-900">{word.content}</span><span className="min-w-0 text-gray-500">{word.translation || 'No translation'}</span></li>;
   }
   return <li className="flex cursor-pointer items-center justify-between border-b pb-2" onClick={(event) => handleWordClick(event, word, index)}><div className="flex min-w-0 flex-col"><span className="font-medium">{word.content}</span><span className="truncate text-sm text-slate-500">{word.translation || 'No translation'}</span></div>{checkbox}</li>;
 }

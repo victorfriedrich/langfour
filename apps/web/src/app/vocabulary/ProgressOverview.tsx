@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { summarize, type Summary } from '../../../../remnote-plugin/src/stats';
-import type { ProgressWord } from '../hooks/usePracticeProgress';
+import type { ProgressWord, SavedWord } from '../hooks/usePracticeProgress';
 
 // The chart's indigo, a lighter step for "learning" and a neutral for "not
 // started".
@@ -97,7 +97,7 @@ function startOfDay(ms: number) {
 }
 
 /** The words saved on each of the last seven days, newest day first. */
-function addedByDay(words: ProgressWord[], now: number) {
+function addedByDay(words: SavedWord[], now: number) {
   const today = startOfDay(now);
   // Day starts via the calendar, so a daylight-saving change doesn't shift them.
   const starts = Array.from({ length: 7 }, (_, i) => {
@@ -105,12 +105,12 @@ function addedByDay(words: ProgressWord[], now: number) {
     d.setDate(d.getDate() - i);
     return d.getTime();
   });
-  const days = starts.map((start) => ({ start, words: [] as ProgressWord[] }));
+  const days = starts.map((start) => ({ start, words: [] as SavedWord[] }));
   for (const word of words) {
-    if (word.addedAt === null || word.addedAt > now) continue;
-    days.find((d) => word.addedAt! >= d.start)?.words.push(word);
+    if (word.addedAt > now) continue;
+    days.find((d) => word.addedAt >= d.start)?.words.push(word);
   }
-  for (const day of days) day.words.sort((a, b) => b.addedAt! - a.addedAt!);
+  for (const day of days) day.words.sort((a, b) => b.addedAt - a.addedAt);
   return days;
 }
 
@@ -121,7 +121,7 @@ function addedDayLabel(start: number, i: number) {
 }
 
 /** One day's saved words on one line; a click shows them all. */
-function DayRow({ label, words }: { label: string; words: ProgressWord[] }) {
+function DayRow({ label, words }: { label: string; words: SavedWord[] }) {
   const [open, setOpen] = useState(false);
   const text = words.map((w) => w.root).join(', ');
   return (
@@ -248,10 +248,10 @@ function Forgotten({ slipping, words, now }: { slipping: Summary['slipping']; wo
 /** Learned / learning / not started, the 90-day trend, the words saved this
  *  week and the words overdue or forgotten recently, for whichever system schedules
  *  the reviews. */
-export default function ProgressOverview({ words }: { words: ProgressWord[] }) {
+export default function ProgressOverview({ words, saved }: { words: ProgressWord[]; saved: SavedWord[] }) {
   const [now] = useState(() => Date.now());
   const summary = useMemo(() => summarize(words, now), [words, now]);
-  const added = useMemo(() => addedByDay(words, now), [words, now]);
+  const added = useMemo(() => addedByDay(saved, now), [saved, now]);
   const addedThisWeek = added.reduce((n, d) => n + d.words.length, 0);
 
   if (words.length === 0) {

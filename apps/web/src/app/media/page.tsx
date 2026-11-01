@@ -68,7 +68,7 @@ function MediaPageContent() {
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="max-w-3xl px-4 py-10 sm:px-8">
+      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
         <header className="mb-8 flex flex-wrap items-end justify-between gap-4 sm:flex-nowrap">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold text-gray-900">Media</h1>

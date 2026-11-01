@@ -139,7 +139,7 @@ const LessonPage = () => {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-white">
-        <div className="max-w-3xl px-4 py-10 sm:px-8">
+        <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
           <Link href="/grammar" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
             <ArrowLeft size={14} /> Grammar
           </Link>
