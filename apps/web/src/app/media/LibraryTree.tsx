@@ -1,21 +1,24 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DragEvent, ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
+import { DndContext, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowDown, ArrowUp, Check, ChevronRight, CornerLeftUp, FileText, Film, Folder, FolderInput, FolderOpen, FolderPlus, GripVertical, MoreHorizontal, Music, Newspaper, Pencil, Trash2, Tv } from 'lucide-react';
+import { FileText, Film, Folder, FolderOpen, GripVertical, MoreHorizontal, Music, Newspaper, Tv } from 'lucide-react';
 import type { ImportedMediaSummary, MediaKind } from './api';
 import { MenuButton, MenuPanel, useDismiss } from './menu';
 import {
-  FOLDER_COLORS, MAX_FOLDER_DEPTH, addFolder, contains, countItems, findNode, keyOf, listFolders, moveNode, moveToRoot, newFolderId, removeFolder, shift, updateFolder,
+  MAX_FOLDER_DEPTH, addFolder, contains, countItems, drop, findNode, flatten, keyOf, listFolders, moveNode, moveToRoot, newFolderId, project, removeFolder, shift, updateFolder,
 } from './tree';
-import type { DropPosition, FolderColor, FolderNode, LayoutNode } from './tree';
+import type { FlatRow, FolderNode, LayoutNode } from './tree';
 
-// Each kind of item gets its own tint, and each folder the colour its owner
-// picked, so a long Library can be scanned by colour. Full class names, so
-// Tailwind keeps them.
+// Each kind of item gets its own tint, so a long Library can be scanned by
+// kind; folders all share the app's indigo. Full class names, so Tailwind
+// keeps them.
 const KIND: Record<MediaKind, { icon: LucideIcon; label: string; tile: string }> = {
   series: { icon: Tv, label: 'Episode', tile: 'bg-violet-50 text-violet-500' },
   movie: { icon: Film, label: 'Movie', tile: 'bg-amber-50 text-amber-500' },
@@ -23,15 +26,7 @@ const KIND: Record<MediaKind, { icon: LucideIcon; label: string; tile: string }>
   song: { icon: Music, label: 'Song', tile: 'bg-rose-50 text-rose-500' },
   text: { icon: FileText, label: 'Text', tile: 'bg-gray-100 text-gray-500' },
 };
-export const FOLDER_TONE: Record<FolderColor, { icon: string; swatch: string }> = {
-  indigo: { icon: 'text-indigo-500 fill-indigo-100', swatch: 'bg-indigo-400' },
-  sky: { icon: 'text-sky-500 fill-sky-100', swatch: 'bg-sky-400' },
-  emerald: { icon: 'text-emerald-500 fill-emerald-100', swatch: 'bg-emerald-400' },
-  amber: { icon: 'text-amber-500 fill-amber-100', swatch: 'bg-amber-400' },
-  rose: { icon: 'text-rose-500 fill-rose-100', swatch: 'bg-rose-400' },
-  violet: { icon: 'text-violet-500 fill-violet-100', swatch: 'bg-violet-400' },
-  gray: { icon: 'text-gray-400 fill-gray-100', swatch: 'bg-gray-400' },
-};
+const FOLDER_TILE = 'bg-indigo-50 text-indigo-500';
 
 const formatDuration = (seconds: number) => {
   const minutes = Math.round(seconds / 60);
@@ -55,7 +50,9 @@ const detailsOf = (media: ImportedMediaSummary) => {
   return [...parts, timeToFinish(media)].filter(Boolean).join(' · ');
 };
 
-const spring = { type: 'spring', stiffness: 520, damping: 38 } as const;
+// Rows inside a folder sit one icon further in, and dragging a row this far
+// sideways moves it one level in or out.
+const INDENT = 44;
 
 interface TreeProps {
   tree: LayoutNode[];
@@ -65,11 +62,13 @@ interface TreeProps {
   onRename: (folderId: string | null) => void;
 }
 
-type Drop = { key: string; position: DropPosition } | { key: 'end'; position: 'after' };
-
+// Dragging moves the row itself: it lifts out of the list and follows the
+// pointer while the other rows make room where it will land. The rows are
+// one flat list, each indented by its depth, as in an outliner.
 export default function LibraryTree({ tree, media, onChange, renaming, onRename }: TreeProps) {
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [drop, setDrop] = useState<Drop | null>(null);
+  const [active, setActive] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const [offsetX, setOffsetX] = useState(0);
   const [menu, setMenu] = useState<string | null>(null);
   // The row that just moved glows for a moment, so the eye can follow it.
   const [moved, setMoved] = useState<string | null>(null);
@@ -78,6 +77,21 @@ export default function LibraryTree({ tree, media, onChange, renaming, onRename 
     const timer = setTimeout(() => setMoved(null), 900);
     return () => clearTimeout(timer);
   }, [moved]);
+  // A drag ends with a click on the row it started on; that click mustn't
+  // open the item.
+  const dragged = useRef(false);
+
+  const rows = useMemo(
+    () => flatten(tree, true, active ?? undefined).filter((row) => row.node.type === 'folder' || media.has(row.node.id)),
+    [tree, active, media],
+  );
+  const landing = active && over ? project(rows, active, over, offsetX, INDENT) : null;
+
+  // Touch drags start after a short hold, so a swipe still scrolls the page.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 6 } }),
+  );
 
   const commit = (next: LayoutNode[], key?: string) => {
     if (next === tree) return;
@@ -85,200 +99,134 @@ export default function LibraryTree({ tree, media, onChange, renaming, onRename 
     if (key) setMoved(key);
   };
 
-  const endDrag = () => { setDragging(null); setDrop(null); };
-
-  const dragProps = (node: LayoutNode) => {
-    const key = keyOf(node);
-    return {
-      draggable: renaming !== node.id,
-      onDragStart: (event: DragEvent) => {
-        event.dataTransfer.setData('text/plain', key);
-        event.dataTransfer.effectAllowed = 'move';
-        setMenu(null);
-        // Restyling the row inside dragstart can cancel the drag in Chrome.
-        setTimeout(() => setDragging(key));
-      },
-      onDragEnd: endDrag,
-      onDragOver: (event: DragEvent<HTMLElement>) => {
-        if (!dragging || dragging === key) return;
-        const moving = findNode(tree, dragging);
-        if (!moving || (moving.type === 'folder' && contains(moving, key))) return;
-        const rect = event.currentTarget.getBoundingClientRect();
-        const y = (event.clientY - rect.top) / rect.height;
-        // A folder takes a drop on most of its row; an open one's lower edge
-        // sits on its first child, so dropping there puts the item inside too.
-        const position: DropPosition = node.type === 'folder'
-          ? (y < 0.3 ? 'before' : !node.open && y > 0.75 ? 'after' : 'inside')
-          : (y < 0.5 ? 'before' : 'after');
-        if (moveNode(tree, dragging, key, position) === tree) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-        if (drop?.key !== key || drop.position !== position) setDrop({ key, position });
-      },
-      onDrop: (event: DragEvent) => {
-        event.preventDefault();
-        if (dragging && drop?.key === key) commit(moveNode(tree, dragging, key, drop.position), dragging);
-        endDrag();
-      },
-    };
+  const reset = () => {
+    setActive(null); setOver(null); setOffsetX(0);
+    setTimeout(() => { dragged.current = false; });
   };
 
-  const ctx: LevelContext = { tree, media, commit, renaming, onRename, dragging, drop, setDrop, menu, setMenu, moved, dragProps };
+  const end = () => {
+    const at = rows.findIndex((row) => row.key === active);
+    const unchanged = landing && landing.parent === rows[at]?.parent && landing.after === (rows[at - 1]?.key ?? null);
+    if (active && landing && !unchanged) commit(drop(tree, active, landing.after, landing.parent), active);
+    reset();
+  };
+
+  const ctx: RowContext = { tree, media, commit, renaming, onRename, active, into: landing?.parent ?? null, menu, setMenu, moved };
 
   return (
-    <div onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDrop(null); }}>
-      <div className="border-b border-gray-100"><Level nodes={tree} depth={0} ctx={ctx}/></div>
-      <AnimatePresence>
-        {dragging && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            onDragOver={(event) => { event.preventDefault(); if (drop?.key !== 'end') setDrop({ key: 'end', position: 'after' }); }}
-            onDrop={(event) => { event.preventDefault(); commit(moveToRoot(tree, dragging, 'end'), dragging); endDrag(); }}
-          >
-            <div className={`mt-3 flex h-10 items-center justify-center rounded-lg border-2 border-dashed text-sm transition-colors ${drop?.key === 'end' ? 'border-indigo-300 bg-indigo-50 text-indigo-600' : 'border-gray-200 text-gray-400'}`}>
-              Move to the end
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <DndContext
+      sensors={sensors} collisionDetection={closestCenter}
+      onDragStart={({ active: start }) => { dragged.current = true; setMenu(null); setActive(String(start.id)); setOver(String(start.id)); }}
+      onDragMove={({ delta }) => setOffsetX(delta.x)}
+      onDragOver={({ over: target }) => setOver(target ? String(target.id) : null)}
+      onDragEnd={end}
+      onDragCancel={reset}
+    >
+      <SortableContext items={rows.map((row) => row.key)} strategy={verticalListSortingStrategy}>
+        <ul className="border-b border-gray-100" onClickCapture={(event) => { if (dragged.current) { event.preventDefault(); event.stopPropagation(); } }}>
+          {rows.map((row) => (
+            <SortableRow key={row.key} row={row} depth={row.key === active && landing ? landing.depth : row.depth} ctx={ctx}/>
+          ))}
+        </ul>
+      </SortableContext>
+    </DndContext>
   );
 }
 
-interface LevelContext {
+interface RowContext {
   tree: LayoutNode[];
   media: Map<string, ImportedMediaSummary>;
   commit: (next: LayoutNode[], key?: string) => void;
   renaming: string | null;
   onRename: (folderId: string | null) => void;
-  dragging: string | null;
-  drop: Drop | null;
-  setDrop: (drop: Drop | null) => void;
+  // The row being dragged, and the folder it would land in.
+  active: string | null;
+  into: string | null;
   menu: string | null;
   setMenu: (key: string | null) => void;
   moved: string | null;
-  dragProps: (node: LayoutNode) => Record<string, unknown>;
 }
 
-function Level({ nodes, depth, ctx }: { nodes: LayoutNode[]; depth: number; ctx: LevelContext }) {
+function SortableRow({ row, depth, ctx }: { row: FlatRow; depth: number; ctx: RowContext }) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id: row.key, disabled: ctx.renaming === row.node.id });
   return (
-    <ul>
-      {nodes.map((node) => (
-        <motion.li key={keyOf(node)} layout="position" transition={spring} className="border-t border-gray-100">
-          {node.type === 'folder'
-            ? <FolderRow folder={node} depth={depth} ctx={ctx}/>
-            : ctx.media.has(node.id) && <ItemRow item={ctx.media.get(node.id)!} nodeKey={keyOf(node)} ctx={ctx}/>}
-        </motion.li>
-      ))}
-    </ul>
+    <li
+      ref={setNodeRef} {...listeners}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={`relative animate-in fade-in duration-200 ${isDragging ? 'z-20' : ctx.menu === row.key ? 'z-30' : ''}`}
+    >
+      {/* The hairline starts at the row's indent, so it shows what is inside what. */}
+      <div style={{ marginLeft: depth * INDENT }} className={`border-t transition-[margin-left] duration-150 ${isDragging ? 'border-transparent' : 'border-gray-100'}`}>
+        {row.node.type === 'folder'
+          ? <FolderRow folder={row.node} depth={depth} lifted={isDragging} ctx={ctx}/>
+          : <ItemRow item={ctx.media.get(row.node.id)!} nodeKey={row.key} lifted={isDragging} ctx={ctx}/>}
+      </div>
+    </li>
   );
 }
 
-// The shared shell of a row: drop line above or below, the glow after a
-// move, and a grip in the gutter on hover. It reaches 8px past the list on
-// each side so the hover fill has room, while the content lines up with the
-// page title.
-function RowShell({ nodeKey, node, ctx, children }: { nodeKey: string; node: LayoutNode; ctx: LevelContext; children: ReactNode }) {
-  const target = ctx.drop?.key === nodeKey ? ctx.drop.position : null;
+// The shared shell of a row: lifted while dragged, tinted when a dragged row
+// would land in it, and glowing just after a move, with a grip in the gutter
+// on hover. It reaches 8px past the list on each side so the hover fill has
+// room, while the content lines up with the page title.
+function RowShell({ nodeKey, lifted, ctx, children }: { nodeKey: string; lifted: boolean; ctx: RowContext; children: ReactNode }) {
+  const state = lifted ? 'cursor-grabbing bg-white shadow-lg shadow-gray-900/10 ring-1 ring-gray-900/5 scale-[1.01]'
+    : ctx.into === nodeKey ? 'bg-indigo-50'
+      : ctx.moved === nodeKey ? 'bg-indigo-50'
+        : ctx.active ? '' : 'hover:bg-gray-50';
   return (
-    <div
-      {...ctx.dragProps(node)}
-      className={`group relative -mx-2 flex min-h-14 items-center gap-3 rounded-lg px-2 py-2 transition-colors ${
-        ctx.dragging === nodeKey ? 'opacity-40' : ''} ${
-        target === 'inside' ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-200' : ctx.moved === nodeKey ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
-    >
-      <GripVertical size={14} aria-hidden className="absolute -left-4 hidden cursor-grab text-gray-300 opacity-0 group-hover:opacity-100 sm:block"/>
-      {(target === 'before' || target === 'after') && (
-        <span aria-hidden className={`pointer-events-none absolute left-2 right-2 z-10 h-0.5 rounded-full bg-indigo-500 ${target === 'before' ? '-top-px' : '-bottom-px'}`}>
-          <span className="absolute -left-1.5 -top-[3px] h-2 w-2 rounded-full border-2 border-indigo-500 bg-white"/>
-        </span>
-      )}
+    <div className={`group relative -mx-2 flex min-h-14 items-center gap-3 rounded-lg px-2 py-2 transition-[background-color,box-shadow,transform] duration-150 ${state}`}>
+      {!ctx.active && <GripVertical size={14} aria-hidden className="absolute -left-4 hidden cursor-grab text-gray-300 opacity-0 group-hover:opacity-100 sm:block"/>}
       {children}
     </div>
   );
 }
 
-function FolderRow({ folder, depth, ctx }: { folder: FolderNode; depth: number; ctx: LevelContext }) {
+function FolderRow({ folder, depth, lifted, ctx }: { folder: FolderNode; depth: number; lifted: boolean; ctx: RowContext }) {
   const key = keyOf(folder);
-  const Icon = folder.open ? FolderOpen : Folder;
-  const target = ctx.drop?.key === key && ctx.drop.position === 'inside';
+  const Icon = folder.open && !lifted ? FolderOpen : Folder;
   const count = countItems(folder);
   const toggle = () => ctx.commit(updateFolder(ctx.tree, folder.id, { open: !folder.open }));
   return (
-    <>
-      <RowShell nodeKey={key} node={folder} ctx={ctx}>
-        <span className="grid h-8 w-8 shrink-0 place-items-center">
-          <Icon size={20} strokeWidth={1.75} className={`${FOLDER_TONE[folder.color].icon} transition-transform duration-200 ${target ? '-rotate-6 scale-125' : ''}`}/>
-        </span>
-        {ctx.renaming === folder.id ? (
-          <RenameInput folder={folder} ctx={ctx}/>
-        ) : (
-          <button onClick={toggle} onDoubleClick={() => ctx.onRename(folder.id)} aria-expanded={folder.open} className="min-w-0 flex-1 self-stretch truncate text-left text-sm font-medium text-gray-900">
-            {folder.name}
-          </button>
+    <RowShell nodeKey={key} lifted={lifted} ctx={ctx}>
+      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${FOLDER_TILE}`}>
+        <Icon size={16} strokeWidth={2}/>
+      </span>
+      {ctx.renaming === folder.id ? (
+        <RenameInput folder={folder} ctx={ctx}/>
+      ) : (
+        <button onClick={toggle} onDoubleClick={() => ctx.onRename(folder.id)} aria-expanded={folder.open} className="min-w-0 flex-1 self-stretch truncate text-left text-sm font-medium text-gray-900">
+          {folder.name}
+        </button>
+      )}
+      <RowMenu nodeKey={key} label={folder.name} ctx={ctx} under={count === 0 ? 'Empty' : `${count} ${count === 1 ? 'item' : 'items'}`}>
+        {(close) => (
+          <>
+            <MenuButton onClick={() => { close(); ctx.onRename(folder.id); }}>Rename</MenuButton>
+            {depth + 1 < MAX_FOLDER_DEPTH && (
+              <MenuButton onClick={() => {
+                close();
+                const id = newFolderId();
+                ctx.commit(addFolder(ctx.tree, { type: 'folder', id, name: 'New folder', color: folder.color, open: true, children: [] }, folder.id));
+                ctx.onRename(id);
+              }}>New folder inside</MenuButton>
+            )}
+            <MoveActions nodeKey={key} ctx={ctx} close={close}/>
+            <div className="my-1 h-px bg-gray-100"/>
+            {/* Its items stay in the Library, one level up. */}
+            <MenuButton danger onClick={() => { close(); ctx.commit(removeFolder(ctx.tree, folder.id)); }}>Delete folder</MenuButton>
+          </>
         )}
-        <RowMenu nodeKey={key} label={folder.name} ctx={ctx} under={`${count} ${count === 1 ? 'item' : 'items'}`}>
-          {(close) => (
-            <>
-              <MenuButton icon={Pencil} onClick={() => { close(); ctx.onRename(folder.id); }}>Rename</MenuButton>
-              {depth + 1 < MAX_FOLDER_DEPTH && (
-                <MenuButton icon={FolderPlus} onClick={() => {
-                  close();
-                  const id = newFolderId();
-                  ctx.commit(addFolder(ctx.tree, { type: 'folder', id, name: 'New folder', color: folder.color, open: true, children: [] }, folder.id));
-                  ctx.onRename(id);
-                }}>New folder inside</MenuButton>
-              )}
-              <div className="flex items-center gap-1.5 px-2.5 py-2" role="group" aria-label="Folder colour">
-                {FOLDER_COLORS.map((color) => (
-                  <button key={color} aria-label={`Colour ${color}`} aria-pressed={folder.color === color}
-                    onClick={() => ctx.commit(updateFolder(ctx.tree, folder.id, { color }))}
-                    className={`grid h-5 w-5 place-items-center rounded-full ${FOLDER_TONE[color].swatch} transition-transform hover:scale-110 ${folder.color === color ? 'ring-2 ring-gray-900/20 ring-offset-1' : ''}`}>
-                    {folder.color === color && <Check size={11} strokeWidth={3} className="text-white"/>}
-                  </button>
-                ))}
-              </div>
-              <MoveActions nodeKey={key} ctx={ctx} close={close}/>
-              <div className="my-1 h-px bg-gray-100"/>
-              <MenuButton icon={Trash2} danger onClick={() => { close(); ctx.commit(removeFolder(ctx.tree, folder.id)); }}>
-                Delete folder<span className="ml-auto text-xs text-gray-400">keeps items</span>
-              </MenuButton>
-            </>
-          )}
-        </RowMenu>
-      </RowShell>
-      <AnimatePresence initial={false}>
-        {folder.open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0, overflow: 'hidden' }}
-            animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
-            exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-          >
-            {/* Indented by one icon, so the hairlines show what is inside. */}
-            <div className="pl-11">
-              {folder.children.length > 0 ? <Level nodes={folder.children} depth={depth + 1} ctx={ctx}/> : (
-                <div
-                  onDragOver={(event) => { if (ctx.dragging && moveNode(ctx.tree, ctx.dragging, key, 'inside') !== ctx.tree) { event.preventDefault(); if (!target) ctx.setDrop({ key, position: 'inside' }); } }}
-                  onDrop={(event) => { event.preventDefault(); if (ctx.dragging) ctx.commit(moveNode(ctx.tree, ctx.dragging, key, 'inside'), ctx.dragging); ctx.setDrop(null); }}
-                  className={`flex h-11 items-center border-t border-gray-100 text-sm transition-colors ${target ? 'text-indigo-500' : 'text-gray-400'}`}
-                >
-                  Empty
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
+      </RowMenu>
+    </RowShell>
   );
 }
 
-function ItemRow({ item, nodeKey, ctx }: { item: ImportedMediaSummary; nodeKey: string; ctx: LevelContext }) {
+function ItemRow({ item, nodeKey, lifted, ctx }: { item: ImportedMediaSummary; nodeKey: string; lifted: boolean; ctx: RowContext }) {
   const { icon: Icon, label, tile } = KIND[item.type] ?? KIND.text;
   const details = detailsOf(item);
   return (
-    <RowShell nodeKey={nodeKey} node={{ type: 'item', id: item.id }} ctx={ctx}>
+    <RowShell nodeKey={nodeKey} lifted={lifted} ctx={ctx}>
       <Link href={`/media/${encodeURIComponent(item.id)}`} draggable={false} aria-label={`Open vocabulary for ${item.title}`} className="flex min-w-0 flex-1 items-center gap-3 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
         <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tile}`} aria-label={label}>
           <Icon size={16} strokeWidth={2}/>
@@ -295,7 +243,7 @@ function ItemRow({ item, nodeKey, ctx }: { item: ImportedMediaSummary; nodeKey: 
   );
 }
 
-function RenameInput({ folder, ctx }: { folder: FolderNode; ctx: LevelContext }) {
+function RenameInput({ folder, ctx }: { folder: FolderNode; ctx: RowContext }) {
   const done = useRef(false);
   const finish = (value: string | null) => {
     if (done.current) return;
@@ -320,7 +268,7 @@ function RenameInput({ folder, ctx }: { folder: FolderNode; ctx: LevelContext })
 
 // Up, down and into a folder: the way to rearrange without dragging, on a
 // phone or from the keyboard.
-function MoveActions({ nodeKey, ctx, close }: { nodeKey: string; ctx: LevelContext; close: () => void }) {
+function MoveActions({ nodeKey, ctx, close }: { nodeKey: string; ctx: RowContext; close: () => void }) {
   const moving = findNode(ctx.tree, nodeKey);
   if (!moving) return null;
   const run = (next: LayoutNode[]) => { close(); ctx.commit(next, nodeKey); };
@@ -329,19 +277,18 @@ function MoveActions({ nodeKey, ctx, close }: { nodeKey: string; ctx: LevelConte
   const atRoot = ctx.tree.some((node) => keyOf(node) === nodeKey);
   return (
     <>
-      <MenuButton icon={ArrowUp} onClick={() => run(shift(ctx.tree, nodeKey, -1))}>Move up</MenuButton>
-      <MenuButton icon={ArrowDown} onClick={() => run(shift(ctx.tree, nodeKey, 1))}>Move down</MenuButton>
+      <MenuButton onClick={() => run(shift(ctx.tree, nodeKey, -1))}>Move up</MenuButton>
+      <MenuButton onClick={() => run(shift(ctx.tree, nodeKey, 1))}>Move down</MenuButton>
       {(targets.length > 0 || !atRoot) && (
         <>
           <div className="my-1 h-px bg-gray-100"/>
-          <p className="flex items-center gap-2 px-2.5 pb-1 pt-1.5 text-xs font-medium text-gray-400"><FolderInput size={13}/>Move to</p>
+          <p className="px-2.5 pb-1 pt-1.5 text-xs text-gray-500">Move to</p>
           <div className="max-h-48 overflow-y-auto">
-            {!atRoot && <MenuButton icon={CornerLeftUp} onClick={() => run(moveToRoot(ctx.tree, nodeKey, 'start'))}>Top level</MenuButton>}
+            {!atRoot && <MenuButton onClick={() => run(moveToRoot(ctx.tree, nodeKey, 'start'))}>Top level</MenuButton>}
             {targets.map(({ folder, depth }) => (
-              <button key={folder.id} onClick={() => run(moveNode(ctx.tree, nodeKey, keyOf(folder), 'inside'))}
-                className="flex w-full items-center gap-2 rounded-md py-1.5 pr-2.5 text-left text-sm text-gray-700 hover:bg-gray-100" style={{ paddingLeft: 10 + depth * 14 }}>
-                <Folder size={15} strokeWidth={1.75} className={`shrink-0 ${FOLDER_TONE[folder.color].icon}`}/>
-                <span className="truncate">{folder.name}</span>
+              <button key={folder.id} role="menuitem" onClick={() => run(moveNode(ctx.tree, nodeKey, keyOf(folder), 'inside'))}
+                className="block w-full truncate rounded-md py-1.5 pr-2.5 text-left text-sm text-gray-700 hover:bg-gray-100" style={{ paddingLeft: 10 + depth * 12 }}>
+                {folder.name}
               </button>
             ))}
           </div>
@@ -354,7 +301,7 @@ function MoveActions({ nodeKey, ctx, close }: { nodeKey: string; ctx: LevelConte
 // The "…" button sits over the row's date (or a folder's count) and replaces
 // it on hover, so the right edge lines up with the header. Touch screens have
 // no hover: there the button always shows and the date is left out.
-function RowMenu({ nodeKey, label, under, ctx, children }: { nodeKey: string; label: string; under: string; ctx: LevelContext; children: (close: () => void) => ReactNode }) {
+function RowMenu({ nodeKey, label, under, ctx, children }: { nodeKey: string; label: string; under: string; ctx: RowContext; children: (close: () => void) => ReactNode }) {
   const open = ctx.menu === nodeKey;
   const ref = useRef<HTMLDivElement>(null);
   const { setMenu } = ctx;
@@ -370,7 +317,7 @@ function RowMenu({ nodeKey, label, under, ctx, children }: { nodeKey: string; la
       </button>
       <span className={`hidden text-sm tabular-nums text-gray-400 sm:block [@media(hover:none)]:invisible ${open ? 'invisible' : 'group-hover:invisible peer-focus-visible:invisible'}`}>{under}</span>
       <AnimatePresence>
-        {open && <MenuPanel className="right-0 top-full mt-1 w-60">{children(close)}</MenuPanel>}
+        {open && <MenuPanel className="right-0 top-full mt-1 w-48">{children(close)}</MenuPanel>}
       </AnimatePresence>
     </div>
   );

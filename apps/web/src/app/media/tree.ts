@@ -149,3 +149,84 @@ export function contains(folder: FolderNode, key: string): boolean {
 }
 
 export const newFolderId = () => `f${Math.random().toString(36).slice(2, 10)}`;
+
+// Dragging works on the tree as one flat list of the rows on screen, each
+// with its depth, the way an outliner does: the row being dragged lands
+// between two others, and how far it is dragged sideways picks its depth.
+
+export interface FlatRow { key: string; node: LayoutNode; depth: number; parent: string | null }
+
+/** Every row in display order. With `visibleOnly`, a closed folder's
+ * contents are left out, as are the contents of `hide` (the folder being
+ * dragged, whose contents travel with it). */
+export function flatten(tree: LayoutNode[], visibleOnly = false, hide?: string): FlatRow[] {
+  const rows: FlatRow[] = [];
+  const walk = (nodes: LayoutNode[], depth: number, parent: string | null) => {
+    for (const node of nodes) {
+      const key = keyOf(node);
+      rows.push({ key, node, depth, parent });
+      if (node.type === 'folder' && (!visibleOnly || (node.open && key !== hide))) walk(node.children, depth + 1, key);
+    }
+  };
+  walk(tree, 0, null);
+  return rows;
+}
+
+/** Where `active` lands if dropped over `over`, `offsetX` px to the side
+ * of where it started: its depth and the folder it goes into (null for the
+ * top level), and the row it lands after, or null if it can't go there. Rows
+ * only nest in folders: dropped between a folder and its first row, a row goes
+ * into it; under a closed or empty folder, only when dragged to the right. */
+export function project(rows: FlatRow[], active: string, over: string, offsetX: number, indent: number): { depth: number; parent: string | null; after: string | null } | null {
+  const from = rows.findIndex((row) => row.key === active);
+  const to = rows.findIndex((row) => row.key === over);
+  if (from < 0 || to < 0) return null;
+  const moving = rows[from];
+  const order = [...rows];
+  order.splice(to, 0, ...order.splice(from, 1));
+  const prev = order[to - 1];
+  const next = order[to + 1];
+  const max = !prev ? 0 : prev.node.type === 'folder' ? prev.depth + 1 : prev.depth;
+  // It can't sit shallower than the row after it, or that row would change folder.
+  const min = next ? Math.min(next.depth, max) : 0;
+  let depth = Math.min(max, Math.max(min, moving.depth + Math.round(offsetX / indent)));
+  if (moving.node.type === 'folder') {
+    depth = Math.min(depth, MAX_FOLDER_DEPTH - height(moving.node));
+    if (depth < min) return null;
+  }
+  // The folder it goes into is the nearest row above it one level up.
+  let parent: string | null = null;
+  for (let i = to - 1; i >= 0 && depth > 0; i--) {
+    if (order[i].depth === depth - 1) { parent = order[i].key; break; }
+  }
+  return { depth, parent, after: prev?.key ?? null };
+}
+
+/** The tree after dropping `active` right after the row `after` (null: at
+ * the very top), inside `parent`. A folder dropped into keeps its other
+ * contents after the new arrival, and opens. */
+export function drop(tree: LayoutNode[], active: string, after: string | null, parent: string | null): LayoutNode[] {
+  const rows = flatten(tree);
+  const from = rows.findIndex((row) => row.key === active);
+  if (from < 0) return tree;
+  // A folder takes its contents along: the rows under it that sit deeper.
+  let count = 1;
+  while (from + count < rows.length && rows[from + count].depth > rows[from].depth) count++;
+  const [moving, ...inside] = rows.splice(from, count);
+  const at = after === null ? 0 : rows.findIndex((row) => row.key === after) + 1;
+  if (after !== null && at === 0) return tree;
+  rows.splice(at, 0, { ...moving, parent }, ...inside);
+  // Rebuild: each row joins its parent's children in list order.
+  const built = new Map<string, LayoutNode>();
+  const top: LayoutNode[] = [];
+  for (const row of rows) {
+    const node: LayoutNode = row.node.type === 'folder'
+      ? { ...row.node, children: [], open: row.key === parent ? true : row.node.open }
+      : row.node;
+    built.set(row.key, node);
+    const into = row.parent === null ? null : built.get(row.parent);
+    if (into?.type === 'folder') into.children.push(node);
+    else top.push(node);
+  }
+  return top;
+}
