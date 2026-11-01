@@ -1,6 +1,8 @@
 import json
 import os
 
+import numpy as np
+
 from paths import PROCESSED_DIR, processed_dir
 
 # Global cache for categories
@@ -37,14 +39,19 @@ def initialize_categories():
         print(language)
         language_categories_cache[language] = load_categories_for_language(language)
 
-def load_documents(base_folder: str) -> tuple[list[list[int]], list[str], list[str], list[str]]:
+Document = tuple[np.ndarray, np.ndarray]
+
+
+def load_documents(base_folder: str) -> tuple[list[Document], list[str], list[str], list[str]]:
     """
     Load all documents from the base_folder. Extract category from each JSON file.
     Instead of loading full JSON content (which contains dictionaries for each word),
-    we convert each document’s content into a list of word IDs (integers).
-    
+    each document becomes its distinct word ids and how often each is spoken.
+
     Returns:
-        documents (List[List[int]]): Each document is now a list of word IDs.
+        documents: per document, (word ids ascending, int32; times spoken, int32).
+            The counts are what make coverage a share of the words heard; a set
+            of ids counted "que" said 80 times once.
         filenames (List[str]): List of filenames corresponding to the documents.
         categories (List[str]): List of categories corresponding to each document.
         titles (List[str]): Display titles corresponding to each document.
@@ -68,12 +75,16 @@ def load_documents(base_folder: str) -> tuple[list[list[int]], list[str], list[s
                     
                     # Extract content and convert to list of word IDs
                     content = data.get('content', [])
-                    if isinstance(content, list):
-                        # Each word should be a dict; extract its 'id'
-                        word_ids = {word.get("id") for word in content if isinstance(word, dict) and word.get("id") is not None}
-                        documents.append(sorted(word_ids))
-                    else:
-                        documents.append([])
+                    if not isinstance(content, list):
+                        content = []
+                    # Each word should be a dict; extract its 'id'
+                    spoken = np.fromiter(
+                        (word["id"] for word in content
+                         if isinstance(word, dict) and word.get("id") is not None),
+                        dtype=np.int64,
+                    )
+                    word_ids, counts = np.unique(spoken, return_counts=True)
+                    documents.append((word_ids.astype(np.int32), counts.astype(np.int32)))
                     
                     filenames.append(filename)
                     categories.append(category)

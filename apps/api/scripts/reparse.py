@@ -12,7 +12,7 @@ matched back then ("ha" at a standalone root instead of haber). This resolves
 every word token again, the way the word cache does (root name first, then
 forms, the older root winning a shared form, invalid roots excluded). A token
 nothing matches gets no id rather than entering dictionary creation. After
-writing, delete the recommender's document_term_matrix.npz so it is
+writing, delete the recommender's document_term_counts.npz so it is
 rebuilt from the new ids.
 """
 import argparse

@@ -5,10 +5,24 @@ import json
 import sys
 from pathlib import Path
 
+# recommender.MATRIX_FILE and MATRIX_WEIGHTS, repeated so pack_corpus.sh can
+# run this with the system python3, without the API's dependencies.
+MANIFEST = "document_term_counts.npz.meta.json"
+WEIGHTS = "counts"
+
 
 def build(language_dir: Path) -> None:
-    manifest_path = language_dir / "document_term_matrix.npz.meta.json"
+    manifest_path = language_dir / MANIFEST
+    # Packing without the counts matrix ships a corpus every API boot has to
+    # rebuild (13k transcripts read before serving), so refuse instead.
+    if not manifest_path.exists():
+        raise SystemExit(
+            f"{manifest_path} is missing: start the API once against this data "
+            "dir so the recommender builds the counts matrix, then pack again."
+        )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("weights") != WEIGHTS:
+        raise SystemExit(f"{manifest_path} is not a counts matrix; rebuild it before packing.")
     filenames = manifest["filenames"]
 
     titles = []
