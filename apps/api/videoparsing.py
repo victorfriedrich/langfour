@@ -161,6 +161,35 @@ PIECE_MIN_S, PIECE_MAX_S = 15.0, 28.0
 MIN_WORDS_PER_SECOND = 1.0     # normal speech is 2-3
 
 
+class Transcript(str):
+    """A transcript's text plus where in the video each part was said.
+
+    `cues` is [[start_s, end_s, text], ...]: a caption track's own cues, or
+    Whisper's pieces (15-28 s, so only coarse). `source` says which. The
+    processed JSON keeps them for speaking rate and clip times; the text alone
+    had dropped both. A str, so every caller that only wants the text is
+    unchanged."""
+
+    def __new__(cls, text: str, cues: list, source: str):
+        self = super().__new__(cls, text)
+        self.cues, self.source = cues, source
+        return self
+
+
+def cues_file(txt_filename: str) -> str:
+    """The timings saved next to a transcript's .txt, so a rerun that finds
+    the .txt (main() skips straight to processing) still has them."""
+    return txt_filename.removesuffix(".txt") + ".cues.json"
+
+
+def write_transcript(txt_filename: str, text: str) -> None:
+    with open(txt_filename, "w", encoding="utf-8") as txt_file:
+        txt_file.write(text)
+    if isinstance(text, Transcript):
+        with open(cues_file(txt_filename), "w", encoding="utf-8") as fh:
+            json.dump({"source": text.source, "cues": text.cues}, fh, ensure_ascii=False)
+
+
 def frame_energy(audio_file: str):
     """Loudness per FRAME_S, smoothed over ~300 ms so a cut lands in a pause
     between words rather than in a one-frame dip inside one."""
@@ -212,8 +241,9 @@ def whisper(audio_file: str, language: str) -> str:
     return ""
 
 
-def transcribe_in_pieces(audio_file: str, language: str, transcribe=whisper) -> str:
-    """The whole file's text, transcribed as pieces all sent at once."""
+def transcribe_in_pieces(audio_file: str, language: str, transcribe=whisper) -> Transcript:
+    """The whole file's text, transcribed as pieces all sent at once, with
+    each piece's span as its cue."""
     import subprocess
     import tempfile
     from concurrent.futures import ThreadPoolExecutor
@@ -231,14 +261,19 @@ def transcribe_in_pieces(audio_file: str, language: str, transcribe=whisper) -> 
 
         with ThreadPoolExecutor(max_workers=64) as pool:   # DeepInfra allows 200
             texts = list(pool.map(piece, spans))
-        for i, ((start, end), text) in enumerate(zip(spans, texts, strict=True)):
+        cues = []
+        for (start, end), text in zip(spans, texts, strict=True):
             if len(text.split()) < (end - start) * MIN_WORDS_PER_SECOND:
                 middle = quietest(energy, start + (end - start) * 0.3, start + (end - start) * 0.7)
+                halves = [(start, middle), (middle, end)]
                 with ThreadPoolExecutor(max_workers=2) as pool:
-                    retry = " ".join(pool.map(piece, [(start, middle), (middle, end)]))
-                if len(retry.split()) > len(text.split()):
-                    texts[i] = retry
-    return " ".join(t for t in texts if t)
+                    retry = list(pool.map(piece, halves))
+                if len(" ".join(retry).split()) > len(text.split()):
+                    cues += [[round(s, 2), round(e, 2), t] for (s, e), t in zip(halves, retry, strict=True)]
+                    continue
+            cues.append([round(start, 2), round(end, 2), text])
+    cues = [c for c in cues if c[2]]
+    return Transcript(" ".join(c[2] for c in cues), cues, "whisper")
 
 
 def transcribe_audio(mp3_filename, video_id, language):
@@ -253,8 +288,7 @@ def transcribe_audio(mp3_filename, video_id, language):
     try:
         start_time = time.time()
         text = transcribe_in_pieces(mp3_filename, language)
-        with open(txt_filename, "w", encoding='utf-8') as txt_file:
-            txt_file.write(text)
+        write_transcript(txt_filename, text)
         end_time = time.time()
         print(f"Audio transcription completed in {end_time - start_time:.2f} seconds")
         return txt_filename
@@ -496,14 +530,22 @@ def caption_track(info: dict, language: str) -> str | None:
     return None
 
 
-def json3_text(data: dict) -> str:
-    """The cue text of a json3 track, without [Música]-style sound tags."""
+def json3_cues(data: dict) -> list:
+    """[[start_s, end_s, text], ...] for a json3 track, without [Música]-style
+    sound tags. Automatic tracks roll, so neighbouring cues can overlap."""
     cues = []
     for event in data.get("events") or []:
-        text = "".join(seg.get("utf8", "") for seg in event.get("segs") or []).strip()
+        text = re.sub(r"\s+", " ", "".join(seg.get("utf8", "") for seg in event.get("segs") or [])).strip()
         if text and not (text.startswith("[") and text.endswith("]")):
-            cues.append(text)
-    return re.sub(r"\s+", " ", " ".join(cues)).strip()
+            start = event.get("tStartMs", 0) / 1000
+            cues.append([round(start, 2), round(start + event.get("dDurationMs", 0) / 1000, 2), text])
+    return cues
+
+
+def json3_text(data: dict) -> Transcript:
+    """The cue text of a json3 track, carrying the cues it came from."""
+    cues = json3_cues(data)
+    return Transcript(" ".join(c[2] for c in cues), cues, "captions")
 
 
 def fetch_transcript(info: dict, language: str, session: requests.Session | None = None) -> str:
@@ -575,8 +617,7 @@ def main(url, language: str, use_captions=True, use_proxy=True):
     if use_captions:
         text = caption_text(info, language, proxied, session)
         if text:
-            with open(txt_filename, "w", encoding='utf-8') as txt_file:
-                txt_file.write(text)
+            write_transcript(txt_filename, text)
             process_transcription(txt_filename, video_id, title, creator, tags, views, length, date_added, language)
             return
 
@@ -622,6 +663,12 @@ def process_transcription(txt_filename, video_id, title, creator, tags, views, l
             "content": content,
             "dateAdded": date_added
         }
+        # Timings exist for transcripts made since they were kept; older
+        # .txt files have none, and their JSON simply lacks the two keys.
+        if os.path.exists(cues_file(txt_filename)):
+            with open(cues_file(txt_filename), encoding="utf-8") as fh:
+                timing = json.load(fh)
+            result["cueSource"], result["cues"] = timing["source"], timing["cues"]
 
         language = require_code(language)
 
