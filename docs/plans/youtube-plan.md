@@ -199,14 +199,14 @@ minutes and leave. Badges answer that before the click, everywhere on YouTube.
 
 ![YouTube search with fit badges](youtube-plan/f3-fit-badges.png)
 
-*Badges show heard coverage and new words; unindexed videos show "Add to Langfour" on hover.
-For now there are no bands and no "too easy" state: the higher the number, the more you'll
+*A badge holds one short value, the heard coverage; hovering it adds the number of new words.
+Unindexed videos show "+ Add" on hover. For now there are no bands and no "too easy" state: the higher the number, the more you'll
 understand, and every list sorts highest first. Bands can come back once completion data shows
 where people actually give up.*
 
 - A content-script observer collects video ids from Home, Search, channel pages and the watch-page
   sidebar as they render. One batched call, `POST /api/videos/fit` with up to 50 ids, returns
-  coverage, new words and length; each id is one sparse row times the known-words vector.
+  coverage, and new words for the hover; each id is one sparse row times the known-words vector.
 - Cached per learner for 12 hours. Selectors live in one module with a daily smoke test against
   youtube.com, since YouTube's markup changes often.
 - Editing youtube.com goes against the spirit of YouTube's terms, as many learning extensions do;
@@ -230,7 +230,7 @@ The button is a plain toggle: outline when off, filled when on, like today's Boo
 Indexing progress is shown, but not on the button. The queue will be processed on the server, so a
 favourited channel's videos arrive within hours, and the progress is real feedback that the
 favourite did something. It lives on the channel's Langfour tab, phrased as what the learner gets:
-"34 of 212 videos added · 9 at your level so far". The line updates as videos land and disappears
+"34 of 212 videos added · 9 at your level". The line updates as videos land and disappears
 once the channel is done. If a channel stalls (no captions, failed downloads), the line drops the
 total rather than showing a number that never moves: "34 videos added".
 
@@ -250,15 +250,9 @@ How a channel is described:
   Spanish videos (`video_quality.py`): A, the grammar level (A1–C1); C, content in the words; D,
   developed thought; E, transferable language. A channel's profile is the median of its videos, so
   it covers the whole corpus with no backfill.
-- **Pace, roughly, from what is stored:** words per minute of video (transcript words divided by
-  the video's `length`). It works for every video, captioned or Whispered, and the corpus median is
-  150. It is a rough number: neither path keeps timings. Caption cues arrive with `tStartMs`, but
-  `json3_text` keeps only the text, and Whisper returns plain text per piece. So intros, music and
-  pauses all count as slow speech. Good enough for a fast/slow hint for the existing corpus.
-  Transcripts ingested from now on keep their timings (`cues` and `cueSource` in the processed
-  JSON, on branch `feat/caption-timings`): a caption track's own cues, or Whisper's 15–28 s
-  pieces. Speaking rate is words over the time the cues cover, with overlaps merged, since
-  automatic tracks roll. The same cues give clip times for moment cards.
+- **Not pace.** Speaking rate isn't shown. Transcripts ingested since PR 111 keep their timings
+  (`cues` and `cueSource` in the processed JSON: a caption track's own cues, or Whisper's 15–28 s
+  pieces), which moment cards need for clip times and which could give pace later.
 - **From learners:** "Yes, clear / Too fast / Hard accent", asked after a learner's first few
   videos from a channel. The only signal on pronunciation and accent.
 - **Country:** from `channels.list` (1 quota unit).
@@ -352,9 +346,9 @@ channel opens up.
 
 ![Core words card for a channel](youtube-plan/f8-core-words.png)
 
-*Real numbers: a learner with 2,449 known words and the 13 indexed videos from BasiCH. The bars
-show how much of the channel's speech they'd understand, now and after the 25 words. Shown on the
-channel's Langfour tab after a favourite, and on a series page in the Library.*
+*Real numbers: a learner with 2,449 known words and the 13 indexed videos from BasiCH, who would
+understand 86.6% of the channel's speech now and 95.5% after the 25 words. Shown on the channel's
+Langfour tab after a favourite, under the progress line, and on a series page in the Library.*
 
 - Core words: unknown words that appear in at least half of a channel's (or series') videos,
   ordered by how often they're spoken, up to 25.
@@ -366,18 +360,25 @@ channel's Langfour tab after a favourite, and on a series page in the Library.*
 - Netflix and Prime series work the same way from the Library's episodes, which carry series and
   season.
 
-## Roadmap
+## Build order
 
-| Phase | Weeks | Features |
+Five PRs cover features 1–4 and 8.
+
+| PR | Contents | Needs |
 |---|---|---|
-| Honest numbers | 1 | 1 alone: counts in the matrix, stuck-word cleanup, learning-account advice in onboarding |
-| Fix the basics | 2–3 | 2 desktop watched mark and history-page read · 3 fit badges · 4 Favourite button and queue bump |
-| Feed | 3–6 | 5 per-learner feed and Home shelf · 6 labels, feedback and history cleanup · 4 channel profiles and "also love" · 2 recaps of phone watching |
-| Watch and keep | 6–10 | 7 flow panel with autoplay · 8 core words |
+| 1 · Coverage counts every word | `int16` count matrix, a binary view for distinct new words and words to learn, a `"weights": "counts"` marker that old matrix files fail, tests, corpus repack. One fit function that 4 and 5 call. | nothing |
+| 2 · Stuck common words | A "Common words you never reviewed" tab on the Learning table with the dark pill, a one-time link in the popup, learning-account advice in onboarding, and the `como`/`vale`/`gracias` re-root fix. | nothing |
+| 3 · Watch signal + recap | `watch_events` with `videos_seen` as a view; watched at 70% played, with unmark; the history-page read after one consent; yesterday's recap. | nothing |
+| 4 · Fit badges | `POST /api/videos/fit`; an observer with all selectors in one module; badges with the percentage only; "+ Add" queues the video. | 1, server queue |
+| 5 · Favourite channels + core words | `channel_favourites`, Favourite replacing Bookmark, the queue bump and lifted cap, and the Langfour tab with the progress line and core words. | 1, server queue |
 
-Honest numbers ship alone in week 1 because every other feature reads them, and they help today's
-Videos page right away. The watch signal follows for the same reason. The Favourite
-button ships early so likes are piling up when the feed is built.
+PR 1 goes first because every later screen shows its numbers. PRs 2 and 3 don't read the matrix
+and touch other files, so they can run alongside it. PRs 4 and 5 wait for the server queue
+(`feat/backend-ingest-worker`), so "+ Add" and Favourite lead to indexed videos within hours.
+
+After these: the per-learner feed and Home shelf (5), steering YouTube's feed (6), the watch panel
+(7), and, once there are more learners, "Learners at your level also love" and the clarity
+question.
 
 ## Later
 
