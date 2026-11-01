@@ -65,7 +65,7 @@ it('shows the saved folders, with new imports at the top level', async () => {
   vi.mocked(getLibrary).mockResolvedValueOnce({ media: library, layout: songs });
   render(<MediaPage />);
   const folder = await screen.findByRole('button', { name: /^Songs/, expanded: true });
-  expect(folder).toHaveTextContent('1');
+  expect(screen.getByText('1 item')).toBeInTheDocument();
   const links = screen.getAllByRole('link').map((link) => link.getAttribute('aria-label'));
   expect(links).toEqual(['Open vocabulary for Prueba', 'Open vocabulary for El tranvía vuelve', 'Open vocabulary for Canción de prueba']);
   fireEvent.click(folder);
