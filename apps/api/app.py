@@ -24,10 +24,12 @@ from media_import import (
     ImportLimitError,
     MediaExistsError,
     MediaStore,
+    get_layout,
     get_media,
     get_media_words,
     import_media,
     list_media,
+    save_layout,
 )
 from nlp_processing import (
     generate_word_examples,
@@ -225,6 +227,11 @@ class WordRecommendationResponse(BaseModel):
     improvements: list[float]
     frequencies: list[int]
     total_videos: int
+
+class MediaLayoutRequest(BaseModel):
+    language: str = Field(..., description="Language name or ISO code")
+    # Validated node by node in media_import.validate_layout.
+    tree: list
 
 class MissingWordsRequest(BaseModel):
     language_code: str
@@ -586,9 +593,23 @@ async def get_imported_media(
     current_user: dict = Depends(get_current_user),
     store: MediaStore = Depends(get_media_store),
 ):
-    """The signed-in user's Library in one language, newest first, without the text."""
+    """The signed-in user's Library in one language, newest first, without the
+    text, and the folders they arranged it in."""
     try:
-        return {"media": list_media(store, str(current_user.id), language)}
+        user_id = str(current_user.id)
+        return {"media": list_media(store, user_id, language), "layout": get_layout(store, user_id, language)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+@app.put("/api/media/layout")
+async def put_media_layout(
+    request: MediaLayoutRequest,
+    current_user: dict = Depends(get_current_user),
+    store: MediaStore = Depends(get_media_store),
+):
+    """Save the folders and order of the signed-in user's Library in one language."""
+    try:
+        return {"layout": save_layout(store, str(current_user.id), request.language, request.tree)}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

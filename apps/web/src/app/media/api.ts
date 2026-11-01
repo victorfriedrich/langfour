@@ -1,3 +1,5 @@
+import type { LayoutNode } from './tree';
+
 export interface TranscriptChunk {
   // null for articles and lyrics, which are passages rather than timed cues.
   timestamp: [number, number] | null;
@@ -60,11 +62,20 @@ async function errorMessage(response: Response, fallback: string) {
   }
 }
 
-export async function listImportedMedia(fetchWithAuth: AuthFetch, language: string): Promise<ImportedMediaSummary[]> {
+// The Library and the folders the user arranged it in (see ./tree.ts).
+export async function getLibrary(fetchWithAuth: AuthFetch, language: string): Promise<{ media: ImportedMediaSummary[]; layout: LayoutNode[] }> {
   const response = await fetchWithAuth(`${apiUrl}/api/media?language=${encodeURIComponent(language)}`);
   if (!response.ok) throw new Error(await errorMessage(response, 'Unable to load imported media'));
   const data = await response.json();
-  return data.media;
+  return { media: data.media, layout: data.layout ?? [] };
+}
+
+export async function saveLayout(fetchWithAuth: AuthFetch, language: string, tree: LayoutNode[]): Promise<void> {
+  const response = await fetchWithAuth(`${apiUrl}/api/media/layout`, {
+    method: 'PUT',
+    body: JSON.stringify({ language, tree }),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response, 'Unable to save your folders'));
 }
 
 export async function getImportedMedia(fetchWithAuth: AuthFetch, mediaId: string, language: string): Promise<ImportedMedia> {

@@ -44,6 +44,14 @@ DETAIL_COLUMNS = SUMMARY_COLUMNS + ",chunks"
 BLOCKS = {"h2", "h3", "h4", "li", "blockquote", "pre", "figcaption"}
 
 
+# The Library's folders (docs/user-media-layout.sql). Generous for one
+# person's Library; they stop a client storing an unbounded tree.
+FOLDER_COLORS = ("gray", "indigo", "sky", "emerald", "amber", "rose", "violet")
+MAX_FOLDER_DEPTH = 4
+MAX_LAYOUT_NODES = 5000
+MAX_FOLDER_NAME = 80
+
+
 class MediaExistsError(Exception):
     def __init__(self, media_id: str):
         super().__init__(f"Media already exists: {media_id}")
@@ -231,6 +239,18 @@ class MediaStore:
                .limit(1).execute())
         return res.data[0] if res.data else None
 
+    def get_layout(self, user_id: str, language: str) -> list:
+        res = (self.client.table("user_media_layout").select("tree")
+               .eq("user_id", user_id).eq("language", language)
+               .limit(1).execute())
+        return res.data[0]["tree"] if res.data else []
+
+    def save_layout(self, user_id: str, language: str, tree: list) -> None:
+        self.client.table("user_media_layout").upsert({
+            "user_id": user_id, "language": language, "tree": tree,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }, on_conflict="user_id,language").execute()
+
 
 def import_media(
     store: MediaStore,
@@ -280,6 +300,57 @@ def _mark_words(chunks: list[dict], parsed: list[dict]) -> None:
 
 def list_media(store: MediaStore, user_id: str, language: str) -> list[dict]:
     return [to_api(row) for row in store.list(user_id, require_code(language))]
+
+
+def get_layout(store: MediaStore, user_id: str, language: str) -> list:
+    return store.get_layout(user_id, require_code(language))
+
+
+def validate_layout(tree: object) -> list:
+    """The folder tree as the page sent it, rebuilt from known keys only, or
+    ValueError. Item ids aren't checked against the Library: the page skips
+    ids it doesn't have, and an item deleted later leaves its entry behind."""
+    seen: set[tuple[str, str]] = set()
+
+    def nodes(level: object, depth: int) -> list:
+        if not isinstance(level, list):
+            raise ValueError("Layout levels must be lists")
+        out = []
+        for node in level:
+            if not isinstance(node, dict) or node.get("type") not in ("item", "folder"):
+                raise ValueError("Layout entries must be items or folders")
+            node_id = node.get("id")
+            if not isinstance(node_id, str) or not _ID.fullmatch(node_id) or len(node_id) > 200:
+                raise ValueError("Invalid layout id")
+            key = (node["type"], node_id)
+            if key in seen:
+                raise ValueError(f"Duplicate {node['type']} in layout: {node_id}")
+            seen.add(key)
+            if len(seen) > MAX_LAYOUT_NODES:
+                raise ValueError("Layout is too large")
+            if node["type"] == "item":
+                out.append({"type": "item", "id": node_id})
+                continue
+            if depth >= MAX_FOLDER_DEPTH:
+                raise ValueError(f"Folders can be nested {MAX_FOLDER_DEPTH} deep")
+            name = node.get("name")
+            if not isinstance(name, str) or not name.strip() or len(name) > MAX_FOLDER_NAME:
+                raise ValueError(f"Folder names need 1 to {MAX_FOLDER_NAME} characters")
+            color = node.get("color", "gray")
+            if color not in FOLDER_COLORS:
+                raise ValueError(f"Unknown folder color: {color}")
+            out.append({"type": "folder", "id": node_id, "name": name.strip(), "color": color,
+                        "open": node.get("open") is not False,
+                        "children": nodes(node.get("children", []), depth + 1)})
+        return out
+
+    return nodes(tree, 0)
+
+
+def save_layout(store: MediaStore, user_id: str, language: str, tree: object) -> list:
+    layout = validate_layout(tree)
+    store.save_layout(user_id, require_code(language), layout)
+    return layout
 
 
 def get_media(
