@@ -28,6 +28,7 @@ import {
 import startTextMutationObserver from './startTextMutationObserver';
 import { getSiteSpecificApi } from './siteApi';
 import { replaceNativeFullscreen } from './iosFullscreen';
+import { watchCaptions } from './captionExposure';
 import addMouseEnterLeaveEventListeners, {
   createElementFromHTML,
   logPrefix,
@@ -230,6 +231,8 @@ if (siteApi.subtitleSelector) {
   }
 }
 
+// Caption words watched during playback count as seen (exposure.ts).
+watchCaptions(siteApi);
 
 function onWordLeaveHandler(el: HTMLElement) {
   hideTranslationPopup();
