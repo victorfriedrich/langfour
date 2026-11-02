@@ -151,6 +151,15 @@ describe('renderPanel', () => {
     expect(screen.getByText('89.8% understood')).toBeInTheDocument();
   });
 
+  it('works with an API that has no understood share or videos yet', () => {
+    const old: ChannelView = view();
+    delete old.understood;
+    delete old.best;
+    expect(summaryText(old, 'es')).toBe('13 videos indexed · 9 at your level');
+    document.body.append(renderPanel(document, { ok: true, value: old }, (v) => summaryText(v, 'es'), vi.fn(), vi.fn()));
+    expect(screen.queryByText('Easiest for you')).toBeNull();
+  });
+
   it('leaves the videos card out for a channel with none indexed', () => {
     document.body.append(renderPanel(document, { ok: true, value: view({ videos: 0 }) }, (v) => summaryText(v, 'es'), vi.fn(), vi.fn()));
     expect(screen.queryByText('Easiest for you')).toBeNull();

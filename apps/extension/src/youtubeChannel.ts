@@ -16,8 +16,9 @@ export type ChannelView = {
   added: number;
   videos: number;
   at_level: number;
-  understood: number | null;
-  best: { video_id: string; title: string; understood: number }[];
+  // Missing from an API older than the extension, as while a deploy runs.
+  understood?: number | null;
+  best?: { video_id: string; title: string; understood: number }[];
   progress: { added: number; total: number | null } | null;
   core_words: { words: { word_id: number; word: string }[]; before: number; after: number } | null;
 };
@@ -96,7 +97,7 @@ const videosText = (n: number) => (n === 1 ? '1 video' : `${n} videos`);
  * button alone would suggest videos are coming.
  */
 export function summaryText(view: ChannelView, language: Language, settling = false): string {
-  const understood = view.understood === null ? '' : `${view.understood.toFixed(1)}% understood · `;
+  const understood = view.understood == null ? '' : `${view.understood.toFixed(1)}% understood · `;
   const level = `${understood}${view.at_level} at your level`;
   if (view.progress) {
     const { added, total } = view.progress;
@@ -223,7 +224,7 @@ function coreWordsCard(doc: Document, words: NonNullable<ChannelView['core_words
   return card;
 }
 
-function bestCard(doc: Document, best: ChannelView['best']): HTMLElement {
+function bestCard(doc: Document, best: NonNullable<ChannelView['best']>): HTMLElement {
   const card = el(doc, 'section', 'lf-card lf-best');
   card.append(el(doc, 'h3', '', 'Easiest for you'));
   const list = el(doc, 'ol', 'lf-videos');
@@ -264,7 +265,7 @@ export function renderPanel(
   }
   panel.append(el(doc, 'p', 'lf-summary', summary(answer.value)));
   if (answer.value.core_words) panel.append(coreWordsCard(doc, answer.value.core_words, addCoreWords));
-  if (answer.value.best.length) panel.append(bestCard(doc, answer.value.best));
+  if (answer.value.best?.length) panel.append(bestCard(doc, answer.value.best));
   return panel;
 }
 
@@ -458,7 +459,7 @@ export async function mountChannelPage(doc: Document, pathname: string, language
     if (sameCard && next.ok) {
       line.textContent = summary(next.value);
       panel.querySelector('.lf-best')?.remove();
-      if (next.value.best.length) panel.append(bestCard(doc, next.value.best));
+      if (next.value.best?.length) panel.append(bestCard(doc, next.value.best));
     } else renderOpen();
     if (!next.ok) return;
     if (Date.now() - favouritedAt < AFTER_FAVOURITE_FOR_MS) schedule(AFTER_FAVOURITE_MS);
