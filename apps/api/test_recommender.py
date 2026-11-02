@@ -64,6 +64,22 @@ def test_hidden_videos_are_never_recommended():
     assert sorted(by_words) == sorted(for_user) == ["video-0", "video-2"]
 
 
+def test_videos_gone_from_youtube_are_hidden_until_they_come_back():
+    recommender = make_recommender([np.ones(150, dtype=np.int8)] * 3)
+    recommender.hidden_by_score = recommender.hidden_videos = {"video-0"}
+
+    def recommended():
+        return sorted(v["id"] for v in recommender.recommend_videos_by_words([0], "es"))
+
+    assert recommender.video_ids() == ["video-0", "video-1", "video-2"]
+    recommender.hide_gone_videos({"video-1"})
+    assert recommended() == ["video-2"]
+    assert recommender.fit_videos(["video-1"], [0], "es") == {"video-1": {"status": "hidden"}}
+
+    recommender.hide_gone_videos(set())
+    assert recommended() == ["video-1", "video-2"]
+
+
 def test_unreadable_scores_hide_nothing(monkeypatch):
     import video_quality
 
