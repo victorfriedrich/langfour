@@ -3,7 +3,6 @@ interface SubtitleApi {
   // The playing video, to tell whether captions on screen are being watched.
   videoSelector: string;
   subtitlePopupSelector: string;
-  popupOffsetBottom: number;
   pause: () => boolean;
   play: () => void;
 }
@@ -22,7 +21,6 @@ const youtube = {
   subtitleSelector: '#movie_player .ytp-caption-window-container',
   videoSelector: '#movie_player video',
   subtitlePopupSelector: '#movie_player',
-  popupOffsetBottom: 8,
   pause() {
     if (document.querySelector<HTMLVideoElement>('#movie_player video')?.paused)
       return false;
@@ -40,7 +38,6 @@ const siteApiMap = {
     subtitleSelector: '.player-timedtext:not(.billboard .player-timedtext)',
     videoSelector: '.watch-video video',
     subtitlePopupSelector: '.watch-video',
-    popupOffsetBottom: 0,
     pause() {
       if (
         document.querySelector<HTMLButtonElement>('[data-uia^="control-play-pause-play"]')
@@ -66,7 +63,6 @@ const siteApiMap = {
     videoSelector: '#dv-web-player video',
     maskContainerSelector: '.atvwebplayersdk-captions-text',
     subtitlePopupSelector: '.atvwebplayersdk-overlays-container',
-    popupOffsetBottom: 4,
     pause() {
       if (document.querySelector<HTMLVideoElement>('#dv-web-player video')?.paused)
         return false;
@@ -93,7 +89,6 @@ export function getSiteSpecificApi(
     subtitleSelector: '',
     videoSelector: '',
     subtitlePopupSelector: '',
-    popupOffsetBottom: 0,
     pause: () => false,
     play: () => undefined,
   };

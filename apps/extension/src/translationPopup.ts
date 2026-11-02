@@ -15,7 +15,6 @@ import { sendToBackground } from './messages';
 export function insertTranslationPopup(
   targetEl: HTMLElement,
   containerEl: HTMLElement,
-  offsetBottom: number,
   onClose: () => void,
 ): HTMLElement {
   const shadowDomWrapperEl = document.createElement('div');
@@ -30,7 +29,7 @@ export function insertTranslationPopup(
     shadowDomWrapperEl.addEventListener(type, (event) => event.stopPropagation());
   }
 
-  shadow.innerHTML = sanitizeHTML(getPopupHTML(offsetBottom, targetEl.dataset['word'] ?? targetEl.innerText));
+  shadow.innerHTML = sanitizeHTML(getPopupHTML());
   shadow.appendChild(styleEl);
   containerEl.appendChild(shadowDomWrapperEl);
 
