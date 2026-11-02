@@ -4,7 +4,7 @@ import { injectCss, injectJs, logPrefix } from './utils';
 import { Language, toLanguage } from './languages';
 import { extractArticle, layoutJudge } from './articleExtraction';
 import { getStoredWords } from './wordstorage';
-import { BackendRequest, BackendResponse, ContentScriptMessage, sendToBackground } from './messages';
+import { BackendRequest, BackendResponse, ContentScriptMessage, mayRelay, sendToBackground } from './messages';
 import { BackendRequestEvent, BackendResponseEvent, CaptionExposureEvent, KnownWordsEvent } from './types';
 import { isAllowedHost } from './siteApi';
 import { getErrorMessage } from './errors';
@@ -87,16 +87,6 @@ document.addEventListener('open-sign-in', () => {
   sendToBackground({ type: 'OPEN_SIGN_IN' });
 });
 
-// The paths the MAIN world is allowed to reach: exactly what index.ts and
-// youtubeBookmark.ts call. The expensive endpoints (/parse, /api/translate)
-// are deliberately absent -- only reader.ts uses them, and as an extension
-// page it messages the background directly instead of coming through here.
-const RELAY_PATHS = [
-  /^\/api\/translate-word$/,
-  /^\/youtube\/bookmarks$/,
-  /^\/youtube\/bookmarks\/[^/?#]+$/,
-];
-
 // Backend calls from the MAIN world (translate.ts, api-service.ts) come in as
 // `backend-request` events, because only the background can attach the
 // Supabase bearer token the API requires. Forward them and hand the answer
@@ -109,8 +99,10 @@ const RELAY_PATHS = [
 // below performs.
 //
 // The same caveat as that bridge still applies to what is left: the host page
-// can trigger these three endpoints as the signed-in user and can forge the
-// reply event. Both need index.ts out of the page's world to fix properly.
+// can trigger these endpoints as the signed-in user -- look up a word and, on
+// YouTube, favourite a channel or add its core words -- and can forge the reply
+// event. Both need index.ts out of the page's world to fix properly. The API
+// limits what favourites can spend (channels.py).
 document.addEventListener('backend-request', ((event: CustomEvent<BackendRequestEvent>) => {
   const { id, path, method, body } = event.detail;
   const respond = (response: BackendResponse) => {
@@ -118,7 +110,7 @@ document.addEventListener('backend-request', ((event: CustomEvent<BackendRequest
     document.dispatchEvent(new CustomEvent<BackendResponseEvent>('backend-response', { detail }));
   };
 
-  if (typeof path !== 'string' || !RELAY_PATHS.some((pattern) => pattern.test(path))) {
+  if (typeof path !== 'string' || !mayRelay(path, location.host)) {
     respond({ ok: false, status: 0, statusText: 'Refusing to relay this path', body: '' });
     return;
   }
@@ -147,14 +139,17 @@ if (isAllowedHost(location.host)) {
     // Safari applies the page's CSP to <script>/<link> tags pointing at the
     // extension, and YouTube's script-src blocks them. So the Safari manifest
     // loads index.js and index.css as content scripts right after this one
-    // (scripts/build-safari.mjs), in this isolated world. The bookmark button
+    // (scripts/build-safari.mjs), in this isolated world. The Favourite button
     // stays desktop-only.
     sendCurrentPrefsToInjectedScripts();
   } else {
     injectCss('src/index.css');
     injectJs('src/index.js').then(sendCurrentPrefsToInjectedScripts);
     if (location.host === 'www.youtube.com') {
-      injectJs('src/youtubeBookmark.js');
+      // It may load after the prefs above went out, so they go again.
+      injectJs('src/youtubeFavourite.js').then(() => {
+        if (prefs) document.dispatchEvent(new CustomEvent('prefs', { detail: prefs }));
+      });
     }
   }
 }

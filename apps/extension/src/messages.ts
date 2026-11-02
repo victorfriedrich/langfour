@@ -195,3 +195,20 @@ export function sendToActiveTab(message: ContentScriptMessage): void {
 export function assertNever(value: never): void {
   console.warn('Unhandled message reached assertNever:', value);
 }
+
+// The paths the MAIN world is allowed to reach: exactly what index.ts and
+// youtubeFavourite.ts call. The expensive endpoints (/parse, /api/translate)
+// are deliberately absent -- only reader.ts uses them, and as an extension
+// page it messages the background directly instead of coming through here.
+// This content script can run on any page (reader extraction), so the channel
+// endpoints, which write, answer only to YouTube.
+const RELAY_PATHS = [/^\/api\/translate-word$/];
+const YOUTUBE_RELAY_PATHS = [
+  /^\/api\/channels\/UC[A-Za-z0-9_-]{22}\?language=(es|de|it|fr)$/,
+  /^\/api\/channels\/UC[A-Za-z0-9_-]{22}\/(favourite|core-words)$/,
+];
+
+export function mayRelay(path: string, host: string): boolean {
+  return RELAY_PATHS.some((pattern) => pattern.test(path))
+    || (host === 'www.youtube.com' && YOUTUBE_RELAY_PATHS.some((pattern) => pattern.test(path)));
+}

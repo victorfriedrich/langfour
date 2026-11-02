@@ -1,5 +1,5 @@
 // Shared API helpers used by both reader.ts (extension page) and
-// youtubeBookmark.ts (injected into the MAIN world of youtube.com pages).
+// youtubeFavourite.ts (injected into the MAIN world of youtube.com pages).
 // Plain ES exports instead of window.* globals, so each consumer's own
 // Parcel bundle includes exactly what it imports rather than relying on a
 // separate <script> tag having already run first.
@@ -7,6 +7,8 @@
 import { debugLog } from './config';
 import { BackendRequest, BackendResponse, sendToBackground } from './messages';
 import { BackendRequestEvent, BackendResponseEvent } from './types';
+import type { Language } from './languages';
+import type { Answer, ChannelView } from './youtubeChannel';
 
 // How long a MAIN-world caller waits for the content script relay before
 // giving up. A plain fetch has no deadline either, but a relay with no
@@ -52,7 +54,7 @@ function requestViaContentScript(request: BackendRequest): Promise<BackendRespon
  * Every backend call goes through the background service worker, the only
  * context that can attach the Supabase bearer token the API requires.
  * Extension pages (reader.ts) message it directly. MAIN-world page scripts
- * (index.ts, youtubeBookmark.ts) have no chrome.runtime, so they relay
+ * (index.ts, youtubeFavourite.ts) have no chrome.runtime, so they relay
  * through contentScript.ts via CustomEvents on `document`, the same channel
  * the prefs and known-words caches already use. Passing a body makes it a
  * JSON POST; omitting it makes it a GET.
@@ -174,28 +176,25 @@ export async function translateSection(
   }
 }
 
-// Bookmark YouTube channel for indexing
-export async function bookmarkChannel(channelId: string) {
+// A YouTube channel's Langfour tab and Favourite button (youtubeChannel.ts).
+async function channelRequest<T>(path: string, body?: unknown): Promise<Answer<T>> {
+  const response = await requestBackend(path, body);
+  if (!response.ok) return { ok: false, signedOut: response.status === 401 };
   try {
-    const response = await requestBackend('/youtube/bookmarks', { channel_id: channelId });
-    if (!response.ok) {
-      throw new Error(`Error: ${response.statusText}`);
-    }
-    return JSON.parse(response.body);
-  } catch (error) {
-    console.error('Bookmark channel error:', error);
-    return null;
+    return { ok: true, value: JSON.parse(response.body) as T };
+  } catch {
+    return { ok: false, signedOut: false };
   }
 }
 
-// Check if a YouTube channel was already indexed
-export async function checkChannelBookmarked(channelId: string) {
-  try {
-    const response = await requestBackend(`/youtube/bookmarks/${encodeURIComponent(channelId)}`);
-    if (!response.ok) return { saved: false };
-    return JSON.parse(response.body);
-  } catch (error) {
-    console.error('Check channel bookmarked error:', error);
-    return { saved: false };
-  }
-}
+export const getChannelFavourite = (channelId: string) =>
+  channelRequest<{ favourite: boolean }>(`/api/channels/${channelId}/favourite`);
+
+export const getChannel = (channelId: string, language: Language) =>
+  channelRequest<ChannelView>(`/api/channels/${channelId}?language=${language}`);
+
+export const setChannelFavourite = (channelId: string, language: Language, favourite: boolean) =>
+  channelRequest<{ favourite: boolean }>(`/api/channels/${channelId}/favourite`, { language, favourite });
+
+export const addChannelCoreWords = (channelId: string, language: Language) =>
+  channelRequest<{ added: string[] }>(`/api/channels/${channelId}/core-words`, { language });

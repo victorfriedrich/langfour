@@ -15,7 +15,7 @@ export default function PrivacyPage() {
     return (
         <main className="mx-auto max-w-2xl px-4 py-12 text-sm leading-relaxed text-gray-600">
             <h1 className="text-2xl font-semibold text-gray-900">Privacy Policy</h1>
-            <p className="mt-1 text-gray-500">Langfour website and Chrome extension. Last updated 6 October 2026.</p>
+            <p className="mt-1 text-gray-500">Langfour website and Chrome extension. Last updated 2 November 2026.</p>
 
             <Section title="Introduction">
                 <p>
@@ -38,8 +38,10 @@ export default function PrivacyPage() {
                     extension, that word or passage is sent to our server to be translated. The rest of the page is not sent.
                 </p>
                 <p>
-                    <strong className="text-gray-900">YouTube channels.</strong> If you use the bookmark button on a YouTube
-                    channel, the ID of that channel is sent to our server.
+                    <strong className="text-gray-900">YouTube channels.</strong> When you open a YouTube channel page while signed
+                    in to the extension, the ID of that channel is sent to our server, to show whether it is one of your
+                    favourites and how much of it you would understand. We store the channels you favourite, and the channel
+                    a word came from when you add a channel&apos;s core words to your reviews.
                 </p>
             </Section>
 

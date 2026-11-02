@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { askBackground } from './messages';
+import { askBackground, mayRelay } from './messages';
 
 const message = { type: 'WORD_PROGRESS', wordId: 1 } as const;
 
@@ -50,5 +50,25 @@ describe('askBackground', () => {
     await vi.runAllTimersAsync();
     await expect(result).resolves.toBeUndefined();
     expect(send).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('mayRelay', () => {
+  const favourite = `/api/channels/UC${'a'.repeat(22)}/favourite`;
+
+  it('lets any page look up a word', () => {
+    expect(mayRelay('/api/translate-word', 'www.netflix.com')).toBe(true);
+  });
+
+  it('keeps the channel endpoints to YouTube', () => {
+    expect(mayRelay(favourite, 'www.youtube.com')).toBe(true);
+    expect(mayRelay(favourite, 'www.netflix.com')).toBe(false);
+    expect(mayRelay(favourite, 'evil.example')).toBe(false);
+  });
+
+  it('refuses everything else, on YouTube too', () => {
+    expect(mayRelay('/parse', 'www.youtube.com')).toBe(false);
+    expect(mayRelay('/api/channels/@handle/favourite', 'www.youtube.com')).toBe(false);
+    expect(mayRelay(`/api/channels/UC${'a'.repeat(22)}?language=xx`, 'www.youtube.com')).toBe(false);
   });
 });

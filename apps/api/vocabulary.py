@@ -250,11 +250,12 @@ class VocabularyStore:
                .in_("word_id", word_ids).execute())
         return {r["word_id"]: r["status"] for r in res.data or []}
 
-    def add_words(self, user_id: str, word_ids: list[int], status: str) -> None:
+    def add_words(self, user_id: str, word_ids: list[int], status: str,
+                  source: str = SOURCE) -> None:
         # As move_words_to_userwords, which works on auth.uid(): a row added
         # meanwhile is kept, and the user's known-words timestamp moves.
         (self.db.table("userwords")
-         .upsert([{"user_id": user_id, "word_id": w, "status": status, "source": SOURCE}
+         .upsert([{"user_id": user_id, "word_id": w, "status": status, "source": source}
                   for w in word_ids], on_conflict="user_id,word_id", ignore_duplicates=True)
          .execute())
         self.touch(user_id)
