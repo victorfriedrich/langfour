@@ -30,18 +30,18 @@
   box-shadow: none;
   background-color: transparent;
 }
+
+/* The word whose translation is open. */
+.sub-tr-word.sub-tr-reveal {
+  color: #e0a87d;
+}
+
 /* Touch screens (Safari on iOS): YouTube's mobile caption box has a fixed
    width and clips overflow, and inline-block words wrap differently from the
    text it measured, so lines broke early and spilled past their background. */
 @media (hover: none) {
   .sub-tr-word {
     display: inline;
-  }
-
-  /* The word whose translation is open. */
-  .sub-tr-word.sub-tr-reveal {
-    background-color: rgba(255, 255, 255, 0.25);
-    border-radius: 3px;
   }
 }
 

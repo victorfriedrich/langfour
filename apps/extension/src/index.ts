@@ -262,7 +262,6 @@ addMouseEnterLeaveEventListeners({
     const popupEl = insertTranslationPopup(
       el,
       containerEl,
-      siteApi.popupOffsetBottom,
       () => {
         onWordLeaveHandler(el);
       },
