@@ -83,8 +83,18 @@ export function navigatedChannelId(detail: unknown): string | null {
   return typeof id === 'string' && CHANNEL_ID.test(id) ? id : null;
 }
 
+// First path segments of YouTube's own pages. Any other single segment is an
+// old custom URL: youtube.com/marcvilas is where a load of /@marcvilas can end
+// up, while YouTube's own links to the channel use the handle.
+const NOT_CHANNELS = new Set([
+  'watch', 'results', 'feed', 'playlist', 'shorts', 'embed', 'hashtag', 'post', 'live',
+  'gaming', 'premium', 'account', 'signin', 'logout', 'upload', 'kids', 'music', 'redirect',
+]);
+
 export function isChannelPath(pathname: string): boolean {
-  return /^\/(channel\/|@|c\/|user\/)/.test(pathname);
+  if (/^\/(channel\/|@|c\/|user\/)/.test(pathname)) return true;
+  const custom = pathname.match(/^\/([A-Za-z0-9_.-]+)(\/[a-z]+)?\/?$/);
+  return !!custom && !NOT_CHANNELS.has(custom[1].toLowerCase());
 }
 
 // --------------------------------------------------------------- the line ──
