@@ -23,6 +23,7 @@ import { reviewLink } from './reviewLink';
 import { readerPageUrl, storeArticle, StoredArticle } from './readerArticles';
 import { classifyTokens } from './lexicon';
 import { clearStatuses, getLexicon, getStatuses, markLearning } from './lexiconCache';
+import { clearVideoFits, queueVideo, QueueVideoResponse, videoFits, VideoFitResponse } from './videoFit';
 
 let sessionId: string | undefined;
 
@@ -95,6 +96,22 @@ async function backendFetch({ path, method, body }: BackendRequest): Promise<Bac
   }
 }
 
+const postBackend = (path: string, body: unknown) => backendFetch({ path, method: 'POST', body });
+
+/** Runs `work` for the signed-in user; their id keys the video fit cache. */
+async function withUser<T extends VideoFitResponse | QueueVideoResponse>(
+  work: (userId: string) => Promise<T>,
+): Promise<T | { ok: false; error: string }> {
+  const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
+  const userId = (supabaseSession as { user?: { id?: string } } | undefined)?.user?.id;
+  if (!userId) return { ok: false, error: 'No Supabase session available' };
+  try {
+    return await work(userId);
+  } catch (error: unknown) {
+    return { ok: false, error: getErrorMessage(error, 'Video fit failed') };
+  }
+}
+
 /**
  * Uses the existing Supabase RPC function to fetch the user's last update timestamp.
  * This function returns an ISO string timestamp.
@@ -157,6 +174,8 @@ async function refreshKnownWordsIfStale(language: string): Promise<{ success: bo
         [`knownWords_${language}`]: wordsArray,
         [timestampKey]: serverTimestamp.toISOString(),
       });
+      // Words changed somewhere (the web app, a review): so did every fit.
+      if (localTimestamp) await clearVideoFits();
       debugLog(`Successfully stored ${wordsArray.length} ${language} words`);
     } else {
       debugLog('Cache is current.');
@@ -193,6 +212,7 @@ async function addWordToUserwords(wordId: string | number): Promise<{ success: b
 
     // The next article marks it as learning without waiting for a refresh.
     await markLearning(Number(wordId)).catch((err: unknown) => console.warn('Could not update word statuses:', err));
+    await clearVideoFits().catch((err: unknown) => console.warn('Could not clear video fits:', err));
     return { success: true };
   } catch (err: unknown) {
     console.error('Error adding words to userwords:', err);
@@ -371,6 +391,12 @@ const prepareInBackground = (language?: string) => {
 // Signing in or switching language prepares the reader for the next article.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.supabaseSession) {
+    // Signing out or in: the cached fits were someone else's numbers. A
+    // token refresh keeps the user and the cache.
+    const userOf = (session: unknown) => (session as { user?: { id?: string } } | undefined)?.user?.id;
+    if (userOf(changes.supabaseSession.newValue) !== userOf(changes.supabaseSession.oldValue)) {
+      clearVideoFits().catch((error: unknown) => console.warn('Could not clear video fits:', error));
+    }
     if (!changes.supabaseSession.newValue) {
       clearStatuses().catch((error: unknown) => console.warn('Could not clear word statuses:', error));
     } else if (!changes.supabaseSession.oldValue) {
@@ -547,6 +573,18 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
       // until then instead of closing on a tab that seems to do nothing.
       readerOpened.set(message.tabId, () => sendResponse({ opened: true }));
       openReaderView(message.tabId, 'replace');
+      return true;
+    }
+
+    case 'VIDEO_FIT': {
+      withUser((userId) => videoFits(message.language, message.videoIds, userId, postBackend))
+        .then(sendResponse);
+      return true;
+    }
+
+    case 'QUEUE_VIDEO': {
+      withUser((userId) => queueVideo(message.language, message.videoId, userId, postBackend))
+        .then(sendResponse);
       return true;
     }
 

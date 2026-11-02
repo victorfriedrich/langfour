@@ -8,12 +8,15 @@ import { BackendRequest, BackendResponse, ContentScriptMessage, mayRelay, sendTo
 import { BackendRequestEvent, BackendResponseEvent, CaptionExposureEvent, KnownWordsEvent } from './types';
 import { isAllowedHost } from './siteApi';
 import { getErrorMessage } from './errors';
+import { FitBadges, startFitBadges } from './youtubeFit';
 
 export type Prefs = {
   preferredLanguage: Language;
 };
 
 let prefs: Prefs | null = null;
+// Thumbnail badges on www.youtube.com, started below.
+let fitBadges: FitBadges | null = null;
 
 /**
  * Loads preferences, dispatches them to other parts of the extension,
@@ -23,6 +26,7 @@ function sendCurrentPrefsToInjectedScripts(): void {
   getPrefs((newPrefs) => {
     document.dispatchEvent(new CustomEvent('prefs', { detail: newPrefs }));
     prefs = newPrefs;
+    fitBadges?.rescan();
     relayKnownWordsToPage(determineLanguage(newPrefs));
     // On every page (not just YouTube) check cache validity.
     checkCacheAndRefreshWords();
@@ -151,6 +155,10 @@ if (isAllowedHost(location.host)) {
         if (prefs) document.dispatchEvent(new CustomEvent('prefs', { detail: prefs }));
       });
     }
+  }
+  // Desktop YouTube only: m.youtube.com has its own cards (youtubeSelectors.ts).
+  if (location.host === 'www.youtube.com') {
+    fitBadges = startFitBadges(() => (prefs ? determineLanguage(prefs) : null));
   }
 }
 
