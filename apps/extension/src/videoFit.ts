@@ -14,9 +14,12 @@ export type VideoFit =
   // queued: what "+ Add" got back, so the card says so after a reload.
   | { status: 'unindexed'; queued?: QueueStatus }
   // Indexed but never recommended (garbled, a clip): no number.
-  | { status: 'hidden' };
+  | { status: 'hidden' }
+  // Not indexed, and YouTube says it is in another language: no "+ Add".
+  | { status: 'other_language'; language: string };
 
-export type QueueStatus = 'pending' | 'processing' | 'done' | 'failed' | 'skipped';
+// other_language: YouTube said so only when "+ Add" asked, and it wasn't queued.
+export type QueueStatus = 'pending' | 'processing' | 'done' | 'failed' | 'skipped' | 'other_language';
 
 export type VideoFitResponse = { ok: true; videos: Record<string, VideoFit> } | { ok: false; error: string };
 export type QueueVideoResponse = { ok: true; status: QueueStatus } | { ok: false; error: string };

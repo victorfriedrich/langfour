@@ -2,12 +2,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BackgroundMessage } from './messages';
-import type { VideoFit } from './videoFit';
+import type { QueueStatus, VideoFit } from './videoFit';
 import { FIT_CACHE_KEY } from './videoFit';
-import { FitBadges, percentLabel, startFitBadges } from './youtubeFit';
+import { FitBadges, percentLabel, queuedLabel, startFitBadges } from './youtubeFit';
 
 // Cards from saved YouTube pages, with the background answering from `fits`.
-function load(page: string, fits: Record<string, VideoFit>) {
+function load(page: string, fits: Record<string, VideoFit>, queued: QueueStatus = 'pending') {
   document.body.innerHTML = readFileSync(join(__dirname, '../test/youtube', page), 'utf8');
   const sent: BackgroundMessage[] = [];
   chrome.runtime.sendMessage = vi.fn((message: BackgroundMessage, respond: (r: unknown) => void) => {
@@ -15,7 +15,7 @@ function load(page: string, fits: Record<string, VideoFit>) {
     if (message.type === 'VIDEO_FIT') {
       respond({ ok: true, videos: Object.fromEntries(message.videoIds.map((id) => [id, fits[id] ?? { status: 'unindexed' }])) });
     } else if (message.type === 'QUEUE_VIDEO') {
-      respond({ ok: true, status: 'pending' });
+      respond({ ok: true, status: queued });
     }
   }) as unknown as typeof chrome.runtime.sendMessage;
   return sent;
@@ -68,6 +68,29 @@ describe('fit badges', () => {
     expect(sent.at(-1)).toEqual({ type: 'QUEUE_VIDEO', language: 'es', videoId: 'vWySIREExjo' });
   });
 
+  it('offer nothing for a video YouTube says is in another language', async () => {
+    const sent = load('search.html', { vWySIREExjo: { status: 'other_language', language: 'en' } });
+    badges = startFitBadges(() => 'es');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    hover('vWySIREExjo');
+    expect(badge('vWySIREExjo')).toBeNull();
+    expect(layer().textContent).toBe('');
+  });
+
+  it('say so when "+ Add" is refused as another language', async () => {
+    const sent = load('search.html', {}, 'other_language');
+    badges = startFitBadges(() => 'es');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    hover('vWySIREExjo');
+    layer().querySelector<HTMLButtonElement>('button')!.click();
+    await vi.waitFor(() => expect(layer().textContent).toBe('Not Spanish'));
+    expect(layer().querySelector<HTMLButtonElement>('button')!.disabled).toBe(true);
+  });
+
   it('keep the hover while the inline preview plays over the card', async () => {
     load('home.html', { HmntX1uDjKs: { status: 'scored', percentUnderstood: 80, newWords: 3 } });
     badges = startFitBadges(() => 'es');
@@ -105,6 +128,14 @@ describe('fit badges', () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(sent).toEqual([]);
     expect(document.querySelector('.langfour-fit')).toBeNull();
+  });
+});
+
+describe('queuedLabel', () => {
+  it('names the learner\'s language when the video is in another', () => {
+    expect(queuedLabel('other_language', 'de')).toBe('Not German');
+    expect(queuedLabel('pending', 'de')).toBe('Queued');
+    expect(queuedLabel('skipped', 'de')).toBe('Unavailable');
   });
 });
 

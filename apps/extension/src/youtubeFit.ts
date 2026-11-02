@@ -6,7 +6,8 @@
 // and asks the background for the ones it hasn't seen, a batch at a time.
 // The badge is one number, the share of the words spoken that the user
 // knows; hovering it adds how many different words are new. A video the
-// corpus doesn't have offers "+ Add" on hover, which queues it.
+// corpus doesn't have offers "+ Add" on hover, which queues it, unless YouTube
+// says it is in another language: then hovering shows nothing.
 //
 // Drawn in the thumbnail's bottom-left corner, styled like YouTube's own
 // duration label in the bottom-right, which reads on any thumbnail in both
@@ -16,7 +17,7 @@
 // over its thumbnail, so nothing inside the thumbnail can be pointed at once
 // it plays. What hovering shows (the new words, "+ Add") is therefore drawn in
 // one fixed layer above the page, placed over the hovered card's badge.
-import type { Language } from './languages';
+import { LANGUAGES, type Language } from './languages';
 import { askBackground } from './messages';
 import { FIT_BATCH, FIT_CACHE_KEY, QueueStatus, QueueVideoResponse, StoredFits, VideoFit, VideoFitResponse } from './videoFit';
 import { cardAt, findVideoCards, INLINE_PREVIEW, OBSERVED_ATTRIBUTES, VideoCard } from './youtubeSelectors';
@@ -47,7 +48,8 @@ export function percentLabel(percentUnderstood: number): string {
   return `${Math.floor(percentUnderstood)}%`;
 }
 
-export function queuedLabel(status: QueueStatus): string {
+export function queuedLabel(status: QueueStatus, language: Language): string {
+  if (status === 'other_language') return `Not ${LANGUAGES[language].name}`;
   return status === 'failed' || status === 'skipped' ? 'Unavailable' : 'Queued';
 }
 
@@ -55,7 +57,7 @@ export function queuedLabel(status: QueueStatus): string {
 function stateOf(fit: VideoFit): string {
   if (fit.status === 'scored') return `${fit.percentUnderstood}/${fit.newWords}`;
   if (fit.status === 'unindexed') return `add/${fit.queued ?? ''}`;
-  return 'hidden';
+  return fit.status;
 }
 
 function badgeElement(text: string): HTMLElement {
@@ -114,11 +116,11 @@ export function startFitBadges(getLanguage: () => Language | null): FitBadges {
       badge.append(more);
       return badge;
     }
-    if (fit.status !== 'unindexed') return null;
+    if (fit.status !== 'unindexed' || !language) return null;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `${BADGE} ${BADGE}-add`;
-    button.textContent = fit.queued ? queuedLabel(fit.queued) : '+ Add';
+    button.textContent = fit.queued ? queuedLabel(fit.queued, language) : '+ Add';
     button.disabled = Boolean(fit.queued);
     button.addEventListener('click', (event) => {
       event.preventDefault();
