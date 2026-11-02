@@ -11,10 +11,15 @@
 // Drawn in the thumbnail's bottom-left corner, styled like YouTube's own
 // duration label in the bottom-right, which reads on any thumbnail in both
 // themes. It stays clear of the red progress bar the same way that label does.
+//
+// Hovering a card starts YouTube's inline preview, drawn outside the card and
+// over its thumbnail, so nothing inside the thumbnail can be pointed at once
+// it plays. What hovering shows (the new words, "+ Add") is therefore drawn in
+// one fixed layer above the page, placed over the hovered card's badge.
 import type { Language } from './languages';
 import { askBackground } from './messages';
 import { FIT_BATCH, FIT_CACHE_KEY, QueueStatus, QueueVideoResponse, StoredFits, VideoFit, VideoFitResponse } from './videoFit';
-import { findVideoCards, OBSERVED_ATTRIBUTES, VIDEO_CARD, VideoCard } from './youtubeSelectors';
+import { cardAt, findVideoCards, INLINE_PREVIEW, OBSERVED_ATTRIBUTES, VideoCard } from './youtubeSelectors';
 
 const BADGE = 'langfour-fit';
 const SCAN_DELAY_MS = 300;
@@ -28,11 +33,13 @@ const CSS = `
   background: rgba(0, 0, 0, 0.6); color: #fff;
   font: 500 12px/18px Roboto, Arial, sans-serif; white-space: nowrap;
 }
+.${BADGE}-layer { position: fixed; z-index: 2019; transform: translateY(-100%); }
+.${BADGE}-layer:empty { display: none; }
+.${BADGE}-layer > .${BADGE} { position: static; }
 .${BADGE}-more { display: none; }
 .${BADGE}:hover .${BADGE}-more { display: inline; }
-.${BADGE}-add { display: none; cursor: pointer; background: #4f46e5; }
+.${BADGE}-add { cursor: pointer; background: #4f46e5; }
 .${BADGE}-add:disabled { cursor: default; background: rgba(0, 0, 0, 0.6); }
-:is(${VIDEO_CARD}):hover .${BADGE}-add { display: block; }
 `;
 
 export function percentLabel(percentUnderstood: number): string {
@@ -51,6 +58,15 @@ function stateOf(fit: VideoFit): string {
   return 'hidden';
 }
 
+function badgeElement(text: string): HTMLElement {
+  const badge = document.createElement('div');
+  badge.className = BADGE;
+  const percent = document.createElement('span');
+  percent.textContent = text;
+  badge.append(percent);
+  return badge;
+}
+
 export type FitBadges = { rescan: () => void; stop: () => void };
 
 export function startFitBadges(getLanguage: () => Language | null): FitBadges {
@@ -59,51 +75,90 @@ export function startFitBadges(getLanguage: () => Language | null): FitBadges {
   let language: Language | null = null;
   let retryAt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let hovered: VideoCard | null = null;
 
   const style = document.createElement('style');
   style.textContent = CSS;
   (document.head ?? document.documentElement).appendChild(style);
+  const layer = document.createElement('div');
+  layer.className = `${BADGE}-layer`;
+  document.body.appendChild(layer);
 
   const badgeIn = (box: HTMLElement) => box.querySelector<HTMLElement>(`:scope > .${BADGE}`);
 
   function removeBadges(): void {
     document.querySelectorAll(`.${BADGE}`).forEach((el) => el.remove());
+    hideHover();
   }
 
+  /** The thumbnail's own badge: the percentage, for scored videos only. */
   function render({ videoId, box }: VideoCard, fit: VideoFit): void {
     const state = stateOf(fit);
     const current = badgeIn(box);
     if (current?.dataset.videoId === videoId && current.dataset.state === state) return;
     current?.remove();
-    if (fit.status === 'hidden') return;
-
-    let badge: HTMLElement;
-    if (fit.status === 'scored') {
-      badge = document.createElement('div');
-      const percent = document.createElement('span');
-      percent.textContent = percentLabel(fit.percentUnderstood);
-      const more = document.createElement('span');
-      more.className = `${BADGE}-more`;
-      more.textContent = `· ${fit.newWords} new`;
-      badge.append(percent, more);
-    } else {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = `${BADGE}-add`;
-      button.textContent = fit.queued ? queuedLabel(fit.queued) : '+ Add';
-      button.disabled = Boolean(fit.queued);
-      // Inside the thumbnail's link: a click must not open the video.
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!button.disabled) add(videoId, button);
-      });
-      badge = button;
-    }
-    badge.classList.add(BADGE);
+    if (fit.status !== 'scored') return;
+    const badge = badgeElement(percentLabel(fit.percentUnderstood));
     badge.dataset.videoId = videoId;
     badge.dataset.state = state;
     box.appendChild(badge);
+  }
+
+  /** What the hover layer shows for a video: the badge with its new words, or "+ Add". */
+  function hoverElement(videoId: string, fit: VideoFit): HTMLElement | null {
+    if (fit.status === 'scored') {
+      const badge = badgeElement(percentLabel(fit.percentUnderstood));
+      const more = document.createElement('span');
+      more.className = `${BADGE}-more`;
+      more.textContent = `· ${fit.newWords} new`;
+      badge.append(more);
+      return badge;
+    }
+    if (fit.status !== 'unindexed') return null;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `${BADGE} ${BADGE}-add`;
+    button.textContent = fit.queued ? queuedLabel(fit.queued) : '+ Add';
+    button.disabled = Boolean(fit.queued);
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!button.disabled) void add(videoId, button);
+    });
+    return button;
+  }
+
+  function hideHover(): void {
+    hovered = null;
+    layer.replaceChildren();
+    delete layer.dataset.key;
+  }
+
+  function showHover(card: VideoCard): void {
+    const fit = fits.get(card.videoId);
+    const key = fit && `${card.videoId}/${stateOf(fit)}`;
+    if (!fit || layer.dataset.key !== key) {
+      const element = fit && hoverElement(card.videoId, fit);
+      if (!element) {
+        hideHover();
+        return;
+      }
+      layer.replaceChildren(element);
+      layer.dataset.key = key;
+    }
+    hovered = card;
+    const rect = card.box.getBoundingClientRect();
+    layer.style.left = `${rect.left + 8}px`;
+    layer.style.top = `${rect.bottom - 8}px`;
+  }
+
+  function onPointerOver(event: MouseEvent): void {
+    const target = event.target instanceof Element ? event.target : null;
+    // On the layer itself, or on the preview playing over the hovered card.
+    if (!target || layer.contains(target) || (hovered && target.closest(INLINE_PREVIEW))) return;
+    const card = cardAt(target);
+    if (card) showHover(card);
+    else hideHover();
   }
 
   async function add(videoId: string, button: HTMLButtonElement): Promise<void> {
@@ -118,7 +173,7 @@ export function startFitBadges(getLanguage: () => Language | null): FitBadges {
       return;
     }
     fits.set(videoId, { status: 'unindexed', queued: response.status });
-    scan();
+    if (hovered?.videoId === videoId) showHover(hovered);
   }
 
   async function ask(ids: string[], lang: Language): Promise<void> {
@@ -138,6 +193,7 @@ export function startFitBadges(getLanguage: () => Language | null): FitBadges {
       ids.forEach((id) => asking.delete(id));
     }
     scan();
+    if (hovered) showHover(hovered);
   }
 
   function scan(): void {
@@ -176,7 +232,7 @@ export function startFitBadges(getLanguage: () => Language | null): FitBadges {
   // elsewhere can add or reuse cards.
   const outsidePlayer = (record: MutationRecord) => {
     const target = record.target instanceof Element ? record.target : record.target.parentElement;
-    return !target?.closest(`#movie_player, .${BADGE}`);
+    return !target?.closest(`#movie_player, ${INLINE_PREVIEW}, .${BADGE}, .${BADGE}-layer`);
   };
   const observer = new MutationObserver((records) => {
     if (records.some(outsidePlayer)) scheduleScan();
@@ -203,6 +259,11 @@ export function startFitBadges(getLanguage: () => Language | null): FitBadges {
   };
   chrome.storage.onChanged.addListener(onStorageChange);
 
+  // The layer is placed once per hover; scrolling or leaving the page ends it.
+  document.addEventListener('mouseover', onPointerOver, true);
+  window.addEventListener('scroll', hideHover, { capture: true, passive: true });
+  document.documentElement.addEventListener('mouseleave', hideHover);
+
   scheduleScan();
   return {
     rescan: () => {
@@ -212,8 +273,12 @@ export function startFitBadges(getLanguage: () => Language | null): FitBadges {
     stop: () => {
       observer.disconnect();
       chrome.storage.onChanged.removeListener(onStorageChange);
+      document.removeEventListener('mouseover', onPointerOver, true);
+      window.removeEventListener('scroll', hideHover, { capture: true });
+      document.documentElement.removeEventListener('mouseleave', hideHover);
       clearTimeout(timer);
       removeBadges();
+      layer.remove();
       style.remove();
     },
   };

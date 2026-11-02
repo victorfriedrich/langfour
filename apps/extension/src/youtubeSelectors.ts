@@ -78,6 +78,17 @@ export function findVideoCards(root: ParentNode): VideoCard[] {
   return cards;
 }
 
+/** The card under the pointer, if it can take a badge. */
+export function cardAt(target: Element): VideoCard | null {
+  const card = target.closest<HTMLElement>(VIDEO_CARD);
+  if (!card) return null;
+  return findVideoCards(card).find((found) => found.card === card) ?? null;
+}
+
+// The inline preview that starts playing over a hovered thumbnail. It is
+// drawn outside the card, over it, so the pointer is still on that card.
+export const INLINE_PREVIEW = 'ytd-video-preview';
+
 // What youtubeFit.ts watches for: attribute changes on these links mean
 // YouTube reused a card for another video.
 export const OBSERVED_ATTRIBUTES = ['href'];

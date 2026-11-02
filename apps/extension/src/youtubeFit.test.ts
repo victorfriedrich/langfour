@@ -22,12 +22,15 @@ function load(page: string, fits: Record<string, VideoFit>) {
 }
 
 const badge = (videoId: string) => document.querySelector<HTMLElement>(`.langfour-fit[data-video-id="${videoId}"]`);
+const layer = () => document.querySelector<HTMLElement>('.langfour-fit-layer')!;
+const hover = (videoId: string) =>
+  document.querySelector(`a[href*="${videoId}"]`)!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
 
 let badges: FitBadges | undefined;
 afterEach(() => badges?.stop());
 
 describe('fit badges', () => {
-  it('show the percentage on each card, with new words for the hover', async () => {
+  it('show the percentage on each card, and the new words on hover', async () => {
     const sent = load('watch-sidebar.html', {
       zrSyyNugKYo: { status: 'scored', percentUnderstood: 97.6, newWords: 12 },
       'DZ-DkAtQrGo': { status: 'hidden' },
@@ -35,29 +38,48 @@ describe('fit badges', () => {
     badges = startFitBadges(() => 'es');
 
     await vi.waitFor(() => expect(badge('zrSyyNugKYo')).not.toBeNull());
-    const shown = badge('zrSyyNugKYo')!;
-    expect(shown.textContent).toBe('97%· 12 new');
-    expect(shown.querySelector('.langfour-fit-more')!.textContent).toBe('· 12 new');
-    expect(shown.parentElement!.tagName).toBe('YT-THUMBNAIL-VIEW-MODEL');
+    expect(badge('zrSyyNugKYo')!.textContent).toBe('97%');
+    expect(badge('zrSyyNugKYo')!.parentElement!.tagName).toBe('YT-THUMBNAIL-VIEW-MODEL');
     // Hidden by the quality filter: no number at all.
     expect(badge('DZ-DkAtQrGo')).toBeNull();
     expect(sent).toEqual([{ type: 'VIDEO_FIT', language: 'es', videoIds: ['zrSyyNugKYo', 'DZ-DkAtQrGo'] }]);
+
+    hover('zrSyyNugKYo');
+    expect(layer().textContent).toBe('97%· 12 new');
+    expect(layer().querySelector('.langfour-fit-more')!.textContent).toBe('· 12 new');
+    hover('DZ-DkAtQrGo');
+    expect(layer().textContent).toBe('');
   });
 
-  it('offer "+ Add" for a video not indexed yet, and queue it without opening it', async () => {
+  it('offer "+ Add" on hover for a video not indexed yet, and queue it', async () => {
     const sent = load('search.html', {});
     badges = startFitBadges(() => 'es');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(badge('vWySIREExjo')).toBeNull();
 
-    await vi.waitFor(() => expect(badge('vWySIREExjo')).not.toBeNull());
-    const add = badge('vWySIREExjo') as HTMLButtonElement;
+    hover('vWySIREExjo');
+    const add = layer().querySelector<HTMLButtonElement>('button')!;
     expect(add.textContent).toBe('+ Add');
-    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
-    add.dispatchEvent(click);
-    expect(click.defaultPrevented).toBe(true);
+    add.click();
 
-    await vi.waitFor(() => expect(badge('vWySIREExjo')!.textContent).toBe('Queued'));
-    expect((badge('vWySIREExjo') as HTMLButtonElement).disabled).toBe(true);
+    await vi.waitFor(() => expect(layer().textContent).toBe('Queued'));
+    expect(layer().querySelector<HTMLButtonElement>('button')!.disabled).toBe(true);
     expect(sent.at(-1)).toEqual({ type: 'QUEUE_VIDEO', language: 'es', videoId: 'vWySIREExjo' });
+  });
+
+  it('keep the hover while the inline preview plays over the card', async () => {
+    load('home.html', { HmntX1uDjKs: { status: 'scored', percentUnderstood: 80, newWords: 3 } });
+    badges = startFitBadges(() => 'es');
+    await vi.waitFor(() => expect(badge('HmntX1uDjKs')).not.toBeNull());
+
+    hover('HmntX1uDjKs');
+    const preview = document.createElement('ytd-video-preview');
+    document.body.appendChild(preview);
+    preview.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    expect(layer().textContent).toBe('80%· 3 new');
+    window.dispatchEvent(new Event('scroll'));
+    expect(layer().textContent).toBe('');
   });
 
   it('redraw every card when the background clears its cache', async () => {
@@ -68,12 +90,12 @@ describe('fit badges', () => {
       respond({ ok: true, videos: { HmntX1uDjKs: { status: 'scored', percentUnderstood: percent, newWords: 3 } } });
     }) as unknown as typeof chrome.runtime.sendMessage;
     badges = startFitBadges(() => 'es');
-    await vi.waitFor(() => expect(badge('HmntX1uDjKs')?.firstChild?.textContent).toBe('80%'));
+    await vi.waitFor(() => expect(badge('HmntX1uDjKs')?.textContent).toBe('80%'));
 
     percent = 85;
     const [listener] = vi.mocked(chrome.storage.onChanged.addListener).mock.calls.at(-1)!;
     listener({ [FIT_CACHE_KEY]: { oldValue: { clearedAt: 0 }, newValue: { clearedAt: 1 } } }, 'local');
-    await vi.waitFor(() => expect(badge('HmntX1uDjKs')?.firstChild?.textContent).toBe('85%'));
+    await vi.waitFor(() => expect(badge('HmntX1uDjKs')?.textContent).toBe('85%'));
     expect(sent).toHaveLength(2);
   });
 
