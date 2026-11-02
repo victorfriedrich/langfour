@@ -334,9 +334,15 @@ def transcript_language_matches(text: str, language: str) -> bool:
             return True
         from lingua import Language, LanguageDetectorBuilder
         if _DETECTOR is None:
+            # Not preloaded: lingua loads a model when a text first needs it.
+            # Preloading all 28 languages held ~590 MB for the life of the API;
+            # loading on demand peaked at ~115 MB over 1,661 corpus transcripts,
+            # titles and short slices, with the same verdict on every one
+            # (2026-11-03). ytpipeline.detect keeps preloading: it is a
+            # one-off laptop run, not a process that stays up.
             _DETECTOR = (LanguageDetectorBuilder
                          .from_languages(*[getattr(Language, n) for n in DETECT_LANGS])
-                         .with_preloaded_language_models().build())
+                         .build())
     except ImportError:
         # Fail open. This is a guard against bad upstream data, not a gate on
         # ingestion: a deployment without lingua should still build a corpus.
