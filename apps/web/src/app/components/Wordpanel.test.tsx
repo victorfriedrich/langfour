@@ -5,7 +5,6 @@ import Wordpanel from './Wordpanel';
 const words = vi.hoisted(() => ({ recommendedWords: [] as { id: number; content: string; translation: string; importance?: number | null; key?: boolean }[], flaggedWords: [], isLoading: false, error: null }));
 vi.mock('../hooks/useMissingWords', () => ({ useMissingWords: () => words }));
 vi.mock('../hooks/useUpdateUserwords', () => ({ useUpdateUserwords: () => ({ addWordsToUserwords: vi.fn() }) }));
-vi.mock('../hooks/useSeenVideos', () => ({ useSeenVideos: () => ({ seenVideos: [], markVideoAsSeen: vi.fn() }) }));
 
 beforeEach(() => { words.recommendedWords = []; });
 
@@ -21,10 +20,10 @@ it('says there is nothing new instead of an empty list when every word is known'
   expect(onClose).toHaveBeenCalledWith(0);
 });
 
-it('keeps the Seen button in the side panel when every word is known', () => {
+it('has nothing to add in the side panel when every word is known', () => {
   render(<Wordpanel videoId="video" videoTitle="Video" onClose={vi.fn()} />);
   expect(screen.getByText('Nothing new to learn here')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /Seen/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /to learning set/ })).not.toBeInTheDocument();
 });
 
 it('lists the words when there are some', () => {

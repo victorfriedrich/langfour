@@ -100,10 +100,12 @@
   ],
   "host_permissions": [
     "https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app/*",
-    "https://xpovcmbrttmkhnrfspvo.supabase.co/*"
+    "https://xpovcmbrttmkhnrfspvo.supabase.co/*",
+    "https://www.youtube.com/*"
   ],
   "permissions": [
     "activeTab",
+    "alarms",
     "scripting",
     "storage"
   ],
