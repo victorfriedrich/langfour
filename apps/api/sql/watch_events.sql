@@ -30,7 +30,8 @@
 -- in the extension.
 --
 -- HOW THIS GETS APPLIED: through the Supabase connector, like the other files
--- here, in one transaction. Not idempotent: run it once.
+-- here, in one transaction. Not idempotent: run it once. Applied 2026-11-02
+-- as migration watch_events.
 
 begin;
 

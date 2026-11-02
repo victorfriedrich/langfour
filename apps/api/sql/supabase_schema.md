@@ -31,7 +31,7 @@ Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 | `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known, disabled` (`disabled`: flashcards turned off in RemNote, set by the sync; see `remnote_sync.sql`); SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
 | `flashcardtests` | `id`, `user_id`, `word_id`, `test_type`, `test_result`, `tested_at` | PK `id`; `test_type` in `flashcard, typing`; index `(user_id, word_id, test_result)` |
 | `usertranslations` | `id`, `user_id`, `word_id`, `custom_translation`, `created_at` | PK `id`; index `(user_id, word_id)` |
-| `videos_seen` | `id`, `user_id`, `video_id`, `seen_at` | PK `id` (identity); unique `(user_id, video_id)`. Replaced by `watch_events`; `watch_events.sql` (not applied yet) moves it to the archive |
+| `videos_seen` | `id`, `user_id`, `video_id`, `seen_at` | PK `id` (identity); unique `(user_id, video_id)`. Replaced by `watch_events`; moved to `archive.videos_seen_2026_11` by `watch_events.sql` (applied 2026-11-02) |
 | `user_roles` | `user_id`, `role`, `created_at` | PK `user_id`; `role` in `user, admin` |
 
 Policies: `*_select_own`, `*_insert_own`, `*_update_own`, `*_delete_own` on
@@ -61,7 +61,7 @@ writes them.
 | `word_events` | `id`, `user_id`, `word_id`, `kind`, `source`, `occurred_at`, `context jsonb` | PK `id` (identity); FK `user_id → auth.users` on delete cascade, `word_id → words`; `kind` in `saved, lookup, exposure, recall_correct, recall_wrong`; `source` in `chatgpt, reader, video, extension, web`; indexes `(user_id, word_id)`, `(user_id, occurred_at)`. Append-only: policies `select_own`, `insert_own`, no update/delete for clients |
 | `srs_outbox` | `event_id`, `card_id`, `outcome`, `status`, `decided_at`, `reason`, `applied_review_at` | PK `event_id` → `word_events` on delete cascade; FK `card_id → srs_cards` on delete set null; `outcome` in `again, good`; `status` in `pending, applied, skipped`; partial index `(card_id) where status = 'pending'`. Policy `select_own` through `word_events`; written only by the API |
 
-### Watched videos (`watch_events.sql`, not applied yet)
+### Watched videos (`watch_events.sql`, applied 2026-11-02)
 
 | Table | Columns | Keys and constraints |
 |---|---|---|
@@ -147,7 +147,7 @@ name in each app; `none` means nothing in the repo calls it today.
 | `get_known_words_update_timestamp()` | timestamp | extension |
 | `get_learning_words(…, language_filter, source_filter)` | same + `source` | web |
 | `get_random_words(language_code, limit_words)` | table(id, root) | api |
-| `get_seen_video_ids()` | table(video_id) | web until `watch_events.sql`, which drops it |
+| `get_seen_video_ids()` | table(video_id) | dropped 2026-11-02 (`watch_events.sql`); definition in `archive.dropped_functions` |
 | `get_translation_for_word(_word_id)` | text | web |
 | `get_user_counts_with_wordforms(_word_id)` | table(reviewcount, seencount, alternative_wordforms) | web. Reviews from `srs_reviews` (live notes, any provider), exposures from `word_events` |
 | `get_user_default_language()` | text | web, extension |
@@ -164,7 +164,7 @@ name in each app; `none` means nothing in the repo calls it today.
 | `load_unseen_words()` | table(word_id, root, translation) | web |
 | `known_words_summary(language_filter)` | table(declared, from_reviews) | web. Reads `user_known_words` |
 | `lexicon_page(language_filter, after_word_id, page_words)` | table(last_word_id, entries text) | extension. Reads `lexicon_pages` (lexicon.sql) |
-| `mark_video_as_seen(input_video_id)` | void | web until `watch_events.sql`, which drops it |
+| `mark_video_as_seen(input_video_id)` | void | dropped 2026-11-02 (`watch_events.sql`); definition in `archive.dropped_functions` |
 | `move_words_to_userwords(_word_ids int[])` | void | extension |
 | `move_words_to_userwords(_word_ids int[], _status, _source)` | void | none |
 | `my_word_statuses()` | jsonb [[word_id, status]] | extension. Reads `userwords`, `user_known_words` (lexicon.sql) |
