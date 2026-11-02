@@ -470,8 +470,9 @@ def find_root_by_wordform_id(wordform_id: int, language: str) -> str:
     :return: The root word or None if not found.
     """
     language = language_key(language)
-    # Iterate through the words in the cache for the specified language
-    for root, word_id in word_cache[language]['words'].items():
+    # Iterate through the words in the cache for the specified language. Copied
+    # first: the ingest workers add to this dict while requests read it.
+    for root, word_id in list(word_cache[language]['words'].items()):
         if word_id == wordform_id:
             return root
 
