@@ -120,7 +120,8 @@ def test_a_user_submission_queues_once_and_moves_pending_rows_up_only():
     assert len(new) == 1 and new[0]["priority"] == 10 and new[0]["submitted_by"] == "u1"
 
     assert ingest.submit_for_user(sb, "es", "disc", "u1") == "pending"
-    assert sb.row("disc")["priority"] == 10 and sb.row("disc")["source"] == "discovery"
+    assert sb.row("disc")["priority"] == 10 and sb.row("disc")["source"] == "user"
+    assert sb.row("disc")["submitted_by"] == "u1"
     assert ingest.submit_for_user(sb, "es", "done", "u1") == "done"
     assert ingest.submit_for_user(sb, "es", "failed", "u1") == "failed"
     assert sb.row("failed")["priority"] == 0

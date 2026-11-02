@@ -138,10 +138,13 @@ def submit_for_user(sb, lang: str, video_id: str, user_id: str) -> str:
     and its state is left alone -- done and failed rows stay as they are --
     except that a pending row below the user tier is moved up to it: a
     discovery row sits behind tens of thousands of others, and someone is
-    waiting for this one."""
+    waiting for this one. Like a favourite channel's rows (channels.promote)
+    it becomes the user's, because `ytpipeline select --push` replaces
+    pending discovery rows."""
     if submit(sb, lang, video_id, "user", submitted_by=user_id):
         return "pending"
-    (sb.table(TABLE).update({"priority": PRIORITY["user"]})
+    (sb.table(TABLE).update({"priority": PRIORITY["user"], "source": "user",
+                             "submitted_by": user_id})
      .eq("video_id", video_id).eq("status", "pending").lt("priority", PRIORITY["user"])
      .execute())
     rows = sb.table(TABLE).select("status").eq("video_id", video_id).limit(1).execute().data

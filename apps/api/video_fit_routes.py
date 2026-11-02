@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, StringConstraints
 
+import channels
 import ingest
 from auth import get_current_user
 from supabase_client import supabase
@@ -81,6 +82,16 @@ async def queue_video(
     req: QueueRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    status = await asyncio.to_thread(ingest.submit_for_user, supabase, req.language,
-                                     req.video_id, str(current_user.id))
+    user_id = str(current_user.id)
+    status = await asyncio.to_thread(_queue, user_id, req.language, req.video_id)
+    if status is None:
+        raise HTTPException(status_code=429, detail="Too many of your videos are waiting")
     return {"status": status}
+
+
+def _queue(user_id: str, language: str, video_id: str) -> str | None:
+    # The same limit as a favourite channel's uploads: rows this user has
+    # waiting, however they got there.
+    if channels.ChannelStore(supabase).waiting_rows(user_id) >= channels.MAX_WAITING:
+        return None
+    return ingest.submit_for_user(supabase, language, video_id, user_id)

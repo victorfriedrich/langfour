@@ -29,7 +29,6 @@ client = TestClient(app)
 def store(monkeypatch):
     monkeypatch.setattr(auth, "verify_token", lambda t: SimpleNamespace(id=USER, is_anonymous=False))
     monkeypatch.setattr(channels, "MIN_DISTINCT_WORDS", 1)
-    channels._rows_by_video.clear()
     fake = Store(CHANNEL_DONE)
     app.dependency_overrides[channels.get_channel_store] = lambda: fake
     app.state.recommender = recommender()

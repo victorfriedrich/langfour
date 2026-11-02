@@ -263,19 +263,6 @@ def get_channel_store() -> ChannelStore:
 # The channel in the recommender's matrix
 # ---------------------------------------------------------------------------
 
-_rows_by_video: dict[str, tuple[list[str], dict[str, int]]] = {}
-
-
-def _row_index(recommender, language: str) -> dict[str, int]:
-    """video id -> matrix row, rebuilt if the recommender reloads the language."""
-    files = recommender.filenames[language]
-    cached = _rows_by_video.get(language)
-    if cached is None or cached[0] is not files:
-        cached = (files, {f.replace("_processed.json", ""): i for i, f in enumerate(files)})
-        _rows_by_video[language] = cached
-    return cached[1]
-
-
 def channel_videos(store: ChannelStore, recommender, channel_id: str,
                    language: str) -> tuple[list[dict], list[tuple[str, int]]]:
     """The channel's queue rows, and (video id, matrix row) for its videos the
@@ -283,7 +270,7 @@ def channel_videos(store: ChannelStore, recommender, channel_id: str,
     not a clip."""
     recommender._ensure_language_loaded(language)
     queue = store.queue_rows(channel_id, language)
-    index = _row_index(recommender, language)
+    index = recommender.rows_by_video[language]
     distinct = recommender.distinct_words_per_doc[language]
     loaded = [(r["video_id"], index[r["video_id"]]) for r in queue
               if r["status"] == "done" and r["video_id"] in index]

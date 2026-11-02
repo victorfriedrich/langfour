@@ -92,6 +92,17 @@ def test_queue_adds_the_video_at_the_user_tier(recommender, monkeypatch):
                        json={"language": "es", "video_id": "x"}).status_code == 422
 
 
+def test_queue_stops_at_the_users_waiting_limit(recommender, monkeypatch):
+    import channels
+    sb = FakeSupabase([pending(B, submitted_by=USER)])
+    monkeypatch.setattr(video_fit_routes, "supabase", sb)
+    monkeypatch.setattr(channels, "MAX_WAITING", 1)
+
+    response = client.post("/api/videos/queue", headers=AUTH, json={"language": "es", "video_id": A})
+    assert response.status_code == 429
+    assert [r["video_id"] for r in sb.rows] == [B]
+
+
 def test_requires_a_session(recommender):
     assert client.post("/api/videos/fit", json={"language": "es", "video_ids": [A]}).status_code == 401
     assert client.post("/api/videos/queue", json={"language": "es", "video_id": A}).status_code == 401
