@@ -78,7 +78,7 @@ describe('historyState', () => {
     expect(historyState({})).toBe('ask');
     expect(historyState({ historyConsent: ['a'] })).toBe('on');
     expect(historyState({ historyConsent: [], historyDeclined: true })).toBe('off');
-    expect(historyState({ historyConsent: ['a'], historyNewAccount: true })).toBe('ask');
+    expect(historyState({ historyConsent: ['a'], historyNewAccount: 'b' })).toBe('ask');
   });
 
   it('says what happens to the ids', () => {

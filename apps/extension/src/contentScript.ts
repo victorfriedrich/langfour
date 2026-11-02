@@ -9,6 +9,7 @@ import { BackendRequestEvent, BackendResponseEvent, CaptionExposureEvent, KnownW
 import { isAllowedHost } from './siteApi';
 import { getErrorMessage } from './errors';
 import { watchDesktop } from './watchSignal';
+import { promptForHistory } from './historyPrompt';
 
 export type Prefs = {
   preferredLanguage: Language;
@@ -153,7 +154,10 @@ if (isAllowedHost(location.host)) {
       });
     }
   }
-  if (location.host === 'www.youtube.com') watchDesktop();
+  if (location.host === 'www.youtube.com') {
+    watchDesktop();
+    promptForHistory();
+  }
 }
 
 // Caption words index.ts saw watched (captionExposure.ts), on to the
