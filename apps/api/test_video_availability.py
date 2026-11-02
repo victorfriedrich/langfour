@@ -1,5 +1,6 @@
 """The thumbnail sweep that hides videos gone from YouTube."""
 
+import logging
 import threading
 
 import httpx
@@ -45,6 +46,13 @@ def test_no_answer_keeps_the_previous_state():
 def test_a_sweep_where_too_many_look_gone_is_ignored():
     http = sweeper(dict.fromkeys(CORPUS, 404))
     assert run(http, [], previous={CORPUS[0]}) == {CORPUS[0]}
+
+
+def test_a_sweep_does_not_log_each_request(caplog):
+    with caplog.at_level(logging.INFO, logger="httpx"):
+        run(sweeper(), [ALIVE])
+        sweeper().get("https://example.com/")
+    assert [r.getMessage().split()[3] for r in caplog.records] == ["https://example.com/"]
 
 
 def test_a_stopped_sweep_makes_no_requests_and_keeps_what_it_had():
