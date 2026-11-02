@@ -32,8 +32,9 @@ NOW = datetime(2026, 11, 2, 12, tzinfo=UTC)
 
 # Word ids: 1-4 everyday words the learner knows, 5 "el cofre" in every video,
 # 6 "la corona" in two of six, 7 "la chispa" in four, already learning,
-# 8 a name the dictionary marks invalid, 9 "el mago" in three of six.
-ROOTS = {5: "el cofre", 6: "la corona", 9: "el mago"}
+# 8 a name the dictionary marks invalid, 9 "el mago" in three of six,
+# 10 "el dragón", said often but in one video only.
+ROOTS = {5: "el cofre", 6: "la corona", 9: "el mago", 10: "el dragón"}
 KNOWN = {1, 2, 3, 4}
 
 
@@ -42,7 +43,7 @@ def video(**spoken):
 
 
 VIDEOS = {
-    "v1": video(w1=40, w2=30, w3=10, w5=8, w7=2, w8=3, w9=1),
+    "v1": video(w1=40, w2=30, w3=10, w5=8, w7=2, w8=3, w9=1, w10=20),
     "v2": video(w1=40, w2=30, w4=10, w5=6, w6=4, w7=2, w8=3, w9=1),
     "v3": video(w1=40, w2=30, w3=10, w5=7, w6=4, w7=2, w8=3, w9=1),
     "v4": video(w1=40, w2=30, w4=10, w5=5, w7=2, w8=3),
@@ -67,6 +68,7 @@ def recommender(videos=VIDEOS):
     return SimpleNamespace(
         languages=["es"], _ensure_language_loaded=lambda language: None,
         filenames={"es": [f"{n}_processed.json" for n in names]},
+        titles={"es": [f"Title of {n}" if n != "v6" else "" for n in names]},
         rows_by_video={"es": {n: i for i, n in enumerate(names)}},
         matrices={"es": counts}, presence={"es": presence},
         distinct_words_per_doc={"es": np.diff(counts.indptr)},
@@ -141,22 +143,40 @@ def view(store, rec=None):
 
 # ------------------------------------------------------------ core words ──
 
-def test_core_words_are_unlisted_valid_words_in_half_the_videos_most_spoken_first():
+def test_core_words_are_unlisted_valid_words_in_a_third_of_the_videos_most_spoken_first():
     result = view(Store(CHANNEL_DONE)).core_words
-    # 5 is in all six videos, 9 in three: half. 6 is in two, 7 is already
-    # learning, 8 isn't vocabulary, and the hidden video counts for nothing.
-    assert [(w.word_id, w.word) for w in result.words] == [(5, "el cofre"), (9, "el mago")]
+    # 5 is in all six videos, 9 in three, 6 in two: a third. 10 is said most
+    # after 5 but in one video, 7 is already learning, 8 isn't vocabulary, and
+    # the hidden video counts for nothing.
+    assert [(w.word_id, w.word) for w in result.words] == [
+        (5, "el cofre"), (6, "la corona"), (9, "el mago")]
     spoken = sum(sum(VIDEOS[f"v{n}"].values()) for n in range(1, 7))
     heard = sum(c for n in range(1, 7) for w, c in VIDEOS[f"v{n}"].items() if w in KNOWN)
     assert result.before == round(heard / spoken * 100, 1)
-    assert result.after == round((heard + 40 + 3) / spoken * 100, 1)
+    assert result.after == round((heard + 40 + 8 + 3) / spoken * 100, 1)
 
 
-def test_no_card_for_a_small_gain_or_a_handful_of_videos(monkeypatch):
-    monkeypatch.setattr(channels, "CORE_MIN_GAIN", 0.2)
-    assert view(Store(CHANNEL_DONE)).core_words is None
-    monkeypatch.setattr(channels, "CORE_MIN_GAIN", 0.03)
-    assert view(Store(CHANNEL_DONE[:4])).core_words is None
+def test_a_card_whatever_the_gain_but_not_for_two_videos():
+    # Only "el mago" is left, 3 words of hundreds.
+    tiny = view(Store(CHANNEL_DONE, known=KNOWN | {5, 6, 10})).core_words
+    assert [w.word for w in tiny.words] == ["el mago"] and tiny.after - tiny.before < 1
+    assert view(Store(CHANNEL_DONE[:3])).core_words is not None
+    assert view(Store(CHANNEL_DONE[:2])).core_words is None
+
+
+def test_says_how_much_of_the_channel_is_understood_and_its_easiest_videos():
+    result = view(Store(CHANNEL_DONE))
+    share = {n: sum(c for w, c in VIDEOS[n].items() if w in KNOWN) / sum(VIDEOS[n].values())
+             for n in (f"v{i}" for i in range(1, 7))}
+    easiest = sorted(share, key=lambda n: -share[n])[:3]
+    assert [b.video_id for b in result.best] == easiest
+    assert [b.understood for b in result.best] == [round(share[n] * 100, 1) for n in easiest]
+    # A video without a title is named by its id.
+    assert {b.video_id: b.title for b in result.best} == {
+        n: f"Title of {n}" if n != "v6" else "v6" for n in easiest}
+    spoken = sum(sum(VIDEOS[f"v{n}"].values()) for n in range(1, 7))
+    heard = sum(c for n in range(1, 7) for w, c in VIDEOS[f"v{n}"].items() if w in KNOWN)
+    assert result.understood == round(heard / spoken * 100, 1)
 
 
 def test_counts_videos_at_your_level_from_indexed_rows_only():
@@ -173,7 +193,8 @@ def test_counts_videos_at_your_level_from_indexed_rows_only():
 def test_a_channel_nothing_indexed_from_shows_nothing():
     result = view(Store([queued("v1", channel_id=CHANNEL)]))
     assert result == channels.ChannelView(favourite=False, uploads=None, added=0, videos=0,
-                                          at_level=0, progress=None, core_words=None)
+                                          at_level=0, understood=None, best=[], progress=None,
+                                          core_words=None)
 
 
 # -------------------------------------------------------------- progress ──
@@ -455,14 +476,16 @@ def test_adds_core_words_as_learning_with_a_line_from_the_channel(corpus):
 
     vocab = Vocab()
     result = channels.add_core_words(Store(CHANNEL_DONE), vocab, recommender(), USER, CHANNEL, "es")
-    assert result.added == ["el cofre", "el mago"]
-    assert vocab.added == [(USER, [5, 9], "learning", CHANNEL)]
-    cofre, mago = vocab.inserted
+    assert result.added == ["el cofre", "la corona", "el mago"]
+    assert vocab.added == [(USER, [5, 6, 9], "learning", CHANNEL)]
+    cofre, corona, mago = vocab.inserted
     assert cofre["kind"] == "saved" and cofre["source"] == "video" and cofre["word_id"] == 5
     assert cofre["context"] == {"site": "youtube", "channel_id": CHANNEL, "media": "youtube:v1",
                                 "title": "Cofres",
                                 "sentence": "abrimos el cofre legendario y sale un mago"}
     assert mago["context"]["media"] == "youtube:v1"
+    # Not said in the one transcript on disk: saved without a line.
+    assert corona["context"] == {"site": "youtube", "channel_id": CHANNEL}
 
 
 def test_a_failed_add_leaves_nothing_and_can_be_retried():
@@ -476,8 +499,8 @@ def test_a_retry_does_not_save_an_event_twice():
     vocab = Vocab(saved=[{"word_id": 5, "context": {"channel_id": CHANNEL}},
                          {"word_id": 9, "context": {"channel_id": "another channel"}}])
     channels.add_core_words(Store(CHANNEL_DONE), vocab, recommender(), USER, CHANNEL, "es")
-    assert [e["word_id"] for e in vocab.inserted] == [9]
-    assert vocab.added[0][1] == [5, 9]
+    assert [e["word_id"] for e in vocab.inserted] == [6, 9]
+    assert vocab.added[0][1] == [5, 6, 9]
 
 
 def test_adding_again_answers_with_the_first_batch_and_adds_no_more():
@@ -502,7 +525,7 @@ def test_context_lines_skip_tokens_that_are_not_words(corpus):
 
 def test_adds_nothing_when_the_channel_has_no_card():
     vocab = Vocab()
-    assert channels.add_core_words(Store(CHANNEL_DONE[:3]), vocab, recommender(), USER,
+    assert channels.add_core_words(Store(CHANNEL_DONE[:2]), vocab, recommender(), USER,
                                    CHANNEL, "es").added == []
     assert vocab.added == [] and vocab.inserted == []
 

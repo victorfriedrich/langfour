@@ -3,9 +3,10 @@
 // apps/api/channel_routes.py). youtubeFavourite.ts runs this in the page's
 // MAIN world, where YouTube's own elements expose the channel's data.
 //
-// The tab shows one line about the channel's videos and, when they would make
-// a real difference, the channel's core words. Its panel takes the place of
-// YouTube's tab content until another tab is chosen.
+// The tab shows one line about the channel's videos, the words the channel
+// uses most that the learner doesn't know, and its videos they'd understand
+// most of. Its panel takes the place of YouTube's tab content until another
+// tab is chosen.
 
 import { LANGUAGES, type Language } from './languages';
 
@@ -15,6 +16,8 @@ export type ChannelView = {
   added: number;
   videos: number;
   at_level: number;
+  understood: number | null;
+  best: { video_id: string; title: string; understood: number }[];
   progress: { added: number; total: number | null } | null;
   core_words: { words: { word_id: number; word: string }[]; before: number; after: number } | null;
 };
@@ -93,7 +96,8 @@ const videosText = (n: number) => (n === 1 ? '1 video' : `${n} videos`);
  * button alone would suggest videos are coming.
  */
 export function summaryText(view: ChannelView, language: Language, settling = false): string {
-  const level = `${view.at_level} at your level`;
+  const understood = view.understood === null ? '' : `${view.understood.toFixed(1)}% understood · `;
+  const level = `${understood}${view.at_level} at your level`;
   if (view.progress) {
     const { added, total } = view.progress;
     const count = total === null ? videosText(added) : `${added} of ${videosText(total)}`;
@@ -141,6 +145,12 @@ html[dark] .lf-fav[aria-pressed="true"] svg{color:#a5b4fc;}
 .lf-add{height:36px;padding:0 16px;border-radius:8px;border:0;background:${ACCENT};color:#fff;font:500 14px/1 Roboto,Arial,sans-serif;cursor:pointer;}
 .lf-add:disabled{opacity:.6;cursor:default;}
 .lf-signin{margin-top:12px;}
+.lf-videos{margin:0;padding:0;list-style:none;}
+.lf-videos li{display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-top:1px solid var(--lf-line);}
+.lf-videos li:first-child{border-top:0;padding-top:0;}
+.lf-videos a{color:inherit;text-decoration:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.lf-videos a:hover{text-decoration:underline;}
+.lf-videos span{flex:none;}
 `;
 
 function ensureStyle(doc: Document): void {
@@ -180,7 +190,7 @@ function el<K extends keyof HTMLElementTagNameMap>(doc: Document, tag: K, classN
 function coreWordsCard(doc: Document, words: NonNullable<ChannelView['core_words']>, add: () => Promise<boolean>): HTMLElement {
   const card = el(doc, 'section', 'lf-card');
   const n = words.words.length;
-  card.append(el(doc, 'h3', '', `${n} core ${n === 1 ? 'word' : 'words'} you don't know yet`));
+  card.append(el(doc, 'h3', '', 'Top words you don\'t know yet'));
 
   const chips = el(doc, 'ul', 'lf-chips');
   const chip = (word: string) => chips.appendChild(el(doc, 'li', '', word));
@@ -213,6 +223,22 @@ function coreWordsCard(doc: Document, words: NonNullable<ChannelView['core_words
   return card;
 }
 
+function bestCard(doc: Document, best: ChannelView['best']): HTMLElement {
+  const card = el(doc, 'section', 'lf-card lf-best');
+  card.append(el(doc, 'h3', '', 'Easiest for you'));
+  const list = el(doc, 'ol', 'lf-videos');
+  for (const video of best) {
+    const item = el(doc, 'li');
+    const link = el(doc, 'a', '', video.title);
+    link.href = `/watch?v=${encodeURIComponent(video.video_id)}`;
+    link.title = video.title;
+    item.append(link, el(doc, 'span', 'lf-muted', `${video.understood.toFixed(1)}% understood`));
+    list.append(item);
+  }
+  card.append(list);
+  return card;
+}
+
 /** The tab's content for a channel, or a sign-in prompt. */
 export function renderPanel(
   doc: Document,
@@ -238,6 +264,7 @@ export function renderPanel(
   }
   panel.append(el(doc, 'p', 'lf-summary', summary(answer.value)));
   if (answer.value.core_words) panel.append(coreWordsCard(doc, answer.value.core_words, addCoreWords));
+  if (answer.value.best.length) panel.append(bestCard(doc, answer.value.best));
   return panel;
 }
 
@@ -423,13 +450,16 @@ export async function mountChannelPage(doc: Document, pathname: string, language
       return;
     }
     const line = panel.querySelector('.lf-summary');
-    // Only the line changes on a refresh: a redrawn card would fold its words
-    // up again and forget that they were added.
+    // Only the line and the videos change on a refresh: a redrawn words card
+    // would fold its words up again and forget that they were added.
     const sameCard = line && view?.ok && next.ok && (coreWordsAdded
       || JSON.stringify(view.value.core_words) === JSON.stringify(next.value.core_words));
     view = next;
-    if (sameCard && next.ok) line.textContent = summary(next.value);
-    else renderOpen();
+    if (sameCard && next.ok) {
+      line.textContent = summary(next.value);
+      panel.querySelector('.lf-best')?.remove();
+      if (next.value.best.length) panel.append(bestCard(doc, next.value.best));
+    } else renderOpen();
     if (!next.ok) return;
     if (Date.now() - favouritedAt < AFTER_FAVOURITE_FOR_MS) schedule(AFTER_FAVOURITE_MS);
     // A total of null means the channel stalled: nothing is arriving to show.
