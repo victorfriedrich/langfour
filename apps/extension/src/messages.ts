@@ -57,6 +57,9 @@ export type ClassifyWordsResponse =
   | { ok: true; words: ClassifiedWord[] }
   | { ok: false; error: string };
 
+// Where words were read, as word_events.source has it.
+export type ExposureSource = 'reader' | 'video';
+
 // The user's history with one word, from word_progress
 // (apps/api/sql/word_progress.sql). Timestamps are ISO strings.
 export type WordProgress = {
@@ -92,6 +95,9 @@ export type BackgroundMessage =
   | { type: 'OPEN_READER'; tabId: number }
   | { type: 'REFRESH_KNOWN_WORDS'; language: string }
   | { type: 'CLASSIFY_WORDS'; language: string; tokens: string[] }
+  // Words the user read (exposure.ts); the background keeps the learning
+  // and new ones and logs them.
+  | { type: 'RECORD_EXPOSURE'; language: string; tokens: string[]; source: ExposureSource; media: string }
   | { type: 'WORD_PROGRESS'; wordId: number }
   | { type: 'GET_ACCOUNT' }
   | { type: 'SET_LANGUAGE'; language: Language }
@@ -188,4 +194,21 @@ export function sendToActiveTab(message: ContentScriptMessage): void {
 // also shares the extension-wide chrome.runtime.onMessage bus.
 export function assertNever(value: never): void {
   console.warn('Unhandled message reached assertNever:', value);
+}
+
+// The paths the MAIN world is allowed to reach: exactly what index.ts and
+// youtubeFavourite.ts call. The expensive endpoints (/parse, /api/translate)
+// are deliberately absent -- only reader.ts uses them, and as an extension
+// page it messages the background directly instead of coming through here.
+// This content script can run on any page (reader extraction), so the channel
+// endpoints, which write, answer only to YouTube.
+const RELAY_PATHS = [/^\/api\/translate-word$/];
+const YOUTUBE_RELAY_PATHS = [
+  /^\/api\/channels\/UC[A-Za-z0-9_-]{22}\?language=(es|de|it|fr)$/,
+  /^\/api\/channels\/UC[A-Za-z0-9_-]{22}\/(favourite|core-words)$/,
+];
+
+export function mayRelay(path: string, host: string): boolean {
+  return RELAY_PATHS.some((pattern) => pattern.test(path))
+    || (host === 'www.youtube.com' && YOUTUBE_RELAY_PATHS.some((pattern) => pattern.test(path)));
 }

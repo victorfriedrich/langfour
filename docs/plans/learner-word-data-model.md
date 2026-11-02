@@ -85,8 +85,15 @@ DERIVED        user_known_words (view); later word_knowledge
   recalls stay in as evidence from outside the flashcard systems.
 - **Exposure counts only what the user chose to read or hear** (text they asked ChatGPT for, or a
   reply the AI app judges from the user's answer they took in whole; not every word ChatGPT
-  wrote). If the reader ever logs every word on every page, store that as daily
+  wrote). An AI app logs only the learning words in it, which it knows from `get_vocabulary`,
+  so it names a few words instead of resending the text. If the reader ever logs every word on every page, store that as daily
   counts in its own table then, not in `word_events`.
+- **The reader and captions log what was read, once per word per page or video.** The extension
+  counts a reader paragraph once it was mostly on screen, page in front and user active, for its
+  words at 400 a minute; a caption word once it was on screen for two samples (about a second)
+  while the video played at 1.5× or slower with the tab in front. Only learning and new words are
+  sent (`POST /api/exposure`), and the server skips words already logged for that `context.media`
+  (`youtube:<id>` or the page URL), so a video adds tens to a few hundred rows, not thousands.
 
 ### Not doing
 
@@ -352,8 +359,6 @@ Dropping these before step 3 means step 3 has fewer functions to rewrite.
   left-join it. Keep or drop is separate from this plan.
 - **Event sources:** the `source` check list above is a first guess. Add values when a writer
   needs one.
-- **Exposure from the reader and videos:** not designed yet. Decide raw events vs daily counts
-  when there's a writer.
 - **Anki as a provider:** not designed. To check first: whether an Anki add-on can record a review
   on a card the way RemNote's `updateCardRepetitionStatus` does (AnkiConnect alone only works on
   the same machine, so an add-on is the likely route); how card directions map to Anki note types

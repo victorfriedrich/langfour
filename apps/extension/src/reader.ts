@@ -10,6 +10,7 @@ import { AccountResponse, askBackground, ClassifyWordsResponse, sendToBackground
 import { loadArticle, StoredArticle } from './readerArticles';
 import { hostOf } from './pageTitle';
 import { appendWordProgress, createLoadingPopup, createMessagePopup, createWordPopup } from './wordPopup';
+import { ExposureQueue, FLUSH_MS, mediaKey, msToRead, tokensOf } from './exposure';
 
 let readerLanguage: Language | null = null;
 let signedIn = false;
@@ -197,6 +198,7 @@ function renderArticle(container: HTMLElement, article: StoredArticle): void {
     }
     setupSectionTranslation(readerLanguage);
     header.appendChild(createLibraryButton(article, contentDiv, readerLanguage));
+    trackReading(contentDiv, readerLanguage, article.url ? mediaKey(article.url) : `reader:${article.title ?? ''}`);
 
     // The text shows right away; marks follow once the dictionary has said
     // which tokens are words and where the user stands with them.
@@ -221,6 +223,94 @@ function passagesOf(root: HTMLElement): Passage[] {
   const blocks = Array.from(root.querySelectorAll<HTMLElement>(BLOCKS)).filter((el) => !el.querySelector(BLOCKS));
   // innerText keeps the <br>s between lyric lines, which textContent drops.
   return blocks.length ? blocks.map((el) => ({ text: el.innerText, block: BLOCK_OF[el.tagName] })) : [{ text: root.innerText }];
+}
+
+// ====================== Words read ======================
+
+const READ_TICK_MS = 500;
+// No scrolling, tapping or keys for this long: the reader was left open,
+// not read.
+const IDLE_MS = 120_000;
+let stopTracking: (() => void) | null = null;
+
+/**
+ * Logs the words of each paragraph the user read as seen (exposure.ts). A
+ * paragraph is read once it has been mostly on screen, with the page in
+ * front and the user active, for about as long as it takes to read. Time
+ * goes to the first unread paragraph on screen and then the next, the way
+ * the text is read, so a screen of several paragraphs isn't counted at
+ * once, and scrolling past counts nothing.
+ */
+function trackReading(contentDiv: HTMLElement, language: Language, media: string): void {
+  stopTracking?.();
+  const blocks = Array.from(contentDiv.querySelectorAll<HTMLElement>(BLOCKS)).filter((el) => !el.querySelector(BLOCKS));
+  const order = blocks.length ? blocks : [contentDiv];
+  const left = new Map(order.map((el) => [el, msToRead(tokensOf(el.innerText).length)]));
+  const queue = new ExposureQueue();
+
+  const intersecting = new Set<HTMLElement>();
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const el = entry.target as HTMLElement;
+      if (entry.isIntersecting) intersecting.add(el);
+      else intersecting.delete(el);
+    }
+  });
+  order.forEach((el) => observer.observe(el));
+
+  let lastActive = Date.now();
+  const active = () => { lastActive = Date.now(); };
+  const activity = ['scroll', 'pointerdown', 'pointermove', 'keydown', 'touchstart'] as const;
+  activity.forEach((type) => window.addEventListener(type, active, { passive: true }));
+
+  // Most of a short paragraph, or half the screen of a long one.
+  const mostlyShown = (el: HTMLElement) => {
+    const rect = el.getBoundingClientRect();
+    const shown = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+    return shown > 0 && shown >= Math.min(rect.height * 0.6, window.innerHeight * 0.5);
+  };
+
+  let last = performance.now();
+  const tick = setInterval(() => {
+    const now = performance.now();
+    // A throttled background timer can come back late; don't credit the gap.
+    let elapsed = Math.min(now - last, READ_TICK_MS * 4);
+    last = now;
+    if (document.visibilityState !== 'visible' || Date.now() - lastActive > IDLE_MS) return;
+    for (const el of order) {
+      if (elapsed <= 0) break;
+      if (!left.has(el) || !intersecting.has(el) || !mostlyShown(el)) continue;
+      const remaining = left.get(el)! - elapsed;
+      if (remaining > 0) {
+        left.set(el, remaining);
+        break;
+      }
+      elapsed = -remaining;
+      left.delete(el);
+      observer.unobserve(el);
+      queue.add(media, tokensOf(el.innerText));
+    }
+  }, READ_TICK_MS);
+
+  const flush = () => {
+    for (const { media: m, tokens } of queue.take()) {
+      sendToBackground({ type: 'RECORD_EXPOSURE', language, tokens, source: 'reader', media: m });
+    }
+  };
+  const flushTimer = setInterval(flush, FLUSH_MS);
+  const onHidden = () => { if (document.visibilityState === 'hidden') flush(); };
+  document.addEventListener('visibilitychange', onHidden);
+  window.addEventListener('pagehide', flush);
+
+  stopTracking = () => {
+    flush();
+    clearInterval(tick);
+    clearInterval(flushTimer);
+    observer.disconnect();
+    activity.forEach((type) => window.removeEventListener(type, active));
+    document.removeEventListener('visibilitychange', onHidden);
+    window.removeEventListener('pagehide', flush);
+  };
 }
 
 /**

@@ -71,6 +71,33 @@ def test_json3_cues_become_text_without_sound_tags():
     assert vp.json3_text(data) == "hola a todos qué tal"
 
 
+def test_caption_cues_keep_their_times():
+    data = {"events": [{"tStartMs": 0, "dDurationMs": 1500, "segs": [{"utf8": "[Música]"}]},
+                       {"tStartMs": 1520, "dDurationMs": 2480, "segs": [{"utf8": "hola"}, {"utf8": " a todos"}]},
+                       {"tStartMs": 3990, "dDurationMs": 10, "segs": [{"utf8": "\n"}]},
+                       {"tStartMs": 4000, "dDurationMs": 3000, "segs": [{"utf8": "qué  tal"}]}]}
+    text = vp.json3_text(data)
+    assert text.source == "captions"
+    assert text.cues == [[1.52, 4.0, "hola a todos"], [4.0, 7.0, "qué tal"]]
+
+
+def test_a_transcripts_timings_reach_the_processed_json(monkeypatch, tmp_path):
+    import json
+    monkeypatch.setattr(vp, "group_text", lambda text: [text])
+    monkeypatch.setattr(vp, "parse", lambda groups, vid, lang: [{"content": w} for w in groups[0].split()])
+    monkeypatch.setattr(vp, "processed_file", lambda lang, vid: tmp_path / "out" / f"{vid}_processed.json")
+
+    timed, plain = tmp_path / "a.txt", tmp_path / "b.txt"
+    vp.write_transcript(str(timed), vp.Transcript("hola a todos", [[1.5, 4.0, "hola a todos"]], "captions"))
+    vp.write_transcript(str(plain), "hola a todos")       # a .txt from before timings were kept
+    for txt, vid in ((timed, "a"), (plain, "b")):
+        vp.process_transcription(str(txt), vid, "t", "c", [], 1, 60, "2026-11-01", "es")
+
+    a = json.loads((tmp_path / "out" / "a_processed.json").read_text())
+    assert a["cueSource"] == "captions" and a["cues"] == [[1.5, 4.0, "hola a todos"]]
+    assert "cues" not in json.loads((tmp_path / "out" / "b_processed.json").read_text())
+
+
 def test_one_request_fetches_the_track_and_429_is_a_block():
     class Session:
         def __init__(self, status):
@@ -165,6 +192,10 @@ def test_a_piece_far_below_speaking_rate_is_split_and_retried(tmp_path):
 
     text = vp.transcribe_in_pieces(str(audio), "es", transcribe=fake_whisper)
     assert len(text.split()) == 30 + 30 + 50
+    # Each half of the retry keeps its own span; together they cover the audio.
+    assert text.source == "whisper" and len(text.cues) == 3
+    assert text.cues[0][0] == 0.0 and text.cues[-1][1] == pytest.approx(40.0)
+    assert all(a[1] == b[0] for a, b in itertools.pairwise(text.cues))
 
 
 # ═════════════════════════════════════ captions first, throttled, Whisper as backup ══
@@ -258,7 +289,7 @@ def test_captions_come_first_and_whisper_only_runs_without_them(monkeypatch, tmp
     monkeypatch.setattr(vp, "process_transcription",
                         lambda f, vid, *a: processed.append(Path(f).read_text()))
     download = []
-    monkeypatch.setattr(vp, "download_video", lambda info: download.append(info["url"]))
+    monkeypatch.setattr(vp, "download_video", lambda info, proxy=None: download.append(info["url"]))
 
     monkeypatch.setattr(vp, "caption_text", lambda vid, lang, proxied=None, proxy=None: "hola mundo")
     vp.main("https://www.youtube.com/watch?v=abc", "es")
@@ -326,9 +357,36 @@ def test_a_failed_download_from_proxied_info_rereads_on_our_own_ip(monkeypatch, 
     monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None, proxy=None: None)
     downloads = []
     monkeypatch.setattr(vp, "download_video",
-                        lambda info: (downloads.append(info["proxied"]), None)[1])
+                        lambda info, proxy=None: (downloads.append(info["proxied"]), None)[1])
     vp.main("https://www.youtube.com/watch?v=abc", "es")
     assert reads == [True, False] and downloads == [True, False]
+
+
+def test_audio_via_proxy_retries_the_download_through_the_videos_session(monkeypatch, tmp_path):
+    """On Koyeb our own IP is blocked outright: no re-read there, the retry
+    goes through the proxy session the metadata read used."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(vp, "CAPTION_PROXY_URL", "http://user-x-session-{session}:pw@proxy:1")
+    monkeypatch.setattr(vp, "AUDIO_VIA_PROXY", True)
+    reads = []
+    monkeypatch.setattr(vp, "read_info", lambda url, proxied: (reads.append(proxied), ({"url": url}, "S1"))[1])
+    monkeypatch.setattr(vp, "video_info", lambda *a, **k: pytest.fail("no read on our own IP"))
+    monkeypatch.setattr(vp, "caption_text", lambda info, lang, proxied=None, proxy=None: None)
+    downloads = []
+    monkeypatch.setattr(vp, "download_video", lambda info, proxy=None: downloads.append(proxy))
+    vp.main("https://www.youtube.com/watch?v=abc", "es")
+    assert reads == [True] and downloads == [None, "S1"]
+
+
+def test_a_failed_metadata_read_raises_so_ingest_records_why(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    def refused(url, proxied):
+        raise OSError("Tunnel connection failed: 407 Proxy Authentication Required")
+
+    monkeypatch.setattr(vp, "read_info", refused)
+    with pytest.raises(OSError, match="407"):
+        vp.main("https://www.youtube.com/watch?v=abc", "es")
 
 
 def test_own_ip_and_proxy_captions_are_spaced_and_paused_separately(captions):

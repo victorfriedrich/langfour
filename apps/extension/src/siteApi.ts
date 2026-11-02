@@ -1,5 +1,7 @@
 interface SubtitleApi {
   subtitleSelector: string;
+  // The playing video, to tell whether captions on screen are being watched.
+  videoSelector: string;
   subtitlePopupSelector: string;
   popupOffsetBottom: number;
   pause: () => boolean;
@@ -18,6 +20,7 @@ interface SubtitleApiWithMask extends SubtitleApi {
 const youtube = {
   subtitleTransformType: 'replace',
   subtitleSelector: '#movie_player .ytp-caption-window-container',
+  videoSelector: '#movie_player video',
   subtitlePopupSelector: '#movie_player',
   popupOffsetBottom: 8,
   pause() {
@@ -35,6 +38,7 @@ const siteApiMap = {
   'www.netflix.com': {
     subtitleTransformType: 'replace',
     subtitleSelector: '.player-timedtext:not(.billboard .player-timedtext)',
+    videoSelector: '.watch-video video',
     subtitlePopupSelector: '.watch-video',
     popupOffsetBottom: 0,
     pause() {
@@ -59,6 +63,7 @@ const siteApiMap = {
   'www.primevideo.com': {
     subtitleTransformType: 'mask',
     subtitleSelector: '.atvwebplayersdk-captions-overlay',
+    videoSelector: '#dv-web-player video',
     maskContainerSelector: '.atvwebplayersdk-captions-text',
     subtitlePopupSelector: '.atvwebplayersdk-overlays-container',
     popupOffsetBottom: 4,
@@ -86,6 +91,7 @@ export function getSiteSpecificApi(
   return {
     subtitleTransformType: 'replace',
     subtitleSelector: '',
+    videoSelector: '',
     subtitlePopupSelector: '',
     popupOffsetBottom: 0,
     pause: () => false,

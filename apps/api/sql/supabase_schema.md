@@ -71,7 +71,7 @@ slugs from those files, with no foreign key.
 |---|---|---|
 | `user_grammar_chapters` | `user_id`, `chapter_id`, `status`, `started_at`, `finished_at` | PK `(user_id, chapter_id)`; FK `user_id → auth.users` on delete cascade; `status` in `started, done` |
 | `user_grammar_concepts` | `user_id`, `concept_id`, `first_correct_at`, `last_seen_at`, `last_produced_at`, `interval_days`, `interval_grown_at`, `refresh_at`, `produced_count`, `error_count`, `learned_at`, `correct_count`, `forms_produced text[]`, `mistake_at`, `mistake_note` | PK `(user_id, concept_id)`; FK `user_id → auth.users` on delete cascade; `interval_days` 1–180. `learned_at` is null until the concept meets the learned bar (`grammar.py`); `mistake_at`/`mistake_note` (≤ 200 chars) flag the last mistake until the next correct use |
-| `grammar_events` | `id`, `user_id`, `concept_id`, `kind`, `correct`, `self_reported`, `sentence`, `note`, `source`, `occurred_at` | PK `id` (identity); FK `user_id → auth.users` on delete cascade; `kind` in `seen, recognized, produced`, `correct` set exactly for `produced` and `recognized`; `sentence` ≤ 300 chars; `note` ≤ 200 chars; `source` in `chatgpt, reader, web`; index `(user_id, occurred_at)`. Append-only |
+| `grammar_events` | `id`, `user_id`, `concept_id`, `topic`, `language`, `kind`, `correct`, `self_reported`, `sentence`, `note`, `source`, `occurred_at` | PK `id` (identity); FK `user_id → auth.users` on delete cascade; exactly one of `concept_id` and `topic` (a mistake no concept covers, label ≤ 60 chars), and `language` (`es, de, it, fr`) set with a topic; `kind` in `seen, recognized, produced`, `correct` set exactly for `produced` and `recognized`; `sentence` ≤ 300 chars; `note` ≤ 200 chars; `source` in `chatgpt, reader, web`; indexes `(user_id, occurred_at)`, `(user_id, language, occurred_at) where topic is not null`. Append-only |
 
 All three: policy `select_own`; written only by the API, through
 `record_grammar(p_user_id, p_events, p_concepts, p_chapters)` (service role
@@ -105,14 +105,18 @@ Vocabulary page; see the functions `known_words_summary` and
 | Table | Columns | Keys and constraints |
 |---|---|---|
 | `video_queue` | `video_id`, `lang`, `channel_id`, `title`, `duration_s`, `views`, `score`, `source`, `priority`, `status`, `attempts`, `error`, `submitted_by`, `created_at`, `claimed_at`, `done_at` | PK `video_id`; FK `submitted_by → auth.users`; `source` in `discovery, user, manual, legacy`; `status` in `pending, processing, done, failed, skipped`; partial index `(lang, priority desc, score desc) where status = 'pending'`, which is exactly `ingest.py`'s claim query; index on `channel_id` |
+| `channel_favourites` | `user_id`, `channel_id`, `lang`, `created_at`, `uploads_outcome` | PK `(user_id, channel_id)`; FK `user_id → auth.users`; `channel_id` a `UC…` id; `uploads_outcome` in `queued, other_language`, null until a listing finishes; index on `channel_id`; own-row select/insert/delete (`channel_favourites.sql`) |
 | `pending_words` | `language`, `word`, `outcome`, `source`, `candidates text[]`, `jev jsonb`, `seen`, `created_at`, `resolved_at` | PK `(language, word)`; `outcome` in `pending, not_a_word`. Unknown tokens `parse()` did not attach to a root; written through `record_pending_words(rows jsonb)` (service role only) |
 | `video_scores` | `video_id`, `language`, `rubric_version`, `integrity`, `p_garbled`, `p_foreign_lesson`, `p_sung`, `grammar`, `content`, `developed`, `transferable`, `jev jsonb`, `scored_at` | PK `video_id`; `integrity` in `clean, patchy, garbled`; index `(language, video_id)`. Jev's rating of each transcript (`video_quality.py`), written by `ingest.py` and `scripts/score_videos.py`, read by the recommender at startup |
+| `video_word_ranks` | `video_id`, `language`, `rubric_version`, `ranks jsonb`, `ranked_at` | PK `video_id`. Jev's ranking of each video's words, `{"<word id>": [here, general]}` (`word_importance.py`), written the first time a video's word list is opened |
 
 Policies: `users queue own videos [insert]`, `users read own submissions
 [select]`. Workers claim and update rows with `service_role`. Definition in
 `video_queue.sql`. `pending_words` (`pending_words.sql`, applied 2026-10-15) has RLS on
 and no policies: only `service_role` reads or writes it. The same holds for
-`video_scores` (`video_scores.sql`, applied 2026-10-29).
+`video_scores` (`video_scores.sql`, applied 2026-10-29). And for `video_word_ranks` (`word_ranks.sql`, which also adds
+`user_media.word_ranks` and `word_ranks_version`, the same ranking for a
+Library item).
 
 ## Functions
 

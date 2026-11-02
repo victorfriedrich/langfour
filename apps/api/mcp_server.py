@@ -69,12 +69,13 @@ mcp = FastMCP(
         "flashcard reviews, itself or in a connected app such as RemNote. Before practising "
         "vocabulary with the user, pick words with get_vocabulary (due words first); at the end "
         "of the session, report the results with record_practice. When you write a text for "
-        "the user to read in the language, check its level with score_text, and once they have "
-        "read it, log it with record_exposure. Your replies count too: in every turn, judge "
-        "from the user's answer whether they took in the whole of your previous reply (they "
-        "respond to its end or what it asked, or heard it out in a voice conversation), and "
-        "if they did, log the parts of it written in the language with record_exposure. "
-        "Take the user at their word about what they "
+        "the user to read in the language, check its level with score_text. In a "
+        "conversation in the language, fetch the words the user is learning once with "
+        "get_vocabulary (status 'learning', limit 5000) and keep the list. In every turn, "
+        "judge from the user's answer whether they took in the whole of your previous reply "
+        "or a text they asked for (they respond to its end or what it asked, or heard it out "
+        "in a voice conversation), and if they did, log the learning words that appeared in "
+        "it with record_exposure. Take the user at their word about what they "
         "know: words they know outright go to known with set_word_status, and words they say "
         "they can read but not produce get a correct 'recognize' answer, self_reported, with "
         "record_practice. Don't quiz them first unless they ask. When the user asks to add "
@@ -83,9 +84,12 @@ mcp = FastMCP(
         "for them or teach grammar, read get_grammar_overview once and follow the guide it "
         "returns; fetch get_grammar_details only for the chapters the conversation is about. "
         "Teach in the guide's small lessons, one step per message, and don't move on until "
-        "a concept is learned. Whenever the user writes or says something in the language "
+        "a concept is learned. A lesson on a broad topic too: concept by concept, with "
+        "exercises after each one, never the whole topic explained first. Whenever the user writes or says something in the language "
         "you correct, in a lesson or not, record it with record_grammar in that same turn: "
-        "every sentence and exercise answer, with each grammar mistake in it. Don't save "
+        "every sentence and exercise answer, with each grammar mistake in it (several "
+        "concepts on one result when one note covers them, and a mistake no concept covers "
+        "under a topic the overview lists, or a new one). Don't save "
         "results for the end of a lesson or session; correcting a mistake without recording "
         "it is an unfinished reply. "
         "Use Langfour in the background. Don't announce, narrate or confirm tool calls "
@@ -186,29 +190,30 @@ async def score_text_tool(
 
 
 @mcp.tool(name="record_exposure", annotations=ToolAnnotations(
-    title="Log a text the user read",
+    title="Log words the user read",
     readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False,
 ))
 async def record_exposure_tool(
     language: Language,
-    text: Annotated[str, Field(min_length=1, max_length=MAX_TEXT)],
+    words: Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]],
+                     Field(min_length=1, max_length=200)],
     ctx: Context,
 ) -> ExposureSummary:
-    """Log that the user read a text in the target language, once per text, after they
-    have read it. Langfour notes each word they're learning or haven't met as seen; it
-    doesn't change their flashcard schedule.
+    """Log that the user read words they're learning: the learning words in a reply of
+    yours they took in, or in a text they asked for (a story, an article) once they've
+    read it. Langfour notes each as seen; it doesn't change their flashcard schedule.
 
-    Log a text the user asked for (a story, an article) once they've read it, and your
-    own replies when the user took them in. In every turn, judge from the user's answer
-    whether they engaged with the whole of your previous reply: they respond to its end
-    or to what it asked, or heard it out in a voice conversation. If they did, log it in
-    this turn; if they skimmed it, cut you off or answered only its first lines, don't.
-    Pass only the parts written in the target language, never explanations in another
-    language (their words would be read as the target language's), and never a text
-    you already logged.
+    Know the learning words before you write: fetch them once per conversation with
+    get_vocabulary (status 'learning', limit 5000) and keep the list. In every turn, judge
+    from the user's answer whether they engaged with the whole of your previous reply:
+    they respond to its end or to what it asked, or heard it out in a voice conversation.
+    If they did, log the learning words that appeared in it, in any form, each once and
+    written as get_vocabulary lists them (with the article, e.g. 'la casa'). If they
+    skimmed it, cut you off or answered only its first lines, don't, and never log a
+    reply twice. not_learning lists words that aren't in their learning list.
     """
     return await asyncio.to_thread(record_exposure, get_vocabulary_store(), _user_id(ctx),
-                                   language, text)
+                                   language, words)
 
 
 @mcp.tool(name="set_word_status", annotations=ToolAnnotations(
@@ -324,6 +329,15 @@ async def record_grammar_tool(
     Record every grammar mistake the user makes, in any concept, including chapters they
     haven't started (look the concept up with get_grammar_details), as a wrong result
     with a short note. It stays flagged for revision until they next use it correctly.
+    A sentence with several mistakes (a tense, an article and a preposition) can be one
+    result listing every concept in concepts, when one note covers them; give a mistake
+    its own result, with the same sentence, when it needs its own note.
+
+    A mistake that matters but that no concept covers goes under a topic instead of a
+    concept: a short label for the kind of mistake. get_grammar_overview lists the topics
+    used so far; reuse one when the mistake is of the same kind, so they group. A result
+    can have concepts and a topic. A topic stays to revise until a result under it is
+    correct. Don't use a topic when a concept fits.
 
     A concept is learned only after enough correct sentences covering enough of its
     forms; to_learn says what each practised concept still needs. Never tell the user a

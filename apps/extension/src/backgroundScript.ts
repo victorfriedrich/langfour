@@ -9,6 +9,7 @@ import {
   BackgroundMessage,
   ClassifiedWord,
   ClassifyWordsResponse,
+  ExposureSource,
   Account,
   AccountResponse,
   WordProgress,
@@ -256,6 +257,33 @@ async function classifyWordsRemotely(language: string, tokens: string[]): Promis
   return { ok: true, words };
 }
 
+// Word ids per /api/exposure call, the server's limit.
+const EXPOSURE_BATCH_SIZE = 2000;
+
+/**
+ * Logs the learning and new words among tokens the user read (exposure.ts)
+ * as seen. Known words aren't logged, and the server keeps one exposure per
+ * word per media, so sending the same words again is harmless.
+ */
+async function recordExposure(language: string, tokens: string[], source: ExposureSource, media: string): Promise<void> {
+  const classified = await classifyWords(language, Array.from(new Set(tokens)));
+  if (!classified.ok) {
+    console.warn('Could not log words read:', classified.error);
+    return;
+  }
+  const wordIds = Array.from(new Set(
+    classified.words.filter((w) => w.status === 'learning' || w.status === 'new').map((w) => w.word_id),
+  ));
+  for (let start = 0; start < wordIds.length; start += EXPOSURE_BATCH_SIZE) {
+    const response = await backendFetch({
+      path: '/api/exposure',
+      method: 'POST',
+      body: { source, media, word_ids: wordIds.slice(start, start + EXPOSURE_BATCH_SIZE) },
+    });
+    if (!response.ok) console.warn('Could not log words read:', response.status, response.statusText);
+  }
+}
+
 /** The user's history with one word, for the reader's word sheet. */
 async function wordProgress(wordId: number): Promise<WordProgressResponse> {
   const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
@@ -463,6 +491,14 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
       classifyWords(message.language, message.tokens)
         .catch((error): ClassifyWordsResponse => ({ ok: false, error: getErrorMessage(error, 'Lookup failed') }))
         .then(sendResponse);
+      return true; // Keeps the message channel open for async response
+    }
+
+    case 'RECORD_EXPOSURE': {
+      const { language, tokens, source, media } = message;
+      recordExposure(language, tokens, source, media)
+        .catch((error: unknown) => console.warn('Could not log words read:', error))
+        .then(() => sendResponse({ ok: true }));
       return true; // Keeps the message channel open for async response
     }
 

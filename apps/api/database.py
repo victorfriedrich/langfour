@@ -332,7 +332,7 @@ def get_missing_words_from_db(user_id: str, word_ids: list[int], language: str) 
         return []
 
     # Fetch the missing words' details
-    missing_words_response = supabase.table("words").select("id, root").in_("id", missing_word_ids).eq("language", language).execute()
+    missing_words_response = supabase.table("words").select("id, root, status").in_("id", missing_word_ids).eq("language", language).execute()
     
     # Add logging for response
     logger.info(f"Database response: {missing_words_response.data}")
@@ -342,7 +342,8 @@ def get_missing_words_from_db(user_id: str, word_ids: list[int], language: str) 
         {
             "id": word['id'],
             "content": word['root'],
-            "translation": None  # The frontend will fetch translations separately
+            "translation": None,  # The frontend will fetch translations separately
+            "status": word['status'],
         }
         for word in missing_words_response.data
     ]
@@ -470,8 +471,9 @@ def find_root_by_wordform_id(wordform_id: int, language: str) -> str:
     :return: The root word or None if not found.
     """
     language = language_key(language)
-    # Iterate through the words in the cache for the specified language
-    for root, word_id in word_cache[language]['words'].items():
+    # Iterate through the words in the cache for the specified language. Copied
+    # first: the ingest workers add to this dict while requests read it.
+    for root, word_id in list(word_cache[language]['words'].items()):
         if word_id == wordform_id:
             return root
 

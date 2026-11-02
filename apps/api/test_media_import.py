@@ -4,14 +4,18 @@ import pytest
 
 import media_import
 from media_import import (
+    MAX_FOLDER_DEPTH,
     ImportLimitError,
     MediaExistsError,
     MediaStore,
+    get_layout,
     get_media,
     get_media_words,
     import_media,
     list_media,
     make_media_id,
+    save_layout,
+    validate_layout,
 )
 
 
@@ -20,6 +24,7 @@ class FakeStore:
 
     def __init__(self):
         self.rows = {}
+        self.layouts = {}
 
     def insert(self, user_id, row):
         key = (user_id, row["language"], row["id"])
@@ -43,6 +48,12 @@ class FakeStore:
         if row is None:
             return None
         return row if columns == "*" else {c: row[c] for c in columns.split(",")}
+
+    def get_layout(self, user_id, language):
+        return self.layouts.get((user_id, language), [])
+
+    def save_layout(self, user_id, language, tree):
+        self.layouts[(user_id, language)] = tree
 
 
 ALICE, BOB = "alice", "bob"
@@ -112,6 +123,10 @@ class RecordingClient:
     def gte(self, *args):
         return self
 
+    def upsert(self, row, on_conflict=None):
+        self.filters.append(("user_id", row["user_id"]))
+        return self
+
     def order(self, *args, **kwargs):
         return self
 
@@ -127,7 +142,8 @@ def test_media_store_filters_every_read_on_the_user():
     # one user's Library from another's.
     for read in (lambda st: st.exists(ALICE, "es", "x"), lambda st: st.list(ALICE, "es"),
                  lambda st: st.get(ALICE, "es", "x"),
-                 lambda st: st.count_since(ALICE, datetime.now(UTC))):
+                 lambda st: st.count_since(ALICE, datetime.now(UTC)),
+                 lambda st: st.get_layout(ALICE, "es"), lambda st: st.save_layout(ALICE, "es", [])):
         client = RecordingClient()
         read(MediaStore(client))
         assert ("user_id", ALICE) in client.filters
@@ -254,3 +270,56 @@ def test_items_imported_without_word_spans_are_marked_on_read():
 
     chunks = get_media(store, ALICE, result["id"], "es", tokenize)["chunks"]
     assert [chunk["words"] for chunk in chunks] == [[[0, 4, 1], [5, 10, 2]], [[6, 11, 3]]]
+
+
+def folder(folder_id, *children, **over):
+    return {"type": "folder", "id": folder_id, "name": "Songs", "color": "rose", "open": True,
+            "children": list(children), **over}
+
+
+def test_a_layout_is_saved_per_user_and_language():
+    store = FakeStore()
+    tree = [folder("f1", {"type": "item", "id": "cancion"}), {"type": "item", "id": "tranvia"}]
+
+    assert save_layout(store, ALICE, "es", tree) == tree
+    assert get_layout(store, ALICE, "es") == tree
+    assert get_layout(store, ALICE, "de") == []
+    assert get_layout(store, BOB, "es") == []
+
+
+def test_a_layout_keeps_only_known_keys_and_trims_names():
+    tree = [{**folder("f1", {"type": "item", "id": "a", "extra": 1}, name="  Songs  "), "open": False, "x": "y"},
+            {"type": "folder", "id": "f2", "name": "Defaults"}]
+
+    assert validate_layout(tree) == [
+        folder("f1", {"type": "item", "id": "a"}, open=False),
+        {"type": "folder", "id": "f2", "name": "Defaults", "color": "gray", "open": True, "children": []},
+    ]
+
+
+@pytest.mark.parametrize("tree", [
+    {"type": "item", "id": "a"},
+    [{"type": "file", "id": "a"}],
+    [{"type": "item", "id": "a b"}],
+    [{"type": "item", "id": "a"}, folder("f1", {"type": "item", "id": "a"})],
+    [folder("f1", folder("f1"))],
+    [folder("f1", name=" ")],
+    [folder("f1", name="x" * 81)],
+    [folder("f1", color="#ff0000")],
+    [folder("f1", children="a")],
+])
+def test_a_malformed_layout_is_refused(tree):
+    with pytest.raises(ValueError):
+        validate_layout(tree)
+
+
+def test_folders_nest_only_so_deep():
+    def nested(depth):
+        tree = folder(f"f{depth}")
+        for level in range(depth - 1, 0, -1):
+            tree = folder(f"f{level}", tree)
+        return [tree]
+
+    assert validate_layout(nested(MAX_FOLDER_DEPTH))
+    with pytest.raises(ValueError):
+        validate_layout(nested(MAX_FOLDER_DEPTH + 1))

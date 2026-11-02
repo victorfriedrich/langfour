@@ -12,7 +12,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, confloat, conint
 
 from auth import AuthMiddleware, get_current_user
+from channel_routes import router as channel_router
 from database import cached_word_id, initialize_cache
+from exposure_routes import router as exposure_router
 from flashcards import router as flashcards_router
 from grammar_routes import router as grammar_router
 from language_check import router as language_check_router
@@ -23,10 +25,12 @@ from media_import import (
     ImportLimitError,
     MediaExistsError,
     MediaStore,
+    get_layout,
     get_media,
     get_media_words,
     import_media,
     list_media,
+    save_layout,
 )
 from nlp_processing import (
     generate_word_examples,
@@ -44,6 +48,8 @@ from text_article_parsing import parse_article
 from tts import router as tts_router
 from utils import get_video_words, is_special_character
 from videoparsing import main as process_video
+from vocabulary_routes import router as vocabulary_router
+from word_importance import media_ranks, video_ranks, with_importance
 
 app = FastAPI()
 
@@ -136,6 +142,9 @@ app.include_router(mcp_auth_router)
 app.include_router(tts_router, tags=["tts"])
 app.include_router(grammar_router, tags=["grammar"])
 app.include_router(language_check_router, tags=["language-check"])
+app.include_router(exposure_router, tags=["exposure"])
+app.include_router(vocabulary_router, tags=["vocabulary"])
+app.include_router(channel_router, tags=["channels"])
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 
@@ -151,6 +160,7 @@ async def stop_mcp():
 
 # Client now comes from supabase_client, which verifies the key is
 # service_role before the app is allowed to start.
+import ingest_worker
 from corpus_sync import ensure_corpus
 from paths import PROCESSED_DIR
 from supabase_client import supabase
@@ -223,6 +233,11 @@ class WordRecommendationResponse(BaseModel):
     frequencies: list[int]
     total_videos: int
 
+class MediaLayoutRequest(BaseModel):
+    language: str = Field(..., description="Language name or ISO code")
+    # Validated node by node in media_import.validate_layout.
+    tree: list
+
 class MissingWordsRequest(BaseModel):
     language_code: str
     
@@ -253,6 +268,16 @@ async def startup_event():
 
     # now instantiate here, so import-time is fast
     app.state.recommender         = Recommender(base_folder=VIDEO_DIR)
+
+    # After initialize_cache(): the worker parses against the loaded cache.
+    # Off unless INGEST_WORKER_MIX is set (see ingest_worker.py).
+    app.state.ingest_stop = ingest_worker.start(supabase)
+
+
+@app.on_event("shutdown")
+async def stop_ingest_worker():
+    if stop := getattr(app.state, "ingest_stop", None):
+        stop.set()
 
 @app.post("/parse")
 async def parse_text(request: TextRequest):
@@ -374,6 +399,7 @@ async def get_rank_blended_recommendations(
         language=language,
         filter_category=video_category,
         top_n=top_n,
+        rank_by_distinct=True,
     )
     max_useful = len(useful_videos)
     useful_rank_map = {
@@ -469,8 +495,10 @@ async def check_missing_words(
         words = get_video_words(video_id, language_code)
 
         missing_words = await get_missing_words(current_user.id, words, language_code)
-        
-        return {"missing_words": missing_words}
+        # Ranked once per video, for every user (word_importance.py).
+        ranks = await video_ranks(supabase, video_id, language_code, words)
+
+        return {"missing_words": with_importance(missing_words, ranks)}
     except Exception as e:
         logger.exception("💥 unhandled error in /missing-words")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -573,9 +601,23 @@ async def get_imported_media(
     current_user: dict = Depends(get_current_user),
     store: MediaStore = Depends(get_media_store),
 ):
-    """The signed-in user's Library in one language, newest first, without the text."""
+    """The signed-in user's Library in one language, newest first, without the
+    text, and the folders they arranged it in."""
     try:
-        return {"media": list_media(store, str(current_user.id), language)}
+        user_id = str(current_user.id)
+        return {"media": list_media(store, user_id, language), "layout": get_layout(store, user_id, language)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+@app.put("/api/media/layout")
+async def put_media_layout(
+    request: MediaLayoutRequest,
+    current_user: dict = Depends(get_current_user),
+    store: MediaStore = Depends(get_media_store),
+):
+    """Save the folders and order of the signed-in user's Library in one language."""
+    try:
+        return {"layout": save_layout(store, str(current_user.id), request.language, request.tree)}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -608,12 +650,17 @@ async def get_imported_media_missing_words(
     current_user: dict = Depends(get_current_user),
     store: MediaStore = Depends(get_media_store),
 ):
-    """The words of a Library item the user doesn't know yet. Videos keep
-    their own endpoint, which reads the shared corpus on disk."""
+    """The words of a Library item the user doesn't know yet, each with its
+    importance. Videos keep their own endpoint, which reads the shared corpus
+    on disk."""
     try:
         language_code = require_code(request.language_code)
-        words = get_media_words(store, str(current_user.id), media_id, language_code)
-        return {"missing_words": await get_missing_words(current_user.id, words, language_code)}
+        user_id = str(current_user.id)
+        words = get_media_words(store, user_id, media_id, language_code)
+        missing_words = await get_missing_words(current_user.id, words, language_code)
+        # Ranked on the first open, then saved with the item (word_importance.py).
+        ranks = await media_ranks(supabase, store, user_id, media_id, language_code, _tokens_from_cache)
+        return {"missing_words": with_importance(missing_words, ranks)}
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Media not found: {media_id}") from exc
     except ValueError as error:
@@ -680,6 +727,7 @@ async def get_chart_data(
                 language=language,
                 filter_category=category,
                 top_n=50,
+                distinct=False,
             )
             if ordered_recommendations:
                 avg_percent_ordered = sum(rec["percentUnderstood"] for rec in ordered_recommendations) / len(ordered_recommendations)
@@ -694,6 +742,7 @@ async def get_chart_data(
                 language=language,
                 filter_category=category,
                 top_n=50,
+                distinct=False,
             )
             if random_recommendations:
                 avg_percent_random = sum(rec["percentUnderstood"] for rec in random_recommendations) / len(random_recommendations)
@@ -715,7 +764,8 @@ async def get_chart_data(
                     word_ids=category_word_ids,
                     language=language,
                     filter_category=category,
-                    top_n=50
+                    top_n=50,
+                    distinct=False,
                 )
                 if category_videos:
                     avg_percent_category = sum(rec["percentUnderstood"] for rec in category_videos) / len(category_videos)

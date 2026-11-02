@@ -66,10 +66,12 @@ class CandidateIndex:
         cache = word_cache[language_key(language)]
         self.roots = {}
         pairs = []
-        for root, wid in cache['words'].items():
+        # Copied first: the other ingest worker adds to these dicts during the
+        # build, and a dict that grows mid-loop raises RuntimeError.
+        for root, wid in list(cache['words'].items()):
             self.roots.setdefault(wid, root)
             pairs.append((_fold(_strip_article(root)), wid))
-        pairs.extend((_fold(form), wid) for form, wid in cache['wordforms'].items())
+        pairs.extend((_fold(form), wid) for form, wid in list(cache['wordforms'].items()))
         pairs.sort()
         self.keys = [k for k, _ in pairs]
         self.ids = [i for _, i in pairs]
