@@ -21,6 +21,7 @@ export type ChannelView = {
 export type Answer<T> = { ok: true; value: T } | { ok: false; signedOut: boolean };
 
 export type ChannelApi = {
+  favourited(channelId: string): Promise<Answer<{ favourite: boolean }>>;
   view(channelId: string, language: Language): Promise<Answer<ChannelView>>;
   favourite(channelId: string, language: Language, favourite: boolean): Promise<Answer<{ favourite: boolean }>>;
   addCoreWords(channelId: string, language: Language): Promise<Answer<{ added: string[] }>>;
@@ -30,6 +31,11 @@ export type ChannelApi = {
 const MARK = 'data-langfour-channel';
 const CHIPS_SHOWN = 15;
 const CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
+// While the tab is open: soon after a favourite, whose uploads are being listed
+// in the background, then slowly while videos are still arriving.
+const AFTER_FAVOURITE_MS = 5_000;
+const AFTER_FAVOURITE_FOR_MS = 20_000;
+const WHILE_ADDING_MS = 60_000;
 
 const BROWSE = 'ytd-browse[page-subtype="channels"]';
 // YouTube renames these now and then; they are kept here, in one place.
@@ -51,6 +57,22 @@ export function channelIdOf(doc: Document, pathname: string): string | null {
   if (typeof fromData === 'string' && CHANNEL_ID.test(fromData)) return fromData;
   const fromPath = pathname.match(/^\/channel\/([^/?#]+)/)?.[1];
   return fromPath && CHANNEL_ID.test(fromPath) ? fromPath : null;
+}
+
+/**
+ * The channel a yt-navigate-finish event is for. It has to come from the event:
+ * YouTube fires it before handing the page its new data, so at that moment the
+ * page's data and header are still the previous channel's.
+ */
+export function navigatedChannelId(detail: unknown): string | null {
+  type Navigation = {
+    response?: { response?: { metadata?: { channelMetadataRenderer?: { externalId?: unknown } } } };
+    endpoint?: { browseEndpoint?: { browseId?: unknown } };
+  };
+  const navigation = detail as Navigation | null | undefined;
+  const id = navigation?.response?.response?.metadata?.channelMetadataRenderer?.externalId
+    ?? navigation?.endpoint?.browseEndpoint?.browseId;
+  return typeof id === 'string' && CHANNEL_ID.test(id) ? id : null;
 }
 
 export function isChannelPath(pathname: string): boolean {
@@ -84,9 +106,11 @@ const ACCENT = '#4f46e5';
 // names stay as fallbacks.
 const CSS = `
 .lf-fav,.lf-panel{--lf-text:var(--yt-sys-color-baseline--text-primary,var(--yt-spec-text-primary,#0f0f0f));--lf-text-2:var(--yt-sys-color-baseline--text-secondary,var(--yt-spec-text-secondary,#606060));--lf-line:var(--yt-sys-color-baseline--outline,var(--yt-spec-10-percent-layer,rgba(0,0,0,.1)));--lf-chip:var(--yt-sys-color-baseline--tonal-background,var(--yt-spec-badge-chip-background,rgba(0,0,0,.05)));}
-.lf-fav{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 16px;border-radius:18px;font:500 14px/1 Roboto,Arial,sans-serif;cursor:pointer;border:1px solid var(--lf-line);background:transparent;color:var(--lf-text);}
-.lf-fav[aria-pressed="true"]{background:${ACCENT};border-color:${ACCENT};color:#fff;}
-.lf-fav:disabled{opacity:.6;cursor:default;}
+.lf-fav{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 16px;border-radius:18px;font:500 14px/1 Roboto,Arial,sans-serif;cursor:pointer;border:0;background:var(--lf-chip);color:var(--lf-text);}
+.lf-fav:hover{background:var(--yt-sys-color-baseline--button-chip-background-hover,rgba(0,0,0,.1));}
+.lf-fav:disabled{cursor:default;}
+.lf-fav[aria-pressed="true"] svg{color:${ACCENT};}
+html[dark] .lf-fav[aria-pressed="true"] svg{color:#a5b4fc;}
 .lf-panel{padding:24px 0;font:400 14px/20px Roboto,Arial,sans-serif;color:var(--lf-text);max-width:720px;}
 .lf-panel p{margin:0;}
 .lf-muted{color:var(--lf-text-2);}
@@ -110,7 +134,7 @@ function ensureStyle(doc: Document): void {
   doc.head.appendChild(style);
 }
 
-function heart(doc: Document, filled: boolean): SVGElement {
+function star(doc: Document, filled: boolean): SVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const icon = doc.createElementNS(ns, 'svg');
   icon.setAttribute('viewBox', '0 0 24 24');
@@ -118,10 +142,11 @@ function heart(doc: Document, filled: boolean): SVGElement {
   icon.setAttribute('height', '16');
   icon.setAttribute('aria-hidden', 'true');
   const path = doc.createElementNS(ns, 'path');
-  path.setAttribute('d', 'M12 20.5s-7.5-4.6-7.5-10.1A4.4 4.4 0 0 1 12 7.6a4.4 4.4 0 0 1 7.5 2.8c0 5.5-7.5 10.1-7.5 10.1z');
+  path.setAttribute('d', 'M12 3.8l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z');
   path.setAttribute('fill', filled ? 'currentColor' : 'none');
   path.setAttribute('stroke', 'currentColor');
-  path.setAttribute('stroke-width', '2');
+  path.setAttribute('stroke-width', '1.8');
+  path.setAttribute('stroke-linejoin', 'round');
   icon.appendChild(path);
   return icon;
 }
@@ -193,7 +218,7 @@ export function renderPanel(
     }
     return panel;
   }
-  panel.append(el(doc, 'p', '', summaryText(answer.value)));
+  panel.append(el(doc, 'p', 'lf-summary', summaryText(answer.value)));
   if (answer.value.core_words) panel.append(coreWordsCard(doc, answer.value.core_words, addCoreWords));
   return panel;
 }
@@ -213,26 +238,16 @@ export function unmount(doc: Document): void {
   doc.querySelectorAll(`[${MARK}]`).forEach((node) => node.remove());
 }
 
-async function waitFor(doc: Document, selector: string, timeoutMs = 10_000): Promise<Element | null> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const found = doc.querySelector(selector);
-    if (found) return found;
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return null;
-}
-
-function favouriteButton(doc: Document, actions: Element, channelId: string, language: Language, api: ChannelApi, onChange: () => void): (on: boolean) => void {
+function favouriteButton(doc: Document, channelId: string, language: Language, initial: boolean, api: ChannelApi, onChange: (on: boolean) => void): HTMLElement {
   const wrap = el(doc, 'div', 'ytFlexibleActionsViewModelAction');
   wrap.setAttribute(MARK, 'favourite');
   const button = el(doc, 'button', 'lf-fav');
   button.type = 'button';
   const show = (on: boolean) => {
     button.setAttribute('aria-pressed', String(on));
-    button.replaceChildren(heart(doc, on), doc.createTextNode(on ? 'Favourited' : 'Favourite'));
+    button.replaceChildren(star(doc, on), doc.createTextNode(on ? 'Favourited' : 'Favourite'));
   };
-  show(false);
+  show(initial);
   button.addEventListener('click', async () => {
     const want = button.getAttribute('aria-pressed') !== 'true';
     button.disabled = true;
@@ -245,14 +260,13 @@ function favouriteButton(doc: Document, actions: Element, channelId: string, lan
       return;
     }
     show(answer.value.favourite);
-    onChange();
+    onChange(answer.value.favourite);
   });
   wrap.append(button);
-  actions.append(wrap);
-  return show;
+  return wrap;
 }
 
-function langfourTab(doc: Document, tabs: Element, open: () => void): HTMLElement {
+function langfourTab(doc: Document, open: () => void): HTMLElement {
   const tab = el(doc, 'div', 'ytTabShapeHost ytTabShapeHostClickable');
   tab.setAttribute(MARK, 'tab');
   tab.setAttribute('role', 'tab');
@@ -266,10 +280,23 @@ function langfourTab(doc: Document, tabs: Element, open: () => void): HTMLElemen
       open();
     }
   });
-  // Before YouTube's search, which it keeps last.
-  const last = tabs.querySelector('.ytTabShapeLastTab');
-  tabs.insertBefore(tab, last && last.parentElement === tabs ? last : null);
   return tab;
+}
+
+/**
+ * Puts the button and tab where they belong, if they aren't there. YouTube
+ * rebuilds its header when the layout changes, such as on a window resize, and
+ * drops what it didn't render.
+ */
+function place(doc: Document, button: HTMLElement, tab: HTMLElement): void {
+  const actions = doc.querySelector(SELECTORS.actions);
+  if (actions && button.parentElement !== actions) actions.append(button);
+  const tabs = doc.querySelector(SELECTORS.tabs);
+  if (tabs && tab.parentElement !== tabs) {
+    // Before YouTube's search, which it keeps last.
+    const last = tabs.querySelector('.ytTabShapeLastTab');
+    tabs.insertBefore(tab, last && last.parentElement === tabs ? last : null);
+  }
 }
 
 const SELECTED = [['.ytTabShapeTab', 'ytTabShapeTabSelected'], ['.ytTabShapeTabBar', 'ytTabShapeTabBarSelected']];
@@ -279,87 +306,136 @@ function select(tab: Element, on: boolean): void {
   for (const [part, cls] of SELECTED) tab.querySelector(part)?.classList.toggle(cls, on);
 }
 
+/** The channel showing, once YouTube's data is for the channel navigated to. */
+async function waitForChannel(doc: Document, pathname: string, expectedId: string | null, isCurrent: () => boolean, timeoutMs = 10_000): Promise<string | null> {
+  const wanted = expectedId ?? pathname.match(/^\/channel\/([^/?#]+)/)?.[1] ?? null;
+  const start = Date.now();
+  while (isCurrent() && Date.now() - start < timeoutMs) {
+    const id = channelIdOf(doc, pathname);
+    if (id && (!wanted || id === wanted)) return id;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+}
+
 /**
  * Adds the Favourite button and the Langfour tab to the channel page that is
  * showing. Safe to call on every navigation: what a previous page added is
- * taken out first.
+ * taken out first. `expectedId` is the channel the navigation was to
+ * (navigatedChannelId), or null when there was none, as on a first load.
  */
-export async function mountChannelPage(doc: Document, pathname: string, language: Language, api: ChannelApi): Promise<void> {
+export async function mountChannelPage(doc: Document, pathname: string, language: Language, api: ChannelApi, expectedId: string | null = null): Promise<void> {
   unmount(doc);
   if (!isChannelPath(pathname)) return;
   const mine = generation;
-  const [actions, tabs] = await Promise.all([waitFor(doc, SELECTORS.actions), waitFor(doc, SELECTORS.tabs)]);
-  const channelId = channelIdOf(doc, pathname);
-  if (!channelId || mine !== generation) return;
+  const isCurrent = () => mine === generation;
+  const channelId = await waitForChannel(doc, pathname, expectedId, isCurrent);
+  if (!channelId || !isCurrent()) return;
+  // Only this on every channel page; the tab's numbers wait until it opens.
+  const favourited = await api.favourited(channelId);
+  if (!isCurrent()) return;
   ensureStyle(doc);
 
   let view: Answer<ChannelView> | null = null;
-  const load = async () => {
-    view = await api.view(channelId, language);
-    if (view.ok) showFavourite?.(view.value.favourite);
-    if (panel) renderOpen();
-  };
-
   let panel: HTMLElement | null = null;
   let previous: Element | null = null;
-  let sliderStyle: string | null = null;
-  const content = () => doc.querySelector(SELECTORS.content) as HTMLElement | null;
-  const slider = () => doc.querySelector(SELECTORS.slider) as HTMLElement | null;
+  let hidden: HTMLElement | null = null;
+  let bar: HTMLElement | null = null;
+  let barStyle: string | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let requests = 0;
+  let favouritedAt = 0;
+  let coreWordsAdded = false;
+
   const renderOpen = () => {
     if (!view) return;
     const next = renderPanel(doc, view, async () => {
       const added = await api.addCoreWords(channelId, language);
       if (!added.ok && added.signedOut) api.signIn();
+      coreWordsAdded = added.ok;
       return added.ok;
     }, api.signIn);
     panel?.replaceWith(next);
     panel = next;
   };
+  const refresh = async () => {
+    clearTimeout(timer);
+    const request = ++requests;
+    const next = await api.view(channelId, language);
+    // The tab closed, or a newer request is on its way.
+    if (request !== requests || !panel) return;
+    const summary = panel.querySelector('.lf-summary');
+    // Only the line changes on a refresh: a redrawn card would fold its words
+    // up again and forget that they were added.
+    const sameCard = summary && view?.ok && next.ok && (coreWordsAdded
+      || JSON.stringify(view.value.core_words) === JSON.stringify(next.value.core_words));
+    view = next;
+    if (sameCard && next.ok) summary.textContent = summaryText(next.value);
+    else renderOpen();
+    if (!next.ok) return;
+    const delay = Date.now() - favouritedAt < AFTER_FAVOURITE_FOR_MS ? AFTER_FAVOURITE_MS
+      : next.value.progress ? WHILE_ADDING_MS : 0;
+    if (delay) timer = setTimeout(refresh, delay);
+  };
   const open = () => {
-    if (panel || !tab) return;
+    if (panel) return;
+    const tabs = doc.querySelector(SELECTORS.tabs);
     previous = tabs?.querySelector(`[aria-selected="true"]:not([${MARK}])`) ?? null;
     if (previous) select(previous, false);
     select(tab, true);
-    const bar = slider();
+    bar = doc.querySelector(SELECTORS.slider);
     if (bar && tabs) {
-      sliderStyle = bar.getAttribute('style');
+      barStyle = bar.getAttribute('style');
       bar.style.width = `${tab.getBoundingClientRect().width}px`;
       bar.style.transform = `translateX(${tab.getBoundingClientRect().left - tabs.getBoundingClientRect().left}px)`;
     }
-    const target = content();
+    hidden = doc.querySelector(SELECTORS.content);
     panel = el(doc, 'div', 'lf-panel lf-muted', 'Loading…');
     panel.setAttribute(MARK, 'panel');
-    if (target) {
-      target.style.display = 'none';
-      target.before(panel);
+    if (hidden) {
+      hidden.style.display = 'none';
+      hidden.before(panel);
     }
-    if (view) renderOpen();
+    view = null;
+    void refresh();
   };
   const close = () => {
-    if (!panel || !tab) return;
+    clearTimeout(timer);
+    requests += 1;
+    if (!panel) return;
     panel.remove();
     panel = null;
     select(tab, false);
     if (previous) select(previous, true);
-    const bar = slider();
-    if (bar && sliderStyle !== null) bar.setAttribute('style', sliderStyle);
-    sliderStyle = null;
-    const target = content();
-    if (target) target.style.display = '';
+    if (bar && barStyle !== null) bar.setAttribute('style', barStyle);
+    barStyle = null;
+    // The element hidden, not a new look-up: YouTube may have re-stamped the
+    // page or moved on, and a miss would leave it hidden for good.
+    if (hidden) hidden.style.display = '';
+    hidden = null;
   };
 
-  const showFavourite = actions ? favouriteButton(doc, actions, channelId, language, api, load) : null;
-  const tab = tabs ? langfourTab(doc, tabs, open) : null;
+  const button = favouriteButton(doc, channelId, language, favourited.ok && favourited.value.favourite, api, (on) => {
+    favouritedAt = on ? Date.now() : 0;
+    if (panel) void refresh();
+  });
+  const tab = langfourTab(doc, open);
+  place(doc, button, tab);
+  const observer = new MutationObserver(() => place(doc, button, tab));
+  observer.observe(doc.querySelector(BROWSE) ?? doc.body, { childList: true, subtree: true });
   // Choosing one of YouTube's tabs, even the one already selected, leaves ours.
+  // On the document, as YouTube can replace the tab bar.
   const onTabs = (event: Event) => {
     const target = event.target as Element | null;
-    if (target?.closest('[role="tab"]') && !target.closest(`[${MARK}]`)) close();
+    if (target?.closest(`${SELECTORS.tabs} [role="tab"]`) && !target.closest(`[${MARK}]`)) close();
   };
-  tabs?.addEventListener('click', onTabs, true);
+  doc.addEventListener('click', onTabs, true);
 
   dispose = () => {
-    tabs?.removeEventListener('click', onTabs, true);
+    observer.disconnect();
+    doc.removeEventListener('click', onTabs, true);
     close();
+    button.remove();
+    tab.remove();
   };
-  await load();
 }

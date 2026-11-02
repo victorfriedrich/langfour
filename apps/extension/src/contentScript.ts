@@ -4,7 +4,7 @@ import { injectCss, injectJs, logPrefix } from './utils';
 import { Language, toLanguage } from './languages';
 import { extractArticle, layoutJudge } from './articleExtraction';
 import { getStoredWords } from './wordstorage';
-import { BackendRequest, BackendResponse, ContentScriptMessage, sendToBackground } from './messages';
+import { BackendRequest, BackendResponse, ContentScriptMessage, mayRelay, sendToBackground } from './messages';
 import { BackendRequestEvent, BackendResponseEvent, CaptionExposureEvent, KnownWordsEvent } from './types';
 import { isAllowedHost } from './siteApi';
 import { getErrorMessage } from './errors';
@@ -87,16 +87,6 @@ document.addEventListener('open-sign-in', () => {
   sendToBackground({ type: 'OPEN_SIGN_IN' });
 });
 
-// The paths the MAIN world is allowed to reach: exactly what index.ts and
-// youtubeFavourite.ts call. The expensive endpoints (/parse, /api/translate)
-// are deliberately absent -- only reader.ts uses them, and as an extension
-// page it messages the background directly instead of coming through here.
-const RELAY_PATHS = [
-  /^\/api\/translate-word$/,
-  /^\/api\/channels\/UC[A-Za-z0-9_-]{22}\?language=(es|de|it|fr)$/,
-  /^\/api\/channels\/UC[A-Za-z0-9_-]{22}\/(favourite|core-words)$/,
-];
-
 // Backend calls from the MAIN world (translate.ts, api-service.ts) come in as
 // `backend-request` events, because only the background can attach the
 // Supabase bearer token the API requires. Forward them and hand the answer
@@ -109,9 +99,10 @@ const RELAY_PATHS = [
 // below performs.
 //
 // The same caveat as that bridge still applies to what is left: the host page
-// can trigger these endpoints as the signed-in user -- look up a word,
-// favourite a channel, add a channel's core words -- and can forge the reply
-// event. Both need index.ts out of the page's world to fix properly.
+// can trigger these endpoints as the signed-in user -- look up a word and, on
+// YouTube, favourite a channel or add its core words -- and can forge the reply
+// event. Both need index.ts out of the page's world to fix properly. The API
+// limits what favourites can spend (channels.py).
 document.addEventListener('backend-request', ((event: CustomEvent<BackendRequestEvent>) => {
   const { id, path, method, body } = event.detail;
   const respond = (response: BackendResponse) => {
@@ -119,7 +110,7 @@ document.addEventListener('backend-request', ((event: CustomEvent<BackendRequest
     document.dispatchEvent(new CustomEvent<BackendResponseEvent>('backend-response', { detail }));
   };
 
-  if (typeof path !== 'string' || !RELAY_PATHS.some((pattern) => pattern.test(path))) {
+  if (typeof path !== 'string' || !mayRelay(path, location.host)) {
     respond({ ok: false, status: 0, statusText: 'Refusing to relay this path', body: '' });
     return;
   }

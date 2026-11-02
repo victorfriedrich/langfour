@@ -187,6 +187,9 @@ async function channelRequest<T>(path: string, body?: unknown): Promise<Answer<T
   }
 }
 
+export const getChannelFavourite = (channelId: string) =>
+  channelRequest<{ favourite: boolean }>(`/api/channels/${channelId}/favourite`);
+
 export const getChannel = (channelId: string, language: Language) =>
   channelRequest<ChannelView>(`/api/channels/${channelId}?language=${language}`);
 

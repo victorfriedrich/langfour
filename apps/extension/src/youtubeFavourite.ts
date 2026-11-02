@@ -2,15 +2,16 @@
 // Favourite button and Langfour tab on channel pages (youtubeChannel.ts).
 // Desktop only, like the Bookmark button it replaces.
 
-import { addChannelCoreWords, getChannel, setChannelFavourite } from './api-service';
+import { addChannelCoreWords, getChannel, getChannelFavourite, setChannelFavourite } from './api-service';
 import type { Prefs } from './contentScript';
 import { toLanguage, type Language } from './languages';
-import { mountChannelPage, unmount, type ChannelApi } from './youtubeChannel';
+import { mountChannelPage, navigatedChannelId, unmount, type ChannelApi } from './youtubeChannel';
 
 (() => {
   if (location.host !== 'www.youtube.com') return;
 
   const api: ChannelApi = {
+    favourited: getChannelFavourite,
     view: getChannel,
     favourite: setChannelFavourite,
     addCoreWords: addChannelCoreWords,
@@ -18,8 +19,9 @@ import { mountChannelPage, unmount, type ChannelApi } from './youtubeChannel';
   };
 
   let language: Language | null = null;
+  let channelId: string | null = null;
   const run = () => {
-    if (language) void mountChannelPage(document, location.pathname, language, api);
+    if (language) void mountChannelPage(document, location.pathname, language, api, channelId);
     else unmount(document);
   };
 
@@ -31,5 +33,9 @@ import { mountChannelPage, unmount, type ChannelApi } from './youtubeChannel';
     language = next;
     run();
   }) as EventListener);
-  window.addEventListener('yt-navigate-finish', run);
+  // On document, where YouTube's event carries the navigation it finished.
+  document.addEventListener('yt-navigate-finish', ((event: CustomEvent) => {
+    channelId = navigatedChannelId(event.detail);
+    run();
+  }) as EventListener);
 })();

@@ -19,6 +19,7 @@ indexed and how many are at your level, and lists the channel's core words when
 learning them would make a real difference. The API side is
 `apps/api/channel_routes.py`:
 
-- `GET /api/channels/{channel_id}?language=es`: favourite, progress, core words
+- `GET /api/channels/{channel_id}?language=es`: the tab's progress and core words
+- `GET /api/channels/{channel_id}/favourite`: the button's state
 - `POST /api/channels/{channel_id}/favourite` with `{"language", "favourite"}`
 - `POST /api/channels/{channel_id}/core-words` with `{"language"}`

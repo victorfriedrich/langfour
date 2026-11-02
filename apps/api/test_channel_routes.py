@@ -54,9 +54,21 @@ def test_favourite_queues_the_uploads_after_answering(store, monkeypatch):
     assert response.json() == {"favourite": True}
     assert queued == [(store, USER, CHANNEL, "es", "key")]
 
+    # Already a favourite: no second listing.
+    response = client.post(f"/api/channels/{CHANNEL}/favourite",
+                           json={"language": "es", "favourite": True}, headers=AUTH)
+    assert response.json() == {"favourite": True} and len(queued) == 1
+
     response = client.post(f"/api/channels/{CHANNEL}/favourite",
                            json={"language": "es", "favourite": False}, headers=AUTH)
     assert response.json() == {"favourite": False} and len(queued) == 1
+
+
+def test_reads_the_favourite_alone(store):
+    assert client.get(f"/api/channels/{CHANNEL}/favourite", headers=AUTH).json() == {"favourite": False}
+    store.favourite(USER, CHANNEL, "es")
+    assert client.get(f"/api/channels/{CHANNEL}/favourite", headers=AUTH).json() == {"favourite": True}
+    assert client.get(f"/api/channels/{CHANNEL}/favourite").status_code == 401
 
 
 def test_refuses_handles_unknown_languages_and_missing_sessions(store):

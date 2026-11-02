@@ -8,6 +8,8 @@ import os
 # supabase_client builds its client at import time; nothing here touches the network.
 os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
 os.environ.setdefault("REQUIRE_SERVICE_ROLE", "0")
+os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
+os.environ.setdefault("DEEPINFRA_API_KEY", "test-key")
 os.environ.setdefault(
     "SUPABASE_KEY",
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
@@ -73,23 +75,31 @@ def recommender(videos=VIDEOS):
 @pytest.fixture(autouse=True)
 def short_videos_count(monkeypatch):
     monkeypatch.setattr(channels, "MIN_DISTINCT_WORDS", 1)
+    monkeypatch.setattr(channels, "worker_language", lambda: "es")
     channels._rows_by_video.clear()
+    channels._listings.clear()
 
 
 class Store(channels.ChannelStore):
     """The real queue queries on the video_queue fake; the user's words,
     the dictionary and favourites in memory."""
 
-    def __init__(self, queue=(), known=KNOWN, listed=(7,), favourited_at=None):
+    def __init__(self, queue=(), known=KNOWN, listed=(7,), favourited_at=None, from_channel=()):
         super().__init__(FakeSupabase(queue))
         self.known, self.listed = set(known), set(listed)
+        self.from_channel = list(from_channel)
         self.favourites = {} if favourited_at is None else {(USER, CHANNEL): favourited_at}
 
     def favourited_at(self, user_id, channel_id):
         return self.favourites.get((user_id, channel_id))
 
     def favourite(self, user_id, channel_id, language):
+        new = (user_id, channel_id) not in self.favourites
         self.favourites.setdefault((user_id, channel_id), NOW)
+        return new
+
+    def added_from_channel(self, user_id, channel_id):
+        return self.from_channel
 
     def unfavourite(self, user_id, channel_id):
         self.favourites.pop((user_id, channel_id), None)
@@ -185,7 +195,7 @@ def test_favouriting_moves_the_channels_pending_discovery_rows_to_the_user_tier(
                    queued("c", channel_id=CHANNEL, source="manual", priority=20),
                    queued("d", channel_id="UC" + "b" * 22),
                    queued("e", channel_id=CHANNEL, lang="fr")])
-    assert channels.set_favourite(store, USER, CHANNEL, "es", True).favourite
+    assert channels.set_favourite(store, USER, CHANNEL, "es", True) is True
     q = store.db
     assert q.row("a")["priority"] == 10
     # Source user, so `ytpipeline select --push` keeps the row.
@@ -197,9 +207,15 @@ def test_favouriting_moves_the_channels_pending_discovery_rows_to_the_user_tier(
 
 def test_unfavouriting_leaves_the_queue_alone():
     store = Store([queued("a", channel_id=CHANNEL, source="user", priority=10)], favourited_at=NOW)
-    assert not channels.set_favourite(store, USER, CHANNEL, "es", False).favourite
+    assert channels.set_favourite(store, USER, CHANNEL, "es", False) is False
     assert store.db.row("a")["priority"] == 10
     assert not view(store).favourite
+
+
+def test_favouriting_again_is_not_a_new_favourite():
+    store = Store([queued("a", channel_id=CHANNEL)], favourited_at=NOW)
+    assert channels.set_favourite(store, USER, CHANNEL, "es", True) is False
+    assert store.db.row("a")["priority"] == 0
 
 
 def test_queues_new_uploads_only_most_viewed_first():
@@ -228,7 +244,8 @@ class Response:
 def youtube(pages, items):
     calls = []
 
-    def get(url, params, timeout):
+    def get(url, params, headers, timeout):
+        assert headers == {"X-Goog-Api-Key": "key"}
         calls.append((url.rsplit("/", 1)[1], params))
         if url.endswith("playlistItems"):
             return pages[params.get("pageToken", "")]
@@ -236,12 +253,12 @@ def youtube(pages, items):
     return get, calls
 
 
-def item(video_id, duration, live=False):
-    out = {"id": video_id, "snippet": {"title": f" {video_id} "},
-           "contentDetails": {"duration": duration}, "statistics": {"viewCount": "7"}}
-    if live:
-        out["liveStreamingDetails"] = {}
-    return out
+def item(video_id, duration, live="none", audio=None):
+    snippet = {"title": f" {video_id} ", "liveBroadcastContent": live}
+    if audio:
+        snippet["defaultAudioLanguage"] = audio
+    return {"id": video_id, "snippet": snippet,
+            "contentDetails": {"duration": duration}, "statistics": {"viewCount": "7"}}
 
 
 def test_fetches_uploads_and_keeps_the_ones_a_learner_would_watch():
@@ -250,19 +267,81 @@ def test_fetches_uploads_and_keeps_the_ones_a_learner_would_watch():
                            "nextPageToken": "p2"}),
              "p2": Response({"items": [{"contentDetails": {"videoId": "live"}},
                                        {"contentDetails": {"videoId": "long"}}]})}
-    items = {"a": item("a", "PT12M3S"), "short": item("short", "PT45S"),
-             "live": item("live", "PT20M", live=True), "long": item("long", "PT2H")}
+    items = {"a": item("a", "PT12M3S", audio="es-419"), "short": item("short", "PT45S"),
+             "live": item("live", "PT20M", live="live"), "long": item("long", "PT2H")}
     get, calls = youtube(pages, items)
     assert channels.fetch_uploads(CHANNEL, "key", get) == [
-        {"video_id": "a", "title": "a", "duration_s": 723, "views": 7}]
+        {"video_id": "a", "title": "a", "duration_s": 723, "views": 7, "audio": "es"}]
+    # The key travels in a header, so no error message can carry it to the logs.
     assert calls[0] == ("playlistItems", {"part": "contentDetails", "playlistId": "UU" + "a" * 22,
-                                          "maxResults": 50, "key": "key"})
+                                          "maxResults": 50})
+    assert all("key" not in params for _, params in calls)
     assert [c[0] for c in calls] == ["playlistItems", "playlistItems", "videos"]
 
 
 def test_a_channel_without_uploads_queues_nothing():
     get, _ = youtube({"": Response({}, status_code=404)}, {})
     assert channels.fetch_uploads(CHANNEL, "key", get) == []
+
+
+def upload(video_id, audio="", title="un título"):
+    return {"video_id": video_id, "title": title, "duration_s": 600, "views": 1, "audio": audio}
+
+
+ENGLISH_TITLES = "How I built a house in the woods with my own hands and what it cost me " * 6
+SPANISH_TITLES = "Cómo construí una casa en el bosque con mis propias manos y cuánto me costó " * 6
+
+
+def test_a_channel_in_another_language_queues_nothing():
+    english = [upload(str(n), "en") for n in range(4)]
+    assert channels.in_language(english, "es", vetted=False) == []
+    assert channels.in_language([upload("a", title=ENGLISH_TITLES)], "es", vetted=False) == []
+
+
+def test_a_channel_in_the_language_queues_and_drops_the_audio_field():
+    spanish = [upload(str(n), "es") for n in range(4)]
+    assert [v["video_id"] for v in channels.in_language(spanish, "es", vetted=False)] == list("0123")
+    assert "audio" not in channels.in_language(spanish, "es", vetted=False)[0]
+    assert len(channels.in_language([upload("a", title=SPANISH_TITLES)], "es", vetted=False)) == 1
+
+
+def test_a_channel_with_transcripts_skips_the_channel_check_but_not_the_videos():
+    mixed = [upload("en", "en"), upload("es", "es"), upload("unstated")]
+    assert [v["video_id"] for v in channels.in_language(mixed, "es", vetted=True)] == ["es", "unstated"]
+
+
+def test_uploads_are_listed_only_for_the_language_the_worker_drains(monkeypatch):
+    monkeypatch.setattr(channels, "fetch_uploads", lambda *a: pytest.fail("nothing drains de"))
+    assert channels.queue_channel(Store(), USER, CHANNEL, "de", "key") == 0
+    monkeypatch.setattr(channels, "worker_language", lambda: None)
+    assert channels.queue_channel(Store(), USER, CHANNEL, "es", "key") == 0
+
+
+def test_progress_only_shows_for_the_language_the_worker_drains(monkeypatch):
+    store = Store([done("a"), queued("b", channel_id=CHANNEL)], favourited_at=NOW - timedelta(hours=1))
+    assert view(store).progress == channels.Progress(added=1, total=2)
+    monkeypatch.setattr(channels, "worker_language", lambda: "de")
+    assert view(store).progress is None
+
+
+def test_listings_are_limited_per_user(monkeypatch):
+    calls = []
+    monkeypatch.setattr(channels, "fetch_uploads", lambda *a: calls.append(a) or [])
+    monkeypatch.setattr(channels, "LISTINGS_PER_DAY", 2)
+    for _ in range(3):
+        channels.queue_channel(Store(), USER, CHANNEL, "es", "key")
+    assert len(calls) == 2
+    channels.queue_channel(Store(), "someone else", CHANNEL, "es", "key")
+    assert len(calls) == 3
+    # A day later the allowance is back.
+    assert channels._may_list(USER, now=channels.time.monotonic() + 86401)
+
+
+def test_no_uploads_are_listed_while_the_users_rows_wait(monkeypatch):
+    monkeypatch.setattr(channels, "fetch_uploads", lambda *a: pytest.fail("over the limit"))
+    monkeypatch.setattr(channels, "MAX_WAITING", 2)
+    waiting = [queued(str(n), submitted_by=USER) for n in range(2)]
+    assert channels.queue_channel(Store(waiting), USER, CHANNEL, "es", "key") == 0
 
 
 def test_without_an_api_key_a_favourite_only_promotes(monkeypatch):
@@ -280,13 +359,15 @@ def test_a_youtube_failure_never_fails_the_favourite(monkeypatch):
 # ------------------------------------------------------ core words added ──
 
 class Vocab:
-    def __init__(self):
-        self.added, self.events = [], []
+    def __init__(self, fail_events=False):
+        self.added, self.events, self.fail_events = [], [], fail_events
 
     def add_words(self, user_id, word_ids, status, source):
         self.added.append((user_id, word_ids, status, source))
 
     def insert_events(self, rows):
+        if self.fail_events:
+            raise RuntimeError("supabase down")
         self.events += rows
         return len(rows)
 
@@ -307,6 +388,33 @@ def test_adds_core_words_as_learning_with_a_line_from_the_channel(corpus):
                                 "title": "Cofres",
                                 "sentence": "abrimos el cofre legendario y sale un mago"}
     assert mago["context"]["media"] == "youtube:v1"
+
+
+def test_a_failed_add_leaves_nothing_and_can_be_retried():
+    vocab = Vocab(fail_events=True)
+    with pytest.raises(RuntimeError):
+        channels.add_core_words(Store(CHANNEL_DONE), vocab, recommender(), USER, CHANNEL, "es")
+    assert vocab.added == []
+
+
+def test_adding_again_answers_with_the_first_batch_and_adds_no_more():
+    vocab = Vocab()
+    store = Store(CHANNEL_DONE, from_channel=["el cofre", "el mago"])
+    assert channels.add_core_words(store, vocab, recommender(), USER, CHANNEL, "es").added == [
+        "el cofre", "el mago"]
+    assert vocab.added == [] and vocab.events == []
+
+
+def test_the_card_goes_once_its_words_are_added():
+    assert view(Store(CHANNEL_DONE, from_channel=["el cofre"])).core_words is None
+
+
+def test_context_lines_skip_tokens_that_are_not_words(corpus):
+    tokens = [{"content": "el ", "id": 1}, "stray", {"content": "cofre", "id": 5}]
+    (corpus / "v1_processed.json").write_text(json.dumps({"title": "t", "content": tokens}))
+    rec = recommender()
+    lines = channels.context_lines("es", [5], [("v1", 0)], rec.presence["es"])
+    assert lines[5]["sentence"] == "el cofre"
 
 
 def test_adds_nothing_when_the_channel_has_no_card():

@@ -3,25 +3,30 @@ Favourite channels and a channel's Langfour tab on YouTube
 (docs/plans/youtube-plan.md, features 4 and 8).
 
   - favourite: a plain toggle per learner and channel (sql/channel_favourites.sql).
-    Favouriting queues the channel for indexing. Its pending discovery rows
-    in video_queue move to the user tier, and with YOUTUBE_API_KEY set its
-    uploads not queued yet go in at that tier too. That lifts discovery's cap
-    of 15 videos per channel (ytpipeline select) for this channel. The moved
-    rows become source 'user', so the next `ytpipeline select --push`, which
-    replaces pending discovery rows, keeps them. Unfavouriting leaves the
-    queue alone.
+    A new favourite queues the channel for indexing. Its pending discovery
+    rows in video_queue move to the user tier, and with YOUTUBE_API_KEY set
+    its uploads not queued yet go in at that tier too. That lifts discovery's
+    cap of 15 videos per channel (ytpipeline select) for this channel. The
+    moved rows become source 'user', so the next `ytpipeline select --push`,
+    which replaces pending discovery rows, keeps them. Unfavouriting leaves
+    the queue alone. Uploads are only listed for a language the API's own
+    worker drains, for a channel in that language, and within per-user limits:
+    each listing spends YouTube quota and each row a proxy download, and the
+    extension's relay lets the page itself call these endpoints.
   - progress: "34 of 212 videos added" while a favourite channel still has
-    videos to come. Added counts done rows; the total adds every row still
-    waiting. Once nothing has finished for STALL_AFTER, the total is dropped,
-    so a channel whose videos keep failing doesn't show a number that never
-    moves.
+    videos to come and the worker is draining its language. Added counts done
+    rows; the total adds every row still waiting. Once nothing has finished
+    for STALL_AFTER, the total is dropped, so a channel whose videos keep
+    failing doesn't show a number that never moves.
   - at your level: the channel's indexed videos where the learner knows
     AT_LEVEL of the words spoken.
   - core words: words the learner doesn't have yet that appear in at least
     half of the channel's videos, most spoken first, up to CORE_WORDS, with
     how much of the channel's speech they'd understand before and after. Only
     when that gain is CORE_MIN_GAIN or more: for most channels 25 words add
-    about 2 points, which isn't worth a card.
+    about 2 points, which isn't worth a card. One batch per learner and
+    channel: added words stay "not known" while they're learned, so without
+    this the card would come back with the next 25 at the same "before".
 
 Coverage counts every word spoken, as the recommender's percentages do. The
 channel's videos are the done rows of video_queue that the recommender loaded
@@ -33,23 +38,28 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+import time
+from collections import defaultdict
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import requests
 from pydantic import BaseModel
 
 import ingest
+import ingest_worker
 import video_quality
 from paths import processed_file
 from recommender import MIN_DISTINCT_WORDS
-from vocabulary import VocabularyStore
+from videoparsing import transcript_language_matches
+from vocabulary import Language, VocabularyStore
+from ytpipeline import audio_language
 
 log = logging.getLogger(__name__)
 
-Language = Literal["es", "de", "it", "fr"]
 CHANNEL_ID = r"^UC[A-Za-z0-9_-]{22}$"
 
 AT_LEVEL = 0.95        # share of words heard known: the comprehension threshold
@@ -64,9 +74,11 @@ CONTEXT_FILES = 10     # transcripts read to find context lines
 
 YOUTUBE_API = "https://www.googleapis.com/youtube/v3"
 MAX_UPLOADS = 500      # newest first; 20 quota units at most
-# Shorts and clips below, live streams and marathons above: neither is worth
-# a proxy download for a learner.
+# Shorts and clips below, marathons above: neither is worth a proxy download
+# for a learner.
 MIN_SECONDS, MAX_SECONDS = 3 * 60, 60 * 60
+LISTINGS_PER_DAY = 20  # per user: 400 quota units at most, of 10,000 a day
+MAX_WAITING = 1000     # a user's rows waiting in the queue before no more go in
 
 _PAGE = 1000  # PostgREST's row cap per request
 _IN_CHUNK = 200
@@ -137,11 +149,13 @@ class ChannelStore:
                 .eq("user_id", user_id).eq("channel_id", channel_id).limit(1).execute().data)
         return datetime.fromisoformat(rows[0]["created_at"]) if rows else None
 
-    def favourite(self, user_id: str, channel_id: str, language: str) -> None:
-        (self.db.table("channel_favourites")
-         .upsert({"user_id": user_id, "channel_id": channel_id, "lang": language},
-                 on_conflict="user_id,channel_id", ignore_duplicates=True)
-         .execute())
+    def favourite(self, user_id: str, channel_id: str, language: str) -> bool:
+        """True when the channel wasn't a favourite already."""
+        res = (self.db.table("channel_favourites")
+               .upsert({"user_id": user_id, "channel_id": channel_id, "lang": language},
+                       on_conflict="user_id,channel_id", ignore_duplicates=True)
+               .execute())
+        return bool(res.data)
 
     def unfavourite(self, user_id: str, channel_id: str) -> None:
         (self.db.table("channel_favourites").delete()
@@ -177,6 +191,12 @@ class ChannelStore:
             written += len(res.data or [])
         return written
 
+    def waiting_rows(self, user_id: str) -> int:
+        """Rows this user put in the queue that are still waiting."""
+        res = (self.db.table(ingest.TABLE).select("video_id", count="exact")
+               .eq("submitted_by", user_id).eq("status", "pending").limit(1).execute())
+        return res.count or 0
+
     def _word_ids(self, table: str, user_id: str) -> set[int]:
         out: set[int] = set()
         start = 0
@@ -195,6 +215,12 @@ class ChannelStore:
     def listed_words(self, user_id: str) -> set[int]:
         """Every word in the user's list, whatever its status."""
         return self._word_ids("userwords", user_id)
+
+    def added_from_channel(self, user_id: str, channel_id: str) -> list[str]:
+        """The words already added from this channel's card."""
+        res = (self.db.table("userwords").select("words!inner(root)")
+               .eq("user_id", user_id).eq("source", channel_id).execute())
+        return [r["words"]["root"] for r in res.data or []]
 
     def broken(self, video_ids: list[str]) -> set[str]:
         """The videos the quality scores reject for their transcript: garbled
@@ -324,13 +350,16 @@ def channel_view(store: ChannelStore, recommender, user_id: str, channel_id: str
     queue, videos = channel_videos(store, recommender, channel_id, language)
     rows = [row for _, row in videos]
     known = store.known_words(user_id) if rows else set()
-    listed = store.listed_words(user_id) if len(rows) >= CORE_MIN_VIDEOS else set()
+    # Every query the card needs, only for a channel that can have one.
+    card = len(rows) >= CORE_MIN_VIDEOS and not store.added_from_channel(user_id, channel_id)
+    listed = store.listed_words(user_id) if card else set()
     return ChannelView(
         favourite=favourited_at is not None,
         videos=len(rows),
         at_level=at_level(recommender, language, rows, known),
-        progress=progress(queue, favourited_at, now or datetime.now(UTC)),
-        core_words=core_words(store, recommender, language, rows, known, listed),
+        progress=(progress(queue, favourited_at, now or datetime.now(UTC))
+                  if worker_language() == language else None),
+        core_words=core_words(store, recommender, language, rows, known, listed) if card else None,
     )
 
 
@@ -338,15 +367,23 @@ def channel_view(store: ChannelStore, recommender, user_id: str, channel_id: str
 # Favourite
 # ---------------------------------------------------------------------------
 
+def worker_language() -> str | None:
+    """The language the API's own ingest worker drains, if it runs."""
+    configured = ingest_worker.configured()
+    return configured[0] if configured else None
+
+
 def set_favourite(store: ChannelStore, user_id: str, channel_id: str, language: str,
-                  favourite: bool) -> Favourite:
+                  favourite: bool) -> bool:
+    """True for a new favourite, whose uploads are then worth listing."""
     if not favourite:
         store.unfavourite(user_id, channel_id)
-        return Favourite(favourite=False)
-    store.favourite(user_id, channel_id, language)
+        return False
+    if not store.favourite(user_id, channel_id, language):
+        return False
     promoted = store.promote(user_id, channel_id, language)
     log.info("favourite %s: %d pending rows moved to the user tier", channel_id, promoted)
-    return Favourite(favourite=True)
+    return True
 
 
 def _seconds(duration: str) -> int:
@@ -360,15 +397,18 @@ def _seconds(duration: str) -> int:
 def fetch_uploads(channel_id: str, key: str,
                   get: Callable[..., Any] = requests.get) -> list[dict]:
     """The channel's newest MAX_UPLOADS uploads that fit a learner: neither
-    Shorts nor live streams. 1 quota unit per 50 listed, 1 per 50 looked up."""
+    Shorts nor live now. 1 quota unit per 50 listed, 1 per 50 looked up.
+
+    The key goes in a header: in the query string it would be in every
+    HTTPError and ConnectionError message, and from there in the logs."""
+    headers = {"X-Goog-Api-Key": key}
     ids: list[str] = []
     token = None
     while len(ids) < MAX_UPLOADS:
-        params = {"part": "contentDetails", "playlistId": "UU" + channel_id[2:],
-                  "maxResults": 50, "key": key}
+        params = {"part": "contentDetails", "playlistId": "UU" + channel_id[2:], "maxResults": 50}
         if token:
             params["pageToken"] = token
-        res = get(f"{YOUTUBE_API}/playlistItems", params=params, timeout=15)
+        res = get(f"{YOUTUBE_API}/playlistItems", params=params, headers=headers, timeout=15)
         if res.status_code == 404:  # no public uploads
             return []
         res.raise_for_status()
@@ -380,19 +420,44 @@ def fetch_uploads(channel_id: str, key: str,
 
     videos = []
     for chunk in _chunks(ids[:MAX_UPLOADS], 50):
-        res = get(f"{YOUTUBE_API}/videos", timeout=15, params={
-            "part": "snippet,contentDetails,statistics,liveStreamingDetails",
-            "id": ",".join(chunk), "key": key})
+        res = get(f"{YOUTUBE_API}/videos", headers=headers, timeout=15, params={
+            "part": "snippet,contentDetails,statistics", "id": ",".join(chunk)})
         res.raise_for_status()
         for item in res.json().get("items", []):
+            snippet = item["snippet"]
             seconds = _seconds(item.get("contentDetails", {}).get("duration", ""))
-            if "liveStreamingDetails" in item or not MIN_SECONDS <= seconds <= MAX_SECONDS:
+            # liveBroadcastContent, as discovery does: a premiere is an
+            # ordinary edited video, and also has liveStreamingDetails.
+            if (snippet.get("liveBroadcastContent", "none") != "none"
+                    or not MIN_SECONDS <= seconds <= MAX_SECONDS):
                 continue
             videos.append({"video_id": item["id"],
-                           "title": (item["snippet"].get("title") or "").strip(),
+                           "title": (snippet.get("title") or "").strip(),
                            "duration_s": seconds,
-                           "views": int(item.get("statistics", {}).get("viewCount") or 0)})
+                           "views": int(item.get("statistics", {}).get("viewCount") or 0),
+                           "audio": (snippet.get("defaultAudioLanguage") or "").split("-")[0].lower()})
     return videos
+
+
+def in_language(uploads: list[dict], language: str, vetted: bool) -> list[dict]:
+    """The uploads worth a proxy download for this language, without their
+    "audio" field. A learner can favourite a channel in any language, and a
+    transcript's language is otherwise only checked after that download.
+
+    `vetted`: the channel already has transcripts in this language. If not,
+    the channel must show it: its uploads' stated audio language, or failing
+    that their titles. Short or unclear titles abstain, as the check on
+    transcripts does."""
+    stated = [v["audio"] for v in uploads if v["audio"]]
+    if not vetted:
+        majority = audio_language(stated)
+        if majority is not None:
+            if majority != language:
+                return []
+        elif not transcript_language_matches(" ".join(v["title"] for v in uploads), language):
+            return []
+    return [{k: v for k, v in upload.items() if k != "audio"}
+            for upload in uploads if upload["audio"] in ("", language)]
 
 
 def queue_uploads(store: ChannelStore, user_id: str, channel_id: str, language: str,
@@ -409,16 +474,38 @@ def queue_uploads(store: ChannelStore, user_id: str, channel_id: str, language: 
     return store.enqueue(rows)
 
 
+_listings: dict[str, list[float]] = defaultdict(list)
+_listings_lock = threading.Lock()
+
+
+def _may_list(user_id: str, now: float | None = None) -> bool:
+    """LISTINGS_PER_DAY per user, counted in memory: favouriting and
+    unfavouriting in a loop leaves no row to count. A restart only forgets."""
+    now = time.monotonic() if now is None else now
+    with _listings_lock:
+        recent = [t for t in _listings[user_id] if now - t < 86400]
+        allowed = len(recent) < LISTINGS_PER_DAY
+        _listings[user_id] = [*recent, now] if allowed else recent
+    return allowed
+
+
 def queue_channel(store: ChannelStore, user_id: str, channel_id: str, language: str,
                   key: str | None) -> int:
-    """After a favourite, in the background: the uploads list takes a few
+    """After a new favourite, in the background: the uploads list takes a few
     seconds for a big channel, and the button shouldn't wait on it."""
     if not key:
         log.info("favourite %s: YOUTUBE_API_KEY unset; only queued rows promoted", channel_id)
         return 0
+    if worker_language() != language:
+        log.info("favourite %s: no worker drains %s; uploads not listed", channel_id, language)
+        return 0
     try:
-        added = queue_uploads(store, user_id, channel_id, language,
-                              fetch_uploads(channel_id, key))
+        if store.waiting_rows(user_id) >= MAX_WAITING or not _may_list(user_id):
+            log.info("favourite %s: user over the limits; uploads not listed", channel_id)
+            return 0
+        vetted = any(r["status"] == "done" for r in store.queue_rows(channel_id, language))
+        uploads = in_language(fetch_uploads(channel_id, key), language, vetted)
+        added = queue_uploads(store, user_id, channel_id, language, uploads)
     except Exception:
         log.warning("favourite %s: could not queue its uploads", channel_id, exc_info=True)
         return 0
@@ -456,7 +543,8 @@ def context_lines(language: str, word_ids: list[int], videos: list[tuple[str, in
                 continue
             start = positions[max(0, n - CONTEXT_WORDS)]
             end = positions[min(len(positions) - 1, n + CONTEXT_WORDS)]
-            line = "".join(str(t.get("content", "")) for t in tokens[start:end + 1])
+            line = "".join(str(t.get("content", "")) for t in tokens[start:end + 1]
+                           if isinstance(t, dict))
             out[word_id] = {"media": f"youtube:{video_id}", "title": doc.get("title"),
                             "sentence": " ".join(line.split())}
         if len(out) == len(wanted):
@@ -468,7 +556,13 @@ def add_core_words(store: ChannelStore, vocab: VocabularyStore, recommender, use
                    channel_id: str, language: str) -> CoreWordsAdded:
     """The channel's core words, worked out again here rather than taken from
     the client, into the user's list as learning, each with a saved event
-    carrying a line from the channel."""
+    carrying a line from the channel.
+
+    Safe to retry. The events go first, so a failure there has added nothing;
+    once words are in the list, this answers with them and adds no more."""
+    already = store.added_from_channel(user_id, channel_id)
+    if already:
+        return CoreWordsAdded(added=already)
     _, videos = channel_videos(store, recommender, channel_id, language)
     rows = [row for _, row in videos]
     words = core_words(store, recommender, language, rows,
@@ -476,11 +570,11 @@ def add_core_words(store: ChannelStore, vocab: VocabularyStore, recommender, use
     if words is None:
         return CoreWordsAdded(added=[])
     ids = [w.word_id for w in words.words]
-    vocab.add_words(user_id, ids, "learning", source=channel_id)
     contexts = context_lines(language, ids, videos, recommender.presence[language])
     vocab.insert_events([
         {"user_id": user_id, "word_id": w, "kind": "saved", "source": "video",
          "context": {"site": "youtube", "channel_id": channel_id, **contexts.get(w, {})}}
         for w in ids
     ])
+    vocab.add_words(user_id, ids, "learning", source=channel_id)
     return CoreWordsAdded(added=[w.word for w in words.words])
