@@ -592,9 +592,11 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
       return true;
     }
 
-    // The consent and turning it off are the popup's alone, never a page's.
+    // The consent comes from the popup or the card on youtube.com
+    // (historyPrompt.ts, isolated world); pages can't send runtime messages
+    // and no relay passes this one on. Turning it off is the popup's alone.
     case 'HISTORY_ALLOW': {
-      if (sender.tab) return;
+      if (sender.tab && !sender.url?.startsWith('https://www.youtube.com/')) return;
       readHistory(backendFetch, true).then(sendResponse);
       return true;
     }

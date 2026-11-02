@@ -118,7 +118,8 @@ export type BackgroundMessage =
   | { type: 'WATCH_STATUS'; videoId: string; language: string }
   | { type: 'WATCH_MARK'; videoId: string; share: number; language: string }
   | { type: 'WATCH_UNMARK'; videoId: string }
-  // The history page read (watchHistory.ts), from the popup only.
+  // The history page read (watchHistory.ts): the consent from the popup or
+  // the youtube.com card, turning it off from the popup only.
   | { type: 'HISTORY_ALLOW' }
   | { type: 'HISTORY_OFF' }
   | ({ type: 'BACKEND_FETCH' } & BackendRequest);
