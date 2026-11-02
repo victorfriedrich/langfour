@@ -41,7 +41,8 @@ def test_shows_a_channels_tab(store):
     assert response.status_code == 200
     body = response.json()
     assert body["favourite"] is False and body["videos"] == 6 and body["progress"] is None
-    assert [w["word"] for w in body["core_words"]["words"]] == ["el cofre", "el mago"]
+    assert [w["word"] for w in body["core_words"]["words"]] == ["el cofre", "la corona", "el mago"]
+    assert len(body["best"]) == 3 and body["understood"] > 0
 
 
 def test_favourite_queues_the_uploads_after_answering(store, monkeypatch):

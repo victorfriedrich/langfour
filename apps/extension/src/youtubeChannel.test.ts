@@ -15,7 +15,8 @@ import {
 const CHANNEL = 'UC' + 'a'.repeat(22);
 
 const view = (over: Partial<ChannelView> = {}): ChannelView => ({
-  favourite: false, uploads: null, added: 13, videos: 13, at_level: 9, progress: null, core_words: null, ...over,
+  favourite: false, uploads: null, added: 13, videos: 13, at_level: 9, understood: 86.6, best: [], progress: null,
+  core_words: null, ...over,
 });
 
 const words = (n: number) => Array.from({ length: n }, (_, i) => ({ word_id: i, word: `palabra${i}` }));
@@ -67,19 +68,19 @@ afterEach(() => unmount(document));
 
 describe('summaryText', () => {
   const favourite = (over: Partial<ChannelView>) => view({ favourite: true, uploads: 'queued', ...over });
-  const none = { videos: 0, at_level: 0, added: 0 };
+  const none = { videos: 0, at_level: 0, added: 0, understood: null };
 
   it('counts videos added while a favourite is being indexed', () => {
-    expect(summaryText(favourite({ progress: { added: 34, total: 212 } }), 'es')).toBe('34 of 212 videos added · 9 at your level');
+    expect(summaryText(favourite({ progress: { added: 34, total: 212 } }), 'es')).toBe('34 of 212 videos added · 86.6% understood · 9 at your level');
   });
 
   it('drops the total once the channel stalls', () => {
-    expect(summaryText(favourite({ progress: { added: 34, total: null } }), 'es')).toBe('34 videos added · 9 at your level');
+    expect(summaryText(favourite({ progress: { added: 34, total: null } }), 'es')).toBe('34 videos added · 86.6% understood · 9 at your level');
   });
 
   it('says what is indexed otherwise, and how to get more', () => {
-    expect(summaryText(view(), 'es')).toBe('13 videos indexed · 9 at your level');
-    expect(summaryText(favourite({}), 'es')).toBe('13 videos indexed · 9 at your level');
+    expect(summaryText(view(), 'es')).toBe('13 videos indexed · 86.6% understood · 9 at your level');
+    expect(summaryText(favourite({}), 'es')).toBe('13 videos indexed · 86.6% understood · 9 at your level');
     expect(summaryText(view(none), 'es')).toBe('No videos from this channel are indexed yet. Favourite it to add them.');
   });
 
@@ -88,17 +89,17 @@ describe('summaryText', () => {
       'This channel doesn\'t seem to be in German, so its videos won\'t be added.');
     expect(summaryText(favourite({ ...none, uploads: 'pending' }), 'es')).toBe('This channel\'s videos can\'t be added right now.');
     expect(summaryText(favourite({ uploads: 'pending' }), 'es')).toBe(
-      '13 videos indexed · 9 at your level · More can\'t be added right now');
+      '13 videos indexed · 86.6% understood · 9 at your level · More can\'t be added right now');
     expect(summaryText(favourite(none), 'es')).toBe('None of this channel\'s videos could be added.');
   });
 
   it('gives a new favourite a moment before saying so', () => {
     expect(summaryText(favourite({ ...none, uploads: 'pending' }), 'es', true)).toBe('Looking for this channel\'s videos…');
-    expect(summaryText(favourite({ uploads: 'pending' }), 'es', true)).toBe('13 videos indexed · 9 at your level');
+    expect(summaryText(favourite({ uploads: 'pending' }), 'es', true)).toBe('13 videos indexed · 86.6% understood · 9 at your level');
   });
 
   it('counts videos finished but not loaded yet', () => {
-    expect(summaryText(favourite({ videos: 0, at_level: 0, added: 4 }), 'es')).toBe('4 videos added');
+    expect(summaryText(favourite({ videos: 0, at_level: 0, added: 4, understood: null }), 'es')).toBe('4 videos added');
   });
 });
 
@@ -121,7 +122,7 @@ describe('renderPanel', () => {
     const core = { words: words(25), before: 86.6, after: 95.5 };
     document.body.append(renderPanel(document, { ok: true, value: view({ core_words: core }) }, (v) => summaryText(v, 'es'), add, vi.fn()));
 
-    expect(screen.getByText('25 core words you don\'t know yet')).toBeInTheDocument();
+    expect(screen.getByText('Top words you don\'t know yet')).toBeInTheDocument();
     expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toHaveLength(16);
     fireEvent.click(screen.getByText('+ 10 more'));
     expect(screen.getAllByRole('listitem')).toHaveLength(25);
@@ -138,6 +139,30 @@ describe('renderPanel', () => {
     fireEvent.click(screen.getByText('Add 2 to my reviews'));
     const retry = await screen.findByText('Could not add them. Try again');
     expect(retry).not.toBeDisabled();
+  });
+
+  it('links the videos easiest for the learner, most understood first', () => {
+    const best = [{ video_id: 'abc', title: 'Construyo un búnker', understood: 89.8 }, { video_id: 'def', title: 'Pesco en el lago', understood: 88.7 }];
+    document.body.append(renderPanel(document, { ok: true, value: view({ best }) }, (v) => summaryText(v, 'es'), vi.fn(), vi.fn()));
+    expect(screen.getByText('Easiest for you')).toBeInTheDocument();
+    const links = screen.getAllByRole('link');
+    expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+      ['Construyo un búnker', '/watch?v=abc'], ['Pesco en el lago', '/watch?v=def']]);
+    expect(screen.getByText('89.8% understood')).toBeInTheDocument();
+  });
+
+  it('works with an API that has no understood share or videos yet', () => {
+    const old: ChannelView = view();
+    delete old.understood;
+    delete old.best;
+    expect(summaryText(old, 'es')).toBe('13 videos indexed · 9 at your level');
+    document.body.append(renderPanel(document, { ok: true, value: old }, (v) => summaryText(v, 'es'), vi.fn(), vi.fn()));
+    expect(screen.queryByText('Easiest for you')).toBeNull();
+  });
+
+  it('leaves the videos card out for a channel with none indexed', () => {
+    document.body.append(renderPanel(document, { ok: true, value: view({ videos: 0 }) }, (v) => summaryText(v, 'es'), vi.fn(), vi.fn()));
+    expect(screen.queryByText('Easiest for you')).toBeNull();
   });
 
   it('asks a signed-out viewer to sign in', () => {
@@ -181,7 +206,7 @@ describe('mountChannelPage', () => {
     expect(calls).toEqual([['favourited', CHANNEL]]);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Langfour' }));
-    await screen.findByText('13 videos indexed · 9 at your level');
+    await screen.findByText('13 videos indexed · 86.6% understood · 9 at your level');
     expect(calls).toContainEqual(['view', CHANNEL, 'es']);
   });
 
@@ -220,7 +245,7 @@ describe('mountChannelPage', () => {
     expect(tab).toHaveAttribute('aria-selected', 'true');
     const home = screen.getByRole('tab', { name: 'Home' });
     expect(home).toHaveAttribute('aria-selected', 'false');
-    await screen.findByText('13 videos indexed · 9 at your level');
+    await screen.findByText('13 videos indexed · 86.6% understood · 9 at your level');
     const content = document.querySelector('ytd-two-column-browse-results-renderer') as HTMLElement;
     expect(content.style.display).toBe('none');
 
@@ -228,7 +253,7 @@ describe('mountChannelPage', () => {
     fireEvent.click(home.firstElementChild!);
     expect(home).toHaveAttribute('aria-selected', 'true');
     expect(home.firstElementChild).toHaveClass('ytTabShapeTabSelected');
-    expect(screen.queryByText('13 videos indexed · 9 at your level')).toBeNull();
+    expect(screen.queryByText('13 videos indexed · 86.6% understood · 9 at your level')).toBeNull();
     expect(content.style.display).toBe('');
   });
 
@@ -340,11 +365,11 @@ describe('mountChannelPage', () => {
     it('updates the line each minute while videos arrive, and stops when closed', async () => {
       const { api } = fakeApi({ ok: true, value: adding(13) });
       await openTab(api);
-      expect(screen.getByText('13 of 15 videos added · 9 at your level')).toBeInTheDocument();
+      expect(screen.getByText('13 of 15 videos added · 86.6% understood · 9 at your level')).toBeInTheDocument();
 
       vi.mocked(api.view).mockResolvedValue({ ok: true, value: adding(14) });
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(screen.getByText('14 of 15 videos added · 9 at your level')).toBeInTheDocument();
+      expect(screen.getByText('14 of 15 videos added · 86.6% understood · 9 at your level')).toBeInTheDocument();
 
       const calls = vi.mocked(api.view).mock.calls.length;
       fireEvent.click(home());
@@ -379,12 +404,16 @@ describe('mountChannelPage', () => {
 
       vi.mocked(api.view).mockResolvedValue({ ok: false, signedOut: false });
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(screen.getByText('1 of 2 videos added · 9 at your level')).toBeInTheDocument();
+      expect(screen.getByText('1 of 2 videos added · 86.6% understood · 9 at your level')).toBeInTheDocument();
       expect(screen.getAllByRole('listitem')).toHaveLength(25);
 
-      vi.mocked(api.view).mockResolvedValue({ ok: true, value: view({ core_words: core, progress: { added: 2, total: 2 } }) });
+      // A new easiest video shows; the words stay unfolded.
+      const best = [{ video_id: 'abc', title: 'Construyo un búnker', understood: 89.8 }];
+      vi.mocked(api.view).mockResolvedValue({ ok: true, value: view({ core_words: core, best, progress: { added: 2, total: 2 } }) });
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(screen.getByText('2 of 2 videos added · 9 at your level')).toBeInTheDocument();
+      expect(screen.getByText('2 of 2 videos added · 86.6% understood · 9 at your level')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Construyo un búnker' })).toBeInTheDocument();
+      expect(screen.getAllByRole('listitem')).toHaveLength(26);
     });
 
     it('stops looking once a channel has stalled', async () => {
@@ -439,7 +468,7 @@ describe('mountChannelPage', () => {
       // The server stops offering a card once its words are added.
       vi.mocked(api.view).mockResolvedValue({ ok: true, value: view({ core_words: null, progress: { added: 2, total: 3 } }) });
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(screen.getByText('2 of 3 videos added · 9 at your level')).toBeInTheDocument();
+      expect(screen.getByText('2 of 3 videos added · 86.6% understood · 9 at your level')).toBeInTheDocument();
       expect(screen.getByText('Added to your reviews')).toBeInTheDocument();
       expect(screen.getAllByRole('listitem')).toHaveLength(25);
     });

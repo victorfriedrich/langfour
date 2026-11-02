@@ -22,14 +22,16 @@ Favourite channels and a channel's Langfour tab on YouTube
     for STALL_AFTER, the total is dropped, so a channel whose videos keep
     failing doesn't show a number that never moves.
   - at your level: the channel's indexed videos where the learner knows
-    AT_LEVEL of the words spoken.
+    AT_LEVEL of the words spoken; understood: the share of all the channel's
+    speech they know; best: the BEST_VIDEOS they'd understand most of.
   - core words: words the learner doesn't have yet that appear in at least
-    half of the channel's videos, most spoken first, up to CORE_WORDS, with
-    how much of the channel's speech they'd understand before and after. Only
-    when that gain is CORE_MIN_GAIN or more: for most channels 25 words add
-    about 2 points, which isn't worth a card. One batch per learner and
-    channel: added words stay "not known" while they're learned, so without
-    this the card would come back with the next 25 at the same "before".
+    CORE_SHARE of the channel's videos, most spoken first, up to CORE_WORDS,
+    with how much of the channel's speech they'd understand before and after.
+    Shown whatever the gain: for a channel without a narrow topic 25 words add
+    a point or two, and the list still says what the channel talks about.
+    One batch per learner and channel: added words stay "not known" while
+    they're learned, so without this the card would come back with the next
+    25 at the same "before".
 
 Coverage counts every word spoken, as the recommender's percentages do. The
 channel's videos are the done rows of video_queue that the recommender loaded
@@ -66,9 +68,10 @@ CHANNEL_ID = r"^UC[A-Za-z0-9_-]{22}$"
 
 AT_LEVEL = 0.95        # share of words heard known: the comprehension threshold
 CORE_WORDS = 25
-CORE_SHARE = 0.5       # of the channel's videos a core word appears in
-CORE_MIN_VIDEOS = 5    # fewer, and "half the channel's videos" means two
-CORE_MIN_GAIN = 0.03
+CORE_SHARE = 0.3       # of the channel's videos a core word appears in
+CORE_MIN_SPREAD = 2    # videos, at least: in one, it's that video's topic
+CORE_MIN_VIDEOS = 3
+BEST_VIDEOS = 3
 CORE_CANDIDATES = 200  # looked up to find CORE_WORDS valid ones
 STALL_AFTER = timedelta(days=1)
 CONTEXT_WORDS = 10     # words either side of a core word in its context line
@@ -109,6 +112,12 @@ class CoreWords(BaseModel):
     after: float           # ... with these words known
 
 
+class BestVideo(BaseModel):
+    video_id: str
+    title: str
+    understood: float      # % of the video's speech the learner knows
+
+
 class ChannelView(BaseModel):
     favourite: bool
     # A favourite's upload listing: not finished yet (and tried again on the
@@ -117,6 +126,8 @@ class ChannelView(BaseModel):
     added: int             # done rows, including any the recommender hasn't loaded
     videos: int            # indexed videos the numbers below come from
     at_level: int
+    understood: float | None  # % of the indexed videos' speech, None without any
+    best: list[BestVideo]     # most understood first
     progress: Progress | None
     core_words: CoreWords | None
 
@@ -286,14 +297,27 @@ def _known_vector(width: int, word_ids: Iterable[int]) -> np.ndarray:
     return vector
 
 
-def at_level(recommender, language: str, rows: list[int], known: set[int]) -> int:
-    if not rows:
-        return 0
+def coverage(recommender, language: str, rows: list[int],
+             known: set[int]) -> tuple[np.ndarray, np.ndarray]:
+    """Per video: the words spoken, and how many of them the learner knows."""
     counts = recommender.matrices[language][rows]
     known_vector = _known_vector(counts.shape[1], known).astype(np.int32)
-    spoken = np.asarray(counts.sum(axis=1)).ravel()
-    heard = counts.dot(known_vector)
+    return np.asarray(counts.sum(axis=1)).ravel(), np.asarray(counts.dot(known_vector)).ravel()
+
+
+def at_level(spoken: np.ndarray, heard: np.ndarray) -> int:
     return int(np.count_nonzero((spoken > 0) & (heard >= AT_LEVEL * spoken)))
+
+
+def best_videos(recommender, language: str, videos: list[tuple[str, int]],
+                spoken: np.ndarray, heard: np.ndarray) -> list[BestVideo]:
+    titles = recommender.titles[language]
+    shares = [(heard[n] / spoken[n], video_id, row)
+              for n, (video_id, row) in enumerate(videos) if spoken[n]]
+    shares.sort(key=lambda s: (-s[0], s[1]))
+    return [BestVideo(video_id=video_id, title=titles[row] or video_id,
+                      understood=round(float(share) * 100, 1))
+            for share, video_id, row in shares[:BEST_VIDEOS]]
 
 
 def core_words(store: ChannelStore, recommender, language: str, rows: list[int],
@@ -309,7 +333,7 @@ def core_words(store: ChannelStore, recommender, language: str, rows: list[int],
     known_vector = _known_vector(counts.shape[1], known)
     before = spoken[known_vector].sum() / total
 
-    eligible = (videos >= CORE_SHARE * len(rows)) & ~known_vector
+    eligible = (videos >= max(CORE_MIN_SPREAD, CORE_SHARE * len(rows))) & ~known_vector
     eligible &= ~_known_vector(counts.shape[1], listed)
     candidates = np.flatnonzero(eligible)
     # Most spoken first; ties to the lower id, the more common word.
@@ -319,8 +343,6 @@ def core_words(store: ChannelStore, recommender, language: str, rows: list[int],
     if not chosen:
         return None
     after = before + spoken[chosen].sum() / total
-    if after - before < CORE_MIN_GAIN:
-        return None
     return CoreWords(words=[CoreWord(word_id=w, word=valid[w]) for w in chosen],
                      before=round(float(before) * 100, 1), after=round(float(after) * 100, 1))
 
@@ -349,12 +371,15 @@ def channel_view(store: ChannelStore, recommender, user_id: str, channel_id: str
     # Every query the card needs, only for a channel that can have one.
     card = len(rows) >= CORE_MIN_VIDEOS and not store.added_from_channel(user_id, channel_id)
     listed = store.listed_words(user_id) if card else set()
+    spoken, heard = coverage(recommender, language, rows, known)
     return ChannelView(
         favourite=favourite is not None,
         uploads=(favourite.get("uploads_outcome") or "pending") if favourite else None,
         added=sum(r["status"] == "done" for r in queue),
         videos=len(rows),
-        at_level=at_level(recommender, language, rows, known),
+        at_level=at_level(spoken, heard),
+        understood=round(float(heard.sum() / spoken.sum()) * 100, 1) if spoken.sum() else None,
+        best=best_videos(recommender, language, videos, spoken, heard),
         progress=(progress(queue, favourited_at, now or datetime.now(UTC))
                   if worker_language() == language else None),
         core_words=core_words(store, recommender, language, rows, known, listed) if card else None,
