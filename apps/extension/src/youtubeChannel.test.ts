@@ -15,7 +15,7 @@ import {
 const CHANNEL = 'UC' + 'a'.repeat(22);
 
 const view = (over: Partial<ChannelView> = {}): ChannelView => ({
-  favourite: false, videos: 13, at_level: 9, progress: null, core_words: null, ...over,
+  favourite: false, uploads: null, added: 13, videos: 13, at_level: 9, progress: null, core_words: null, ...over,
 });
 
 const words = (n: number) => Array.from({ length: n }, (_, i) => ({ word_id: i, word: `palabra${i}` }));
@@ -66,19 +66,39 @@ function fakeApi(answer: Answer<ChannelView>, favourited = false) {
 afterEach(() => unmount(document));
 
 describe('summaryText', () => {
+  const favourite = (over: Partial<ChannelView>) => view({ favourite: true, uploads: 'queued', ...over });
+  const none = { videos: 0, at_level: 0, added: 0 };
+
   it('counts videos added while a favourite is being indexed', () => {
-    expect(summaryText(view({ progress: { added: 34, total: 212 } }))).toBe('34 of 212 videos added · 9 at your level');
+    expect(summaryText(favourite({ progress: { added: 34, total: 212 } }), 'es')).toBe('34 of 212 videos added · 9 at your level');
   });
 
   it('drops the total once the channel stalls', () => {
-    expect(summaryText(view({ progress: { added: 34, total: null } }))).toBe('34 videos added · 9 at your level');
+    expect(summaryText(favourite({ progress: { added: 34, total: null } }), 'es')).toBe('34 videos added · 9 at your level');
   });
 
   it('says what is indexed otherwise, and how to get more', () => {
-    expect(summaryText(view())).toBe('13 videos indexed · 9 at your level');
-    expect(summaryText(view({ videos: 0, at_level: 0 }))).toBe(
-      'No videos from this channel are indexed yet. Favourite it to add them.');
-    expect(summaryText(view({ videos: 0, favourite: true }))).toBe('No videos from this channel are indexed yet.');
+    expect(summaryText(view(), 'es')).toBe('13 videos indexed · 9 at your level');
+    expect(summaryText(favourite({}), 'es')).toBe('13 videos indexed · 9 at your level');
+    expect(summaryText(view(none), 'es')).toBe('No videos from this channel are indexed yet. Favourite it to add them.');
+  });
+
+  it('says why a favourite is adding nothing', () => {
+    expect(summaryText(favourite({ ...none, uploads: 'other_language' }), 'de')).toBe(
+      'This channel doesn\'t seem to be in German, so its videos won\'t be added.');
+    expect(summaryText(favourite({ ...none, uploads: 'pending' }), 'es')).toBe('This channel\'s videos can\'t be added right now.');
+    expect(summaryText(favourite({ uploads: 'pending' }), 'es')).toBe(
+      '13 videos indexed · 9 at your level · More can\'t be added right now');
+    expect(summaryText(favourite(none), 'es')).toBe('None of this channel\'s videos could be added.');
+  });
+
+  it('gives a new favourite a moment before saying so', () => {
+    expect(summaryText(favourite({ ...none, uploads: 'pending' }), 'es', true)).toBe('Looking for this channel\'s videos…');
+    expect(summaryText(favourite({ uploads: 'pending' }), 'es', true)).toBe('13 videos indexed · 9 at your level');
+  });
+
+  it('counts videos finished but not loaded yet', () => {
+    expect(summaryText(favourite({ videos: 0, at_level: 0, added: 4 }), 'es')).toBe('4 videos added');
   });
 });
 
@@ -99,7 +119,7 @@ describe('renderPanel', () => {
   it('shows fifteen core words, the rest behind a chip, and adds them', async () => {
     const add = vi.fn(async () => true);
     const core = { words: words(25), before: 86.6, after: 95.5 };
-    document.body.append(renderPanel(document, { ok: true, value: view({ core_words: core }) }, add, vi.fn()));
+    document.body.append(renderPanel(document, { ok: true, value: view({ core_words: core }) }, (v) => summaryText(v, 'es'), add, vi.fn()));
 
     expect(screen.getByText('25 core words you don\'t know yet')).toBeInTheDocument();
     expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toHaveLength(16);
@@ -114,7 +134,7 @@ describe('renderPanel', () => {
 
   it('lets a failed add be tried again', async () => {
     const core = { words: words(2), before: 80, after: 84 };
-    document.body.append(renderPanel(document, { ok: true, value: view({ core_words: core }) }, async () => false, vi.fn()));
+    document.body.append(renderPanel(document, { ok: true, value: view({ core_words: core }) }, (v) => summaryText(v, 'es'), async () => false, vi.fn()));
     fireEvent.click(screen.getByText('Add 2 to my reviews'));
     const retry = await screen.findByText('Could not add them. Try again');
     expect(retry).not.toBeDisabled();
@@ -122,7 +142,7 @@ describe('renderPanel', () => {
 
   it('asks a signed-out viewer to sign in', () => {
     const signIn = vi.fn();
-    document.body.append(renderPanel(document, { ok: false, signedOut: true }, vi.fn(), signIn));
+    document.body.append(renderPanel(document, { ok: false, signedOut: true }, (v) => summaryText(v, 'es'), vi.fn(), signIn));
     fireEvent.click(screen.getByText('Sign in'));
     expect(signIn).toHaveBeenCalledOnce();
   });
@@ -240,6 +260,21 @@ describe('mountChannelPage', () => {
     expect(content.style.display).toBe('');
   });
 
+  it('adds the tab without waiting for the favourite read', async () => {
+    channelPage();
+    const { api } = fakeApi({ ok: true, value: view() }, true);
+    let answer: (value: Answer<{ favourite: boolean }>) => void = () => {};
+    vi.mocked(api.favourited).mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+
+    const mounting = mountChannelPage(document, '/@viajes', 'es', api);
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Langfour' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /Favourite/ })).toBeNull();
+
+    answer({ ok: true, value: { favourite: true } });
+    await mounting;
+    expect(screen.getByRole('button', { name: 'Favourited' })).toBeInTheDocument();
+  });
+
   it('puts the button and tab back when YouTube rebuilds its header', async () => {
     channelPage();
     const { api } = fakeApi({ ok: true, value: view() }, true);
@@ -251,6 +286,18 @@ describe('mountChannelPage', () => {
     const bar = document.querySelector('.tabGroupShapeTabs')!;
     bar.querySelector('[data-langfour-channel="tab"]')!.remove();
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Langfour' })).toBeInTheDocument());
+  });
+
+  it('moves the tab back to the end when YouTube re-renders its tabs past it', async () => {
+    channelPage();
+    const { api } = fakeApi({ ok: true, value: view() });
+    await mountChannelPage(document, '/@viajes', 'es', api);
+    const bar = document.querySelector('.tabGroupShapeTabs')!;
+    const tab = screen.getByRole('tab', { name: 'Langfour' });
+
+    bar.prepend(tab);
+    await waitFor(() => expect(tab.nextElementSibling).toHaveClass('ytTabShapeLastTab'));
+    expect(screen.getAllByRole('tab').map((t) => t.textContent!.trim())).toEqual(['Home', 'Videos', 'Langfour']);
   });
 
   it('adds the button once YouTube renders its header', async () => {
@@ -322,6 +369,62 @@ describe('mountChannelPage', () => {
       expect(settled).toBeGreaterThan(calls);
       await vi.advanceTimersByTimeAsync(180_000);
       expect(vi.mocked(api.view).mock.calls.length).toBe(settled);
+    });
+
+    it('keeps what is showing when a refresh fails, and tries again', async () => {
+      const core = { words: words(25), before: 80, after: 90 };
+      const { api } = fakeApi({ ok: true, value: view({ core_words: core, progress: { added: 1, total: 2 } }) });
+      await openTab(api);
+      fireEvent.click(screen.getByText('+ 10 more'));
+
+      vi.mocked(api.view).mockResolvedValue({ ok: false, signedOut: false });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(screen.getByText('1 of 2 videos added · 9 at your level')).toBeInTheDocument();
+      expect(screen.getAllByRole('listitem')).toHaveLength(25);
+
+      vi.mocked(api.view).mockResolvedValue({ ok: true, value: view({ core_words: core, progress: { added: 2, total: 2 } }) });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(screen.getByText('2 of 2 videos added · 9 at your level')).toBeInTheDocument();
+    });
+
+    it('stops looking once a channel has stalled', async () => {
+      const { api } = fakeApi({ ok: true, value: view({ progress: { added: 3, total: null } }) });
+      await openTab(api);
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(api.view).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits while the browser tab is hidden and catches up when it is shown', async () => {
+      const { api } = fakeApi({ ok: true, value: adding(13) });
+      await openTab(api);
+      const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(api.view).toHaveBeenCalledTimes(1);
+
+      hidden.mockReturnValue(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.view).toHaveBeenCalledTimes(2);
+      hidden.mockRestore();
+    });
+
+    it('stays the selected tab when YouTube rebuilds the tab bar', async () => {
+      const { api } = fakeApi({ ok: true, value: view() });
+      await openTab(api);
+      vi.useRealTimers();
+      const bar = document.querySelector('.tabGroupShapeTabs')!;
+      const home = screen.getByRole('tab', { name: 'Home' });
+      const rebuilt = home.cloneNode(true) as HTMLElement;
+      rebuilt.setAttribute('aria-selected', 'true');
+      home.replaceWith(rebuilt);
+
+      await waitFor(() => expect(rebuilt).toHaveAttribute('aria-selected', 'false'));
+      expect(screen.getByRole('tab', { name: 'Langfour' })).toHaveAttribute('aria-selected', 'true');
+      expect(bar.querySelectorAll('[aria-selected="true"]')).toHaveLength(1);
+
+      // Closing gives the selection to the tab that's there now.
+      fireEvent.click(rebuilt.firstElementChild!);
+      expect(rebuilt).toHaveAttribute('aria-selected', 'true');
     });
 
     it('keeps the card as it is on a refresh, and after its words are added', async () => {

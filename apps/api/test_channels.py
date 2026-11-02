@@ -84,19 +84,29 @@ class Store(channels.ChannelStore):
     """The real queue queries on the video_queue fake; the user's words,
     the dictionary and favourites in memory."""
 
-    def __init__(self, queue=(), known=KNOWN, listed=(7,), favourited_at=None, from_channel=()):
+    def __init__(self, queue=(), known=KNOWN, listed=(7,), favourited_at=None, from_channel=(),
+                 outcome=None):
         super().__init__(FakeSupabase(queue))
         self.known, self.listed = set(known), set(listed)
         self.from_channel = list(from_channel)
-        self.favourites = {} if favourited_at is None else {(USER, CHANNEL): favourited_at}
+        self.favourites = {}
+        if favourited_at is not None:
+            self.favourites[(USER, CHANNEL)] = {"created_at": favourited_at.isoformat(), "lang": "es",
+                                                "uploads_outcome": outcome}
 
-    def favourited_at(self, user_id, channel_id):
+    def favourite_row(self, user_id, channel_id):
         return self.favourites.get((user_id, channel_id))
 
     def favourite(self, user_id, channel_id, language):
         new = (user_id, channel_id) not in self.favourites
-        self.favourites.setdefault((user_id, channel_id), NOW)
+        if new:
+            self.favourites[(user_id, channel_id)] = {"created_at": NOW.isoformat(), "lang": language,
+                                                      "uploads_outcome": None}
         return new
+
+    def set_uploads_outcome(self, user_id, channel_id, outcome):
+        if (user_id, channel_id) in self.favourites:
+            self.favourites[(user_id, channel_id)]["uploads_outcome"] = outcome
 
     def added_from_channel(self, user_id, channel_id):
         return self.from_channel
@@ -162,8 +172,8 @@ def test_counts_videos_at_your_level_from_indexed_rows_only():
 
 def test_a_channel_nothing_indexed_from_shows_nothing():
     result = view(Store([queued("v1", channel_id=CHANNEL)]))
-    assert result == channels.ChannelView(favourite=False, videos=0, at_level=0,
-                                          progress=None, core_words=None)
+    assert result == channels.ChannelView(favourite=False, uploads=None, added=0, videos=0,
+                                          at_level=0, progress=None, core_words=None)
 
 
 # -------------------------------------------------------------- progress ──
@@ -190,14 +200,14 @@ def test_progress_disappears_once_the_channel_is_done():
 
 # ------------------------------------------------------------- favourite ──
 
-def test_favouriting_moves_the_channels_pending_discovery_rows_to_the_user_tier():
+def test_favouriting_moves_the_channels_pending_discovery_rows_up():
     store = Store([queued("a", channel_id=CHANNEL), queued("b", channel_id=CHANNEL, status="done"),
                    queued("c", channel_id=CHANNEL, source="manual", priority=20),
                    queued("d", channel_id="UC" + "b" * 22),
                    queued("e", channel_id=CHANNEL, lang="fr")])
     assert channels.set_favourite(store, USER, CHANNEL, "es", True) is True
     q = store.db
-    assert q.row("a")["priority"] == 10
+    assert q.row("a")["priority"] == channels.FAVOURITE_PRIORITY
     # Source user, so `ytpipeline select --push` keeps the row.
     assert q.row("a")["source"] == "user" and q.row("a")["submitted_by"] == USER
     assert q.row("b")["priority"] == 0 and q.row("c")["priority"] == 20
@@ -212,10 +222,56 @@ def test_unfavouriting_leaves_the_queue_alone():
     assert not view(store).favourite
 
 
-def test_favouriting_again_is_not_a_new_favourite():
+def test_favouriting_again_lists_uploads_only_if_the_last_listing_did_not_finish():
     store = Store([queued("a", channel_id=CHANNEL)], favourited_at=NOW)
-    assert channels.set_favourite(store, USER, CHANNEL, "es", True) is False
+    assert channels.set_favourite(store, USER, CHANNEL, "es", True) is True
     assert store.db.row("a")["priority"] == 0
+    store.set_uploads_outcome(USER, CHANNEL, "queued")
+    assert channels.set_favourite(store, USER, CHANNEL, "es", True) is False
+
+
+def test_favourites_rank_below_someone_waiting_on_one_video():
+    assert channels.ingest.PRIORITY["discovery"] < channels.FAVOURITE_PRIORITY < channels.ingest.PRIORITY["user"]
+
+
+def test_a_finished_listing_is_remembered_and_a_failed_one_is_not(monkeypatch):
+    store = Store(favourited_at=NOW)
+    monkeypatch.setattr(channels, "fetch_uploads", lambda *a: [upload("a", "es")])
+    channels.queue_channel(store, USER, CHANNEL, "es", "key")
+    assert store.favourite_row(USER, CHANNEL)["uploads_outcome"] == "queued"
+    assert view(store).uploads == "queued"
+
+    store = Store(favourited_at=NOW)
+    monkeypatch.setattr(channels, "fetch_uploads", lambda *a: [upload(str(n), "en") for n in range(4)])
+    channels.queue_channel(store, USER, CHANNEL, "es", "key")
+    assert view(store).uploads == "other_language"
+
+    store = Store(favourited_at=NOW)
+    def quota(*_):
+        raise RuntimeError("quota")
+    monkeypatch.setattr(channels, "fetch_uploads", quota)
+    channels.queue_channel(store, USER, CHANNEL, "es", "key")
+    assert view(store).uploads == "pending"
+
+    channels.queue_channel(store, USER, CHANNEL, "es", None)
+    assert channels.needs_listing(store.favourite_row(USER, CHANNEL))
+
+
+def test_a_channel_being_listed_is_not_listed_twice_at_once(monkeypatch):
+    calls = []
+
+    def nested(*_):
+        calls.append(1)
+        assert channels.queue_channel(Store(favourited_at=NOW), USER, CHANNEL, "es", "key") == 0
+        return []
+    monkeypatch.setattr(channels, "fetch_uploads", nested)
+    channels.queue_channel(Store(favourited_at=NOW), USER, CHANNEL, "es", "key")
+    assert calls == [1]
+
+
+def test_the_view_counts_every_done_row_as_added():
+    result = view(Store([done("not-loaded-yet"), done("v1"), queued("x", channel_id=CHANNEL)]))
+    assert (result.added, result.videos) == (2, 1)
 
 
 def test_queues_new_uploads_only_most_viewed_first():
@@ -224,7 +280,7 @@ def test_queues_new_uploads_only_most_viewed_first():
                {"video_id": "new", "title": "New", "duration_s": 900, "views": 200}]
     assert channels.queue_uploads(store, USER, CHANNEL, "es", uploads) == 1
     new = store.db.row("new")
-    assert (new["priority"], new["source"], new["score"]) == (10, "user", 1.0)
+    assert (new["priority"], new["source"], new["score"]) == (channels.FAVOURITE_PRIORITY, "user", 1.0)
     assert new["channel_id"] == CHANNEL and new["submitted_by"] == USER and new["lang"] == "es"
     assert store.db.row("old")["status"] == "done"
 
@@ -359,8 +415,12 @@ def test_a_youtube_failure_never_fails_the_favourite(monkeypatch):
 # ------------------------------------------------------ core words added ──
 
 class Vocab:
-    def __init__(self, fail_events=False):
-        self.added, self.events, self.fail_events = [], [], fail_events
+    def __init__(self, fail_events=False, saved=()):
+        self.added, self.inserted, self.fail_events, self.saved = [], [], fail_events, saved
+
+    def events(self, user_id, word_ids, kinds):
+        assert kinds == ["saved"]
+        return [e for e in self.saved if e["word_id"] in word_ids]
 
     def add_words(self, user_id, word_ids, status, source):
         self.added.append((user_id, word_ids, status, source))
@@ -368,7 +428,7 @@ class Vocab:
     def insert_events(self, rows):
         if self.fail_events:
             raise RuntimeError("supabase down")
-        self.events += rows
+        self.inserted += rows
         return len(rows)
 
 
@@ -382,7 +442,7 @@ def test_adds_core_words_as_learning_with_a_line_from_the_channel(corpus):
     result = channels.add_core_words(Store(CHANNEL_DONE), vocab, recommender(), USER, CHANNEL, "es")
     assert result.added == ["el cofre", "el mago"]
     assert vocab.added == [(USER, [5, 9], "learning", CHANNEL)]
-    cofre, mago = vocab.events
+    cofre, mago = vocab.inserted
     assert cofre["kind"] == "saved" and cofre["source"] == "video" and cofre["word_id"] == 5
     assert cofre["context"] == {"site": "youtube", "channel_id": CHANNEL, "media": "youtube:v1",
                                 "title": "Cofres",
@@ -397,12 +457,20 @@ def test_a_failed_add_leaves_nothing_and_can_be_retried():
     assert vocab.added == []
 
 
+def test_a_retry_does_not_save_an_event_twice():
+    vocab = Vocab(saved=[{"word_id": 5, "context": {"channel_id": CHANNEL}},
+                         {"word_id": 9, "context": {"channel_id": "another channel"}}])
+    channels.add_core_words(Store(CHANNEL_DONE), vocab, recommender(), USER, CHANNEL, "es")
+    assert [e["word_id"] for e in vocab.inserted] == [9]
+    assert vocab.added[0][1] == [5, 9]
+
+
 def test_adding_again_answers_with_the_first_batch_and_adds_no_more():
     vocab = Vocab()
     store = Store(CHANNEL_DONE, from_channel=["el cofre", "el mago"])
     assert channels.add_core_words(store, vocab, recommender(), USER, CHANNEL, "es").added == [
         "el cofre", "el mago"]
-    assert vocab.added == [] and vocab.events == []
+    assert vocab.added == [] and vocab.inserted == []
 
 
 def test_the_card_goes_once_its_words_are_added():
@@ -421,7 +489,7 @@ def test_adds_nothing_when_the_channel_has_no_card():
     vocab = Vocab()
     assert channels.add_core_words(Store(CHANNEL_DONE[:3]), vocab, recommender(), USER,
                                    CHANNEL, "es").added == []
-    assert vocab.added == [] and vocab.events == []
+    assert vocab.added == [] and vocab.inserted == []
 
 
 class Scores:
@@ -456,3 +524,74 @@ def test_a_chosen_channel_keeps_videos_the_scores_only_found_dull():
         scores("song", p_sung=0.99), scores("lesson", p_foreign_lesson=0.99)]))
     assert store.broken(["fine", "dull", "garbled", "song", "lesson", "unscored"]) == {
         "garbled", "song", "lesson"}
+
+
+class Recording:
+    """Records the query the real ChannelStore builds, and answers it. The
+    in-memory Store above replaces these methods, so this is what ties them to
+    the tables' real names and columns."""
+
+    def __init__(self, *answers):
+        self.answers, self.calls = list(answers), []
+
+    def table(self, name):
+        self.calls.append(("table", name))
+        return self
+
+    def __getattr__(self, method):
+        def record(*args, **kwargs):
+            self.calls.append((method, *args, *kwargs.items()))
+            return self
+        return record
+
+    def execute(self):
+        return SimpleNamespace(data=self.answers.pop(0), count=None)
+
+
+def test_the_real_favourite_queries():
+    db = Recording([{"created_at": "t", "lang": "es", "uploads_outcome": None}], [])
+    store = channels.ChannelStore(db)
+    assert store.favourite_row(USER, CHANNEL)["lang"] == "es"
+    assert ("table", "channel_favourites") in db.calls
+    assert ("select", "created_at,lang,uploads_outcome") in db.calls
+    assert ("eq", "user_id", USER) in db.calls and ("eq", "channel_id", CHANNEL) in db.calls
+    assert store.favourite_row(USER, CHANNEL) is None
+
+
+def test_the_real_favourite_write_says_whether_it_was_new():
+    db = Recording([{"user_id": USER}], [])
+    store = channels.ChannelStore(db)
+    assert store.favourite(USER, CHANNEL, "es") is True
+    assert store.favourite(USER, CHANNEL, "es") is False
+    assert ("upsert", {"user_id": USER, "channel_id": CHANNEL, "lang": "es"},
+            ("on_conflict", "user_id,channel_id"), ("ignore_duplicates", True)) in db.calls
+
+
+def test_the_real_outcome_and_unfavourite_name_one_users_row():
+    db = Recording([], [])
+    store = channels.ChannelStore(db)
+    store.set_uploads_outcome(USER, CHANNEL, "queued")
+    assert ("update", {"uploads_outcome": "queued"}) in db.calls
+    store.unfavourite(USER, CHANNEL)
+    assert ("delete",) in db.calls
+    assert db.calls.count(("eq", "user_id", USER)) == 2
+    assert db.calls.count(("eq", "channel_id", CHANNEL)) == 2
+
+
+def test_the_real_word_queries():
+    db = Recording([{"words": {"root": "el cofre"}}], [{"id": 5, "root": "el cofre"}])
+    store = channels.ChannelStore(db)
+    assert store.added_from_channel(USER, CHANNEL) == ["el cofre"]
+    assert ("table", "userwords") in db.calls and ("eq", "source", CHANNEL) in db.calls
+    assert store.valid_words([5]) == {5: "el cofre"}
+    assert ("eq", "status", "valid") in db.calls
+
+
+def test_the_real_word_lists_read_every_page(monkeypatch):
+    monkeypatch.setattr(channels, "_PAGE", 2)
+    db = Recording([{"word_id": 1}, {"word_id": 2}], [{"word_id": 3}])
+    assert channels.ChannelStore(db).known_words(USER) == {1, 2, 3}
+    assert ("table", "user_known_words") in db.calls
+    db = Recording([{"word_id": 7}])
+    assert channels.ChannelStore(db).listed_words(USER) == {7}
+    assert ("table", "userwords") in db.calls

@@ -7,10 +7,12 @@
 // a real difference, the channel's core words. Its panel takes the place of
 // YouTube's tab content until another tab is chosen.
 
-import type { Language } from './languages';
+import { LANGUAGES, type Language } from './languages';
 
 export type ChannelView = {
   favourite: boolean;
+  uploads: 'pending' | 'queued' | 'other_language' | null;
+  added: number;
   videos: number;
   at_level: number;
   progress: { added: number; total: number | null } | null;
@@ -85,18 +87,31 @@ export function isChannelPath(pathname: string): boolean {
 
 const videosText = (n: number) => (n === 1 ? '1 video' : `${n} videos`);
 
-/** The line at the top of the tab. */
-export function summaryText(view: ChannelView): string {
+/**
+ * The line at the top of the tab. `settling`: just favourited, so its uploads
+ * are being listed. It also says when a favourite isn't adding anything, as the
+ * button alone would suggest videos are coming.
+ */
+export function summaryText(view: ChannelView, language: Language, settling = false): string {
   const level = `${view.at_level} at your level`;
   if (view.progress) {
     const { added, total } = view.progress;
     const count = total === null ? videosText(added) : `${added} of ${videosText(total)}`;
     return `${count} added · ${level}`;
   }
-  if (view.videos) return `${videosText(view.videos)} indexed · ${level}`;
-  return view.favourite
-    ? 'No videos from this channel are indexed yet.'
-    : 'No videos from this channel are indexed yet. Favourite it to add them.';
+  const indexed = `${videosText(view.videos)} indexed · ${level}`;
+  if (!view.favourite) {
+    return view.videos ? indexed : 'No videos from this channel are indexed yet. Favourite it to add them.';
+  }
+  if (view.uploads === 'pending' && !settling) {
+    return view.videos ? `${indexed} · More can't be added right now` : 'This channel\'s videos can\'t be added right now.';
+  }
+  if (view.videos) return indexed;
+  if (view.uploads === 'pending') return 'Looking for this channel\'s videos…';
+  if (view.uploads === 'other_language') {
+    return `This channel doesn't seem to be in ${LANGUAGES[language].name}, so its videos won't be added.`;
+  }
+  return view.added ? `${videosText(view.added)} added` : 'None of this channel\'s videos could be added.';
 }
 
 // ------------------------------------------------------------------ style ──
@@ -202,6 +217,7 @@ function coreWordsCard(doc: Document, words: NonNullable<ChannelView['core_words
 export function renderPanel(
   doc: Document,
   answer: Answer<ChannelView>,
+  summary: (view: ChannelView) => string,
   addCoreWords: () => Promise<boolean>,
   signIn: () => void,
 ): HTMLElement {
@@ -220,7 +236,7 @@ export function renderPanel(
     }
     return panel;
   }
-  panel.append(el(doc, 'p', 'lf-summary', summaryText(answer.value)));
+  panel.append(el(doc, 'p', 'lf-summary', summary(answer.value)));
   if (answer.value.core_words) panel.append(coreWordsCard(doc, answer.value.core_words, addCoreWords));
   return panel;
 }
@@ -288,16 +304,18 @@ function langfourTab(doc: Document, open: () => void): HTMLElement {
 /**
  * Puts the button and tab where they belong, if they aren't there. YouTube
  * rebuilds its header when the layout changes, such as on a window resize, and
- * drops what it didn't render.
+ * drops or moves past what it didn't render.
  */
-function place(doc: Document, button: HTMLElement, tab: HTMLElement): void {
+function place(doc: Document, button: HTMLElement | null, tab: HTMLElement): void {
   const actions = doc.querySelector(SELECTORS.actions);
-  if (actions && button.parentElement !== actions) actions.append(button);
+  if (button && actions && button.parentElement !== actions) actions.append(button);
   const tabs = doc.querySelector(SELECTORS.tabs);
-  if (tabs && tab.parentElement !== tabs) {
-    // Before YouTube's search, which it keeps last.
-    const last = tabs.querySelector('.ytTabShapeLastTab');
-    tabs.insertBefore(tab, last && last.parentElement === tabs ? last : null);
+  if (tabs) {
+    // Before YouTube's search, which it keeps last. In the bar isn't enough:
+    // re-rendering its list, YouTube can leave its own tabs after this one.
+    const found = tabs.querySelector('.ytTabShapeLastTab');
+    const last = found?.parentElement === tabs ? found : null;
+    if (tab.parentElement !== tabs || tab.nextElementSibling !== last) tabs.insertBefore(tab, last);
   }
 }
 
@@ -333,9 +351,6 @@ export async function mountChannelPage(doc: Document, pathname: string, language
   const isCurrent = () => mine === generation;
   const channelId = await waitForChannel(doc, pathname, expectedId, isCurrent);
   if (!channelId || !isCurrent()) return;
-  // Only this on every channel page; the tab's numbers wait until it opens.
-  const favourited = await api.favourited(channelId);
-  if (!isCurrent()) return;
   ensureStyle(doc);
 
   let view: Answer<ChannelView> | null = null;
@@ -360,9 +375,33 @@ export async function mountChannelPage(doc: Document, pathname: string, language
     panel.style.marginLeft = `${left - parent.getBoundingClientRect().left}px`;
     panel.style.width = `${width}px`;
   };
+  // The tab bar's selected tab and underline, while the panel is open. YouTube
+  // resets them if it rebuilds the bar, and an open panel is the only time the
+  // selected tab isn't its own.
+  const showSelected = () => {
+    const tabs = doc.querySelector(SELECTORS.tabs);
+    if (!panel || !tabs) return;
+    const other = tabs.querySelector(`[aria-selected="true"]:not([${MARK}])`);
+    if (other) {
+      previous = other;
+      select(other, false);
+    }
+    select(tab, true);
+    const slider = doc.querySelector<HTMLElement>(SELECTORS.slider);
+    if (!slider) return;
+    if (other || slider !== bar) {
+      bar = slider;
+      barStyle = slider.getAttribute('style');
+    }
+    const width = `${tab.getBoundingClientRect().width}px`;
+    const transform = `translateX(${tab.getBoundingClientRect().left - tabs.getBoundingClientRect().left}px)`;
+    if (slider.style.width !== width) slider.style.width = width;
+    if (slider.style.transform !== transform) slider.style.transform = transform;
+  };
+  const summary = (value: ChannelView) => summaryText(value, language, Date.now() - favouritedAt < AFTER_FAVOURITE_FOR_MS);
   const renderOpen = () => {
     if (!view) return;
-    const next = renderPanel(doc, view, async () => {
+    const next = renderPanel(doc, view, summary, async () => {
       const added = await api.addCoreWords(channelId, language);
       if (!added.ok && added.signedOut) api.signIn();
       coreWordsAdded = added.ok;
@@ -378,31 +417,34 @@ export async function mountChannelPage(doc: Document, pathname: string, language
     const next = await api.view(channelId, language);
     // The tab closed, or a newer request is on its way.
     if (request !== requests || !panel) return;
-    const summary = panel.querySelector('.lf-summary');
+    // A failed refresh keeps what's showing, and tries again.
+    if (!next.ok && view?.ok) {
+      if (!next.signedOut) schedule(WHILE_ADDING_MS);
+      return;
+    }
+    const line = panel.querySelector('.lf-summary');
     // Only the line changes on a refresh: a redrawn card would fold its words
     // up again and forget that they were added.
-    const sameCard = summary && view?.ok && next.ok && (coreWordsAdded
+    const sameCard = line && view?.ok && next.ok && (coreWordsAdded
       || JSON.stringify(view.value.core_words) === JSON.stringify(next.value.core_words));
     view = next;
-    if (sameCard && next.ok) summary.textContent = summaryText(next.value);
+    if (sameCard && next.ok) line.textContent = summary(next.value);
     else renderOpen();
     if (!next.ok) return;
-    const delay = Date.now() - favouritedAt < AFTER_FAVOURITE_FOR_MS ? AFTER_FAVOURITE_MS
-      : next.value.progress ? WHILE_ADDING_MS : 0;
-    if (delay) timer = setTimeout(refresh, delay);
+    if (Date.now() - favouritedAt < AFTER_FAVOURITE_FOR_MS) schedule(AFTER_FAVOURITE_MS);
+    // A total of null means the channel stalled: nothing is arriving to show.
+    else if (next.value.progress && next.value.progress.total !== null) schedule(WHILE_ADDING_MS);
+  };
+  // Not while the browser tab is hidden: it catches up when it's shown again.
+  const tick = () => {
+    if (doc.hidden) doc.addEventListener('visibilitychange', tick, { once: true });
+    else void refresh();
+  };
+  const schedule = (delay: number) => {
+    timer = setTimeout(tick, delay);
   };
   const open = () => {
     if (panel) return;
-    const tabs = doc.querySelector(SELECTORS.tabs);
-    previous = tabs?.querySelector(`[aria-selected="true"]:not([${MARK}])`) ?? null;
-    if (previous) select(previous, false);
-    select(tab, true);
-    bar = doc.querySelector(SELECTORS.slider);
-    if (bar && tabs) {
-      barStyle = bar.getAttribute('style');
-      bar.style.width = `${tab.getBoundingClientRect().width}px`;
-      bar.style.transform = `translateX(${tab.getBoundingClientRect().left - tabs.getBoundingClientRect().left}px)`;
-    }
     hidden = doc.querySelector(SELECTORS.content);
     panel = el(doc, 'div', 'lf-panel lf-muted', 'Loading…');
     panel.setAttribute(MARK, 'panel');
@@ -411,6 +453,7 @@ export async function mountChannelPage(doc: Document, pathname: string, language
       hidden.before(panel);
     }
     align();
+    showSelected();
     // The window, and YouTube's sidebar opening and closing.
     resizes = new ResizeObserver(align);
     const page = doc.querySelector(BROWSE);
@@ -420,6 +463,7 @@ export async function mountChannelPage(doc: Document, pathname: string, language
   };
   const close = () => {
     clearTimeout(timer);
+    doc.removeEventListener('visibilitychange', tick);
     requests += 1;
     resizes?.disconnect();
     resizes = null;
@@ -436,13 +480,13 @@ export async function mountChannelPage(doc: Document, pathname: string, language
     hidden = null;
   };
 
-  const button = favouriteButton(doc, channelId, language, favourited.ok && favourited.value.favourite, api, (on) => {
-    favouritedAt = on ? Date.now() : 0;
-    if (panel) void refresh();
-  });
   const tab = langfourTab(doc, open);
+  let button: HTMLElement | null = null;
   place(doc, button, tab);
-  const observer = new MutationObserver(() => place(doc, button, tab));
+  const observer = new MutationObserver(() => {
+    place(doc, button, tab);
+    showSelected();
+  });
   observer.observe(doc.querySelector(BROWSE) ?? doc.body, { childList: true, subtree: true });
   // Choosing one of YouTube's tabs, even the one already selected, leaves ours.
   // On the document, as YouTube can replace the tab bar.
@@ -456,7 +500,17 @@ export async function mountChannelPage(doc: Document, pathname: string, language
     observer.disconnect();
     doc.removeEventListener('click', onTabs, true);
     close();
-    button.remove();
+    button?.remove();
     tab.remove();
   };
+
+  // The button waits for its state; the tab doesn't depend on it. Only this on
+  // every channel page: the tab's numbers wait until it opens.
+  const favourited = await api.favourited(channelId);
+  if (!isCurrent()) return;
+  button = favouriteButton(doc, channelId, language, favourited.ok && favourited.value.favourite, api, (on) => {
+    favouritedAt = on ? Date.now() : 0;
+    if (panel) void refresh();
+  });
+  place(doc, button, tab);
 }

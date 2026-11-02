@@ -54,7 +54,8 @@ def test_favourite_queues_the_uploads_after_answering(store, monkeypatch):
     assert response.json() == {"favourite": True}
     assert queued == [(store, USER, CHANNEL, "es", "key")]
 
-    # Already a favourite: no second listing.
+    # Already a favourite and its listing finished: no second one.
+    store.set_uploads_outcome(USER, CHANNEL, "queued")
     response = client.post(f"/api/channels/{CHANNEL}/favourite",
                            json={"language": "es", "favourite": True}, headers=AUTH)
     assert response.json() == {"favourite": True} and len(queued) == 1
@@ -69,6 +70,22 @@ def test_reads_the_favourite_alone(store):
     store.favourite(USER, CHANNEL, "es")
     assert client.get(f"/api/channels/{CHANNEL}/favourite", headers=AUTH).json() == {"favourite": True}
     assert client.get(f"/api/channels/{CHANNEL}/favourite").status_code == 401
+
+
+def test_a_visit_retries_a_listing_that_did_not_finish(store, monkeypatch):
+    queued = []
+    monkeypatch.setenv("YOUTUBE_API_KEY", "key")
+    monkeypatch.setattr(channels, "queue_channel", lambda *a: queued.append(a))
+    assert client.get(f"/api/channels/{CHANNEL}/favourite", headers=AUTH).status_code == 200
+    assert queued == []  # not a favourite
+
+    store.favourite(USER, CHANNEL, "de")
+    client.get(f"/api/channels/{CHANNEL}/favourite", headers=AUTH)
+    assert queued == [(store, USER, CHANNEL, "de", "key")]
+
+    store.set_uploads_outcome(USER, CHANNEL, "other_language")
+    client.get(f"/api/channels/{CHANNEL}/favourite", headers=AUTH)
+    assert len(queued) == 1
 
 
 def test_refuses_handles_unknown_languages_and_missing_sessions(store):

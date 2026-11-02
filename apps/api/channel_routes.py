@@ -1,7 +1,8 @@
 """A YouTube channel's Favourite button and Langfour tab (channels.py).
 
     GET  /api/channels/{channel_id}?language=es     the tab: progress, core words
-    GET  /api/channels/{channel_id}/favourite       the button, on every channel page
+    GET  /api/channels/{channel_id}/favourite       the button, on every channel page;
+                                                    retries an unfinished upload listing
     POST /api/channels/{channel_id}/favourite       {language, favourite}
     POST /api/channels/{channel_id}/core-words      {language}: add them as learning
 
@@ -58,11 +59,16 @@ async def channel_view(
 @router.get("/api/channels/{channel_id}/favourite", response_model=Favourite)
 async def is_favourite(
     channel_id: ChannelId,
+    background: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     store: ChannelStore = Depends(get_channel_store),
 ):
-    favourited_at = await asyncio.to_thread(store.favourited_at, str(current_user.id), channel_id)
-    return {"favourite": favourited_at is not None}
+    user_id = str(current_user.id)
+    row = await asyncio.to_thread(store.favourite_row, user_id, channel_id)
+    if channels.needs_listing(row):
+        background.add_task(channels.queue_channel, store, user_id, channel_id, row["lang"],
+                            os.getenv("YOUTUBE_API_KEY"))
+    return {"favourite": row is not None}
 
 
 @router.post("/api/channels/{channel_id}/favourite", response_model=Favourite)
@@ -74,9 +80,9 @@ async def favourite(
     store: ChannelStore = Depends(get_channel_store),
 ):
     user_id = str(current_user.id)
-    is_new = await asyncio.to_thread(channels.set_favourite, store, user_id, channel_id,
-                                     req.language, req.favourite)
-    if is_new:
+    list_uploads = await asyncio.to_thread(channels.set_favourite, store, user_id, channel_id,
+                                           req.language, req.favourite)
+    if list_uploads:
         background.add_task(channels.queue_channel, store, user_id, channel_id, req.language,
                             os.getenv("YOUTUBE_API_KEY"))
     return {"favourite": req.favourite}
