@@ -417,7 +417,7 @@ function renderProblem(container: HTMLElement, article: StoredArticle | null): v
 }
 
 /**
- * Opened from the popup, the reader replaced the original page in the same
+ * Opened from Safari's menu, the reader replaced the original page in the same
  * tab, so Back returns to it with its scroll position. Opened in a new tab
  * (keyboard command) there is nothing to go back to, so load the page.
  */

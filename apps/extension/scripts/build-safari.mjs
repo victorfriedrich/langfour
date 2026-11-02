@@ -19,8 +19,8 @@
 //   - drops the web app bridge's localhost match, which is for development
 //     and would hand the account email to any local server on that port;
 //   - drops `key` (Chrome's fixed extension ID; Safari ignores it) and
-//     `commands` (iOS Safari has no keyboard shortcuts; the popup's reader
-//     button replaces it);
+//     `commands` (iOS Safari has no keyboard shortcuts; tapping Langfour in its
+//     menu opens the reader instead);
 //   - drops the chrome-extension://*/* web_accessible_resources entry, which
 //     only exists so Parcel builds auth.html and reader.html (see
 //     langfive-extension-build-gotchas) and is not a valid Safari match
