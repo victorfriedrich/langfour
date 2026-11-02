@@ -238,8 +238,11 @@ def merge_history(row: dict | None, item: HistoryItem, now: datetime) -> dict | 
     grew = item.share is not None and (old is None or item.share > old)
     if row.get("unmarked_at") is not None:
         # Unmarked: only a rewatch brings it back, which shows as a bar that
-        # grew past 70% since.
-        if (item.share is not None and item.share >= WATCHED_SHARE
+        # grew past 70% since. A desktop row's share stops at the 70% the
+        # extension reported, so the bar of that same viewing would look
+        # grown: only watching it again on desktop brings one back.
+        if (row.get("source") == "history"
+                and item.share is not None and item.share >= WATCHED_SHARE
                 and (old is None or item.share >= old + REWATCH_GROWTH)):
             return {"share": item.share, "watched_at": when, "unmarked_at": None}
         return None
@@ -294,7 +297,8 @@ class WatchStore:
         return res.data or []
 
     def recent(self, user_id: str, language: str, limit: int) -> list[dict]:
-        """The newest rows, unmarked or not; the caller filters."""
+        """The newest rows that aren't unmarked; the caller leaves out the
+        ones under 70%."""
         res = (self.db.table("watch_events").select(_COLUMNS)
                .eq("user_id", user_id).eq("language", language).is_("unmarked_at", "null")
                .order("created_at", desc=True).limit(limit).execute())

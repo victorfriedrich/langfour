@@ -237,6 +237,15 @@ def test_an_unmarked_video_the_user_quit_comes_back_when_rewatched(videos):
     assert watch.status(store, USER, "es", A).watched and heard == [A]
 
 
+def test_an_unmarked_desktop_watch_stays_unmarked_whatever_the_bar_says(videos):
+    # Marked at 70% and played to the end, then unmarked before the next
+    # history read: the bar shows that same viewing.
+    store = FakeStore([{"video_id": A, "share": 0.7, "watched_at": at(0), "unmarked_at": at(0),
+                        "source": "desktop"}])
+    _, heard = watch.record_history(store, USER, history({"video_id": A, "share": 1.0, "day": 0}))
+    assert not watch.status(store, USER, "es", A).watched and heard == []
+
+
 def test_turning_history_off_deletes_its_rows_only(videos):
     store = FakeStore([{"video_id": A, "source": "history"}, {"video_id": B, "source": "desktop"}])
     watch.turn_off_history(store, USER)

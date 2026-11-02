@@ -10,7 +10,8 @@ const secondary =
 
 interface YoutubeRecapProps {
   recap: Recap;
-  onAdd: (words: { word_id: number; video_id: string }[]) => Promise<unknown>;
+  /** Resolves to the words the API added. */
+  onAdd: (words: { word_id: number; video_id: string }[]) => Promise<string[]>;
   onClose: () => void;
 }
 
@@ -32,8 +33,8 @@ export default function YoutubeRecap({ recap, onAdd, onClose }: YoutubeRecapProp
   const add = async () => {
     setBusy(true);
     try {
-      await onAdd(picks(recap, left));
-      setAdded(count);
+      // The API's count: a word saved meanwhile elsewhere isn't added again.
+      setAdded((await onAdd(picks(recap, left))).length);
     } finally {
       setBusy(false);
     }

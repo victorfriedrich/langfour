@@ -92,12 +92,17 @@ async function drawRecap(language: Language): Promise<void> {
   add.onclick = async () => {
     add.disabled = true;
     const done = await requestBackend('/api/watch/recap/add', { language, words: picks(recap, left) });
-    if (!done.ok) {
+    let added: string[];
+    try {
+      if (!done.ok) throw new Error(done.statusText);
+      added = (JSON.parse(done.body) as { added: string[] }).added;
+    } catch {
       add.disabled = false;
       return;
     }
+    // The API's count: a word saved meanwhile elsewhere isn't added again.
     $('recapActions').replaceChildren(Object.assign(document.createElement('p'), {
-      className: 'recap-done', textContent: `Added ${recap.words.length - left.size} to reviews`,
+      className: 'recap-done', textContent: `Added ${added.length} to reviews`,
     }));
   };
   $('recapClose').onclick = () => {

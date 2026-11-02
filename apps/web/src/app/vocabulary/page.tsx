@@ -179,8 +179,9 @@ const PracticePage = () => {
                 <YoutubeRecap
                   recap={recap}
                   onAdd={async (words) => {
-                    await addRecapWords(words);
+                    const added = await addRecapWords(words);
                     refresh();
+                    return added;
                   }}
                   onClose={closeRecap}
                 />

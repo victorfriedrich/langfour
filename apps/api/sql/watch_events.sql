@@ -11,8 +11,9 @@
 -- is unknown. A history row under 70% is a video the user started and left:
 -- kept, so a later read can see the bar grow, but not watched. Unmark sets
 -- unmarked_at rather than deleting, so the next history read doesn't bring
--- the video straight back; watching it again on desktop, or the history bar
--- growing past 70%, marks it again. The rules live in apps/api/watch.py.
+-- the video straight back; watching it again on desktop, or, for a row the
+-- history page marked, its bar growing past 70%, marks it again. The rules
+-- live in apps/api/watch.py.
 --
 --   watched_at   when it was watched; null for history rows from before the
 --                first read, whose day the history page doesn't say

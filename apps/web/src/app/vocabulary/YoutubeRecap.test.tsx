@@ -17,8 +17,9 @@ it('shows what was watched and the words in one row', () => {
   expect(screen.getByRole('button', { name: 'Add 3 to reviews' })).toBeTruthy();
 });
 
-it('adds all but the words tapped away', async () => {
-  const onAdd = vi.fn().mockResolvedValue(undefined);
+it('adds all but the words tapped away, and says how many the API added', async () => {
+  // el casero was saved meanwhile elsewhere, so only one is new.
+  const onAdd = vi.fn().mockResolvedValue(['el alquiler']);
   render(<YoutubeRecap recap={recap} onAdd={onAdd} onClose={vi.fn()} />);
   fireEvent.click(screen.getByText('la fianza'));
   expect(screen.getByText('la fianza').className).toContain('text-gray-400');
@@ -27,7 +28,7 @@ it('adds all but the words tapped away', async () => {
     { word_id: 1, video_id: 'aaaaaaaaaaa' },
     { word_id: 3, video_id: 'bbbbbbbbbbb' },
   ]);
-  await waitFor(() => expect(screen.getByText('Added 2 to reviews')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('Added 1 to reviews')).toBeTruthy());
 });
 
 it('puts it away with Not now', () => {
