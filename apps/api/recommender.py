@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from scipy.sparse import csr_matrix, load_npz, save_npz
 from supabase import Client
 
+import video_blend
 from file_manager import Document, load_documents
 from languages import require_code
 
@@ -64,6 +65,7 @@ class Recommender:
         self.blacklisted_files = blacklisted_files
         self.hidden_by_score = self._load_hidden_videos()
         self.hidden_videos = self.hidden_by_score
+        self.video_signals = self._load_video_signals()
 
         # Load every language at startup so the first user request for any
         # language does not pay the matrix load/build cost. _ensure_language_loaded
@@ -295,6 +297,18 @@ class Recommender:
             return set()
         logger.info("Hiding %d videos by quality score", len(hidden))
         return hidden
+
+    def _load_video_signals(self) -> dict[str, dict[str, dict[str, Any]]]:
+        """What video_blend.rank orders by. Read at startup like the hidden
+        videos, so new verdicts need a restart. A failed read, or a table not
+        applied yet, keeps the plain known-words order."""
+        try:
+            signals = video_blend.load_signals(self.supabase)
+        except Exception:
+            logger.warning("Could not load video signals; ranking by known words", exc_info=True)
+            return {}
+        logger.info("Ranking by video signals for %s", sorted(signals))
+        return signals
 
     def video_ids(self) -> list[str]:
         """Every loaded video, in every language."""
@@ -602,10 +616,6 @@ class Recommender:
             if video_id in self.hidden_videos:
                 continue
                 
-            # Skip if wrong category
-            if filter_category and cats[i] != filter_category:
-                continue
-                
             # Skip if too few words (less than 100 unique words)
             if distinct_words_per_doc[i] < MIN_DISTINCT_WORDS:
                 continue
@@ -620,7 +630,19 @@ class Recommender:
         
         # Sort by comprehension ratio (descending)
         valid_scores.sort(key=lambda x: x[1], reverse=True)
-        
+
+        signals = self.video_signals.get(language)
+        if signals:
+            rows = {files[i].replace("_processed.json", ""): i for i, _ in valid_scores}
+            ranked = video_blend.rank(
+                [(files[i].replace("_processed.json", ""), float(ratio)) for i, ratio in valid_scores],
+                signals,
+                in_list=(lambda vid: cats[rows[vid]] == filter_category) if filter_category else None,
+            )
+            valid_scores = [(rows[vid], comprehension_ratios[rows[vid]]) for vid in ranked]
+        elif filter_category:
+            valid_scores = [(i, ratio) for i, ratio in valid_scores if cats[i] == filter_category]
+
         # Take top candidates (more than needed in case some fail to load)
         top_candidates = valid_scores[:min(top_n * 2, len(valid_scores))]
         
