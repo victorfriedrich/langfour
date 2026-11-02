@@ -23,6 +23,8 @@ interface MissingWord {
   id: number;
   content: string;
   translation: string;
+  importance?: number | null;
+  key?: boolean;
 }
 
 const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, variant = 'panel', transcript = [], eyebrow = 'Episode vocabulary', source = 'videos' }) => {
@@ -30,11 +32,13 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const missing = useMissingWords(videoId, source);
   const { isLoading, error } = missing;
-  // Beside the text, the list follows it: each word where it first appears.
+  // The text's most important words come first, most important on top. Beside
+  // the text, the rest follow it: each word where it first appears.
   const firstSeen = useMemo(() => firstAppearance(transcript), [transcript]);
-  const recommendedWords = useMemo(() => inTextOrder(missing.recommendedWords, firstSeen), [missing.recommendedWords, firstSeen]);
+  const keyWords = useMemo(() => byImportance(missing.recommendedWords.filter((word) => word.key)), [missing.recommendedWords]);
+  const recommendedWords = useMemo(() => inTextOrder(missing.recommendedWords.filter((word) => !word.key), firstSeen), [missing.recommendedWords, firstSeen]);
   const flaggedWords = useMemo(() => inTextOrder(missing.flaggedWords, firstSeen), [missing.flaggedWords, firstSeen]);
-  const allWords = useMemo(() => [...recommendedWords, ...flaggedWords], [recommendedWords, flaggedWords]);
+  const allWords = useMemo(() => [...keyWords, ...recommendedWords, ...flaggedWords], [keyWords, recommendedWords, flaggedWords]);
   const { addWordsToUserwords } = useUpdateUserwords();
   const { seenVideos, markVideoAsSeen } = useSeenVideos(0);
   const fullPage = variant === 'page';
@@ -103,8 +107,9 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   }
 
   const list = allWords.length === 0 ? <NothingNew fullPage={fullPage} onClose={onClose} /> : <>
-    <WordGroup label="Recommended" words={recommendedWords} startIndex={0} selectedWords={selectedWords} fullPage={fullPage} toggleGroup={() => toggleWordGroup(recommendedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />
-    {flaggedWords.length > 0 && <WordGroup label="Flagged" words={flaggedWords} startIndex={recommendedWords.length} selectedWords={selectedWords} fullPage={fullPage} collapsible toggleGroup={() => toggleWordGroup(flaggedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
+    {keyWords.length > 0 && <WordGroup label="Key words" words={keyWords} startIndex={0} selectedWords={selectedWords} fullPage={fullPage} toggleGroup={() => toggleWordGroup(keyWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
+    {(recommendedWords.length > 0 || keyWords.length === 0) && <WordGroup label={keyWords.length > 0 ? 'Other words' : 'Recommended'} words={recommendedWords} startIndex={keyWords.length} selectedWords={selectedWords} fullPage={fullPage} toggleGroup={() => toggleWordGroup(recommendedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
+    {flaggedWords.length > 0 && <WordGroup label="Flagged" words={flaggedWords} startIndex={keyWords.length + recommendedWords.length} selectedWords={selectedWords} fullPage={fullPage} collapsible toggleGroup={() => toggleWordGroup(flaggedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
   </>;
   const header = <Header videoTitle={videoTitle} eyebrow={eyebrow} wordCount={allWords.length} fullPage={fullPage} wide={showText} onClose={onClose} />;
   // Beside the text, the list is a column of its own: it starts level with the
@@ -145,9 +150,15 @@ function firstAppearance(chunks: TranscriptChunk[]): Map<number, [number, number
   return seen;
 }
 
-/** Words in the order they first appear; any the text doesn't mark keep their order, after the rest. */
+/** Most important first; words not ranked yet keep their order, after the rest. */
+function byImportance(words: MissingWord[]): MissingWord[] {
+  return [...words].sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0));
+}
+
+/** Words in the order they first appear; any the text doesn't mark keep their order, after the rest.
+ * Without the text (the side panel), most important first. */
 function inTextOrder(words: MissingWord[], seen: Map<number, [number, number]>): MissingWord[] {
-  if (seen.size === 0) return words;
+  if (seen.size === 0) return byImportance(words);
   const at = (word: MissingWord) => seen.get(word.id) ?? [Infinity, 0];
   return [...words].sort((a, b) => at(a)[0] - at(b)[0] || at(a)[1] - at(b)[1]);
 }

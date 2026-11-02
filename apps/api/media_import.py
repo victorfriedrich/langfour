@@ -239,6 +239,12 @@ class MediaStore:
                .limit(1).execute())
         return res.data[0] if res.data else None
 
+    def save_word_ranks(self, user_id: str, language: str, media_id: str,
+                        ranks: dict, version: int) -> None:
+        """Jev's ranking of the item's words (word_importance.py)."""
+        (self.client.table("user_media").update({"word_ranks": ranks, "word_ranks_version": version})
+         .eq("user_id", user_id).eq("language", language).eq("id", media_id).execute())
+
     def get_layout(self, user_id: str, language: str) -> list:
         res = (self.client.table("user_media_layout").select("tree")
                .eq("user_id", user_id).eq("language", language)

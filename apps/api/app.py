@@ -48,6 +48,7 @@ from tts import router as tts_router
 from utils import get_video_words, is_special_character
 from videoparsing import main as process_video
 from vocabulary_routes import router as vocabulary_router
+from word_importance import media_ranks, video_ranks, with_importance
 
 app = FastAPI()
 
@@ -492,8 +493,10 @@ async def check_missing_words(
         words = get_video_words(video_id, language_code)
 
         missing_words = await get_missing_words(current_user.id, words, language_code)
-        
-        return {"missing_words": missing_words}
+        # Ranked once per video, for every user (word_importance.py).
+        ranks = await video_ranks(supabase, video_id, language_code, words)
+
+        return {"missing_words": with_importance(missing_words, ranks)}
     except Exception as e:
         logger.exception("💥 unhandled error in /missing-words")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -645,12 +648,17 @@ async def get_imported_media_missing_words(
     current_user: dict = Depends(get_current_user),
     store: MediaStore = Depends(get_media_store),
 ):
-    """The words of a Library item the user doesn't know yet. Videos keep
-    their own endpoint, which reads the shared corpus on disk."""
+    """The words of a Library item the user doesn't know yet, each with its
+    importance. Videos keep their own endpoint, which reads the shared corpus
+    on disk."""
     try:
         language_code = require_code(request.language_code)
-        words = get_media_words(store, str(current_user.id), media_id, language_code)
-        return {"missing_words": await get_missing_words(current_user.id, words, language_code)}
+        user_id = str(current_user.id)
+        words = get_media_words(store, user_id, media_id, language_code)
+        missing_words = await get_missing_words(current_user.id, words, language_code)
+        # Ranked on the first open, then saved with the item (word_importance.py).
+        ranks = await media_ranks(supabase, store, user_id, media_id, language_code, _tokens_from_cache)
+        return {"missing_words": with_importance(missing_words, ranks)}
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Media not found: {media_id}") from exc
     except ValueError as error:
