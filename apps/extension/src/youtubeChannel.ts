@@ -123,7 +123,7 @@ const ACCENT = '#4f46e5';
 // names stay as fallbacks.
 const CSS = `
 .lf-fav,.lf-panel{--lf-text:var(--yt-sys-color-baseline--text-primary,var(--yt-spec-text-primary,#0f0f0f));--lf-text-2:var(--yt-sys-color-baseline--text-secondary,var(--yt-spec-text-secondary,#606060));--lf-line:var(--yt-sys-color-baseline--outline,var(--yt-spec-10-percent-layer,rgba(0,0,0,.1)));--lf-chip:var(--yt-sys-color-baseline--tonal-background,var(--yt-spec-badge-chip-background,rgba(0,0,0,.05)));}
-.lf-fav{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 16px;border-radius:18px;font:500 14px/1 Roboto,Arial,sans-serif;cursor:pointer;border:0;background:var(--lf-chip);color:var(--lf-text);}
+.lf-fav{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 16px;border-radius:20px;font:500 14px/1 Roboto,Arial,sans-serif;cursor:pointer;border:0;background:var(--lf-chip);color:var(--lf-text);}
 .lf-fav:hover{background:var(--yt-sys-color-baseline--button-chip-background-hover,rgba(0,0,0,.1));}
 .lf-fav:disabled{cursor:default;}
 .lf-fav[aria-pressed="true"] svg{color:${ACCENT};}
