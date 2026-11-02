@@ -8,6 +8,7 @@ import { toLanguage } from './languages';
 import {
   HISTORY_ALARM,
   HISTORY_CONSENT_KEY,
+  HISTORY_DECLINED_ACCOUNTS_KEY,
   HISTORY_DECLINED_KEY,
   HISTORY_EVERY_MINUTES,
   HISTORY_LAST_READ_KEY,
@@ -48,11 +49,11 @@ export type HistoryReadResult = { kept?: number; error?: string };
 /**
  * Reads the history page and sends its video ids on. Without consent for
  * the account signed in, nothing is sent: the page is dropped as soon as the
- * account is known, and the popup asks. `consenting` is that yes, given for
+ * account is known, and the card asks. `consenting` is that yes, given for
  * whichever account is signed in now.
  */
 export async function readHistory(backend: Backend, consenting = false): Promise<HistoryReadResult> {
-  const stored = await chrome.storage.local.get([HISTORY_CONSENT_KEY]);
+  const stored = await chrome.storage.local.get([HISTORY_CONSENT_KEY, HISTORY_DECLINED_ACCOUNTS_KEY]);
   const consented: string[] = Array.isArray(stored[HISTORY_CONSENT_KEY]) ? stored[HISTORY_CONSENT_KEY] : [];
   if (!consenting && consented.length === 0) return { error: 'Not turned on' };
   const { preferredLanguage } = await chrome.storage.sync.get('preferredLanguage');
@@ -71,21 +72,29 @@ export async function readHistory(backend: Backend, consenting = false): Promise
   if (!page.account) return { error: 'Not signed in to YouTube' };
   if (!consented.includes(page.account)) {
     if (!consenting) {
-      await chrome.storage.local.set({ [HISTORY_NEW_ACCOUNT_KEY]: true });
+      const declined: unknown = stored[HISTORY_DECLINED_ACCOUNTS_KEY];
+      if (!Array.isArray(declined) || !declined.includes(page.account)) {
+        await chrome.storage.local.set({ [HISTORY_NEW_ACCOUNT_KEY]: page.account });
+      }
       return { error: 'Another Google account is signed in' };
     }
     consented.push(page.account);
   }
-  await chrome.storage.local.set({
+  // Kept only once the read worked: a yes that showed an error isn't a yes.
+  const remember = () => chrome.storage.local.set({
     [HISTORY_CONSENT_KEY]: consented,
     [HISTORY_NEW_ACCOUNT_KEY]: false,
     [HISTORY_DECLINED_KEY]: false,
   });
-  if (page.items.length === 0) return { kept: 0 };
+  if (page.items.length === 0) {
+    await remember();
+    return { kept: 0 };
+  }
 
   const response = await backend({ path: '/api/watch/history', method: 'POST', body: { language, items: page.items } });
   const kept = json<{ kept: number }>(response);
   if (!kept) return { error: response.statusText || `API answered ${response.status}` };
+  await remember();
   await chrome.storage.local.set({ [HISTORY_LAST_READ_KEY]: Date.now() });
   return { kept: kept.kept };
 }

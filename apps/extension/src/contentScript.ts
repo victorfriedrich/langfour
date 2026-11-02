@@ -10,6 +10,7 @@ import { isAllowedHost } from './siteApi';
 import { getErrorMessage } from './errors';
 import { FitBadges, startFitBadges } from './youtubeFit';
 import { watchDesktop } from './watchSignal';
+import { promptForHistory } from './historyPrompt';
 
 export type Prefs = {
   preferredLanguage: Language;
@@ -161,6 +162,7 @@ if (isAllowedHost(location.host)) {
   if (location.host === 'www.youtube.com') {
     fitBadges = startFitBadges(() => (prefs ? determineLanguage(prefs) : null));
     watchDesktop();
+    promptForHistory();
   }
 }
 

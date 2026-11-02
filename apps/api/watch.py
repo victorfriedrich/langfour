@@ -364,7 +364,9 @@ def record_history(store: WatchStore, user_id: str, req: HistoryRead) -> tuple[H
         fields = merge_history(row, item, now)
         if fields is None:
             continue
-        store.write(user_id, req.language, video_id, fields)
+        # write is an upsert, whose insert half Postgres checks first: a
+        # required column can't be left out even when the row exists.
+        store.write(user_id, req.language, video_id, {"source": row["source"], **fields} if row else fields)
         if (item.day is not None and is_watched({**(row or {}), **fields})
                 and not (row and is_watched(row))):
             heard.append(video_id)

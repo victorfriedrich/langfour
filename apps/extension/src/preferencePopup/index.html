@@ -181,9 +181,9 @@
       .language-button.active { background-color: rgba(129, 140, 248, 0.18); }
       #userInfo { color: #d1d5db; }
       .form-message, .sent-text, .stuck-row, .recap-done { color: #d1d5db; }
-      .yt-title, .recap-words, .history-rows p { color: #f3f4f6; }
-      .recap-words, .history-rows, .history-rows p { border-color: #374151; }
-      .recap-word.left, .yt-muted, .history-text, .history-note { color: #9ca3af; }
+      .yt-title, .recap-words { color: #f3f4f6; }
+      .recap-words { border-color: #374151; }
+      .recap-word.left, .yt-muted { color: #9ca3af; }
       .sent-icon { background: rgba(129, 140, 248, 0.18); color: #a5b4fc; }
       .link-btn { color: #a5b4fc; }
       .form-message.error { color: #fca5a5; }
@@ -310,7 +310,7 @@
     .quick-link.primary:hover { background-color: #4338ca; }
     .stuck-row { margin-top: 12px; font-size: 13px; color: #555; }
     /* YouTube (youtube.ts): this video's mark, yesterday's recap, the
-       history consent. Flat, like the rows above: hairlines, no boxes. */
+       history read's on/off line. Flat, like the rows above. */
     .yt-section { margin-top: 20px; }
     .yt-title { font-size: 15px; font-weight: 600; color: #111827; }
     .yt-muted { font-weight: 400; color: #9ca3af; }
@@ -321,15 +321,10 @@
     .recap-word { background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
     .recap-word:hover { text-decoration: underline; text-decoration-color: #d1d5db; }
     .recap-word.left { color: #9ca3af; }
-    .recap-actions, .history-actions { margin-top: 12px; display: flex; gap: 8px; }
-    .recap-actions .quick-link, .history-actions .quick-link { flex: 0 0 auto; padding: 0 14px; }
+    .recap-actions { margin-top: 12px; display: flex; gap: 8px; }
+    .recap-actions .quick-link { flex: 0 0 auto; padding: 0 14px; }
     .quick-link:disabled { opacity: 0.5; cursor: default; }
     .recap-done { font-size: 13px; color: #555; }
-    .history-text { margin-top: 6px; font-size: 13px; line-height: 1.5; color: #6b7280; }
-    .history-rows p { padding: 8px 0; border-top: 1px solid #f3f4f6; font-size: 13px; line-height: 1.5; color: #374151; }
-    .history-rows { margin-top: 8px; border-bottom: 1px solid #f3f4f6; }
-    .history-actions { align-items: center; flex-wrap: wrap; }
-    .history-note { font-size: 12px; color: #9ca3af; }
     .footer {
       margin-top: 20px;
       display: flex;
@@ -456,20 +451,6 @@
         <button type="button" id="recapAdd" class="quick-link primary"></button>
         <button type="button" id="recapClose" class="quick-link">Not now</button>
       </div>
-    </section>
-    <section id="historyAsk" class="yt-section hidden">
-      <p class="yt-title">Use your YouTube history?</p>
-      <p class="history-text">Langfour reads which videos you watched, on any device, so it can mark them watched and recap their words.</p>
-      <div class="history-rows">
-        <p id="consentText"></p>
-        <p>Turn it off any time; what it kept is deleted with it.</p>
-      </div>
-      <div class="history-actions">
-        <button type="button" id="historyAllow" class="quick-link primary">Allow</button>
-        <button type="button" id="historyNo" class="quick-link">Not now</button>
-        <span class="history-note">For the Google account signed in here</span>
-      </div>
-      <p id="historyError" class="form-message error hidden" role="alert"></p>
     </section>
     <p id="historyRow" class="stuck-row hidden"><span id="historyText"></span> · <button type="button" id="historyToggle" class="link-btn"></button></p>
     <div class="footer">

@@ -1,11 +1,12 @@
 // The popup's YouTube rows: Unmark for the video playing in this tab,
-// yesterday's recap, and the history consent (docs/plans/youtube-plan.md,
-// feature 2). Drawn for the active language; index.ts calls drawYoutube.
+// yesterday's recap, and turning the history read off or on
+// (docs/plans/youtube-plan.md, feature 2). Drawn for the active language;
+// index.ts calls drawYoutube.
 
 import { requestBackend } from '../api-service';
-import { getLanguageInfo, type Language } from '../languages';
+import type { Language } from '../languages';
 import { sendToBackground, type WatchState } from '../messages';
-import { HISTORY_CONSENT_KEY, HISTORY_DECLINED_KEY, HISTORY_NEW_ACCOUNT_KEY, consentText, historyState } from '../watchHistory';
+import { HISTORY_CONSENT_KEY, HISTORY_DECLINED_KEY, HISTORY_NEW_ACCOUNT_KEY, historyState } from '../watchHistory';
 import { addLabel, picks, recapPath, recapStats, type Recap } from '../youtubeRecap';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -112,55 +113,37 @@ async function drawRecap(language: Language): Promise<void> {
   box.classList.remove('hidden');
 }
 
-// --- History consent -------------------------------------------------------
+// --- History -----------------------------------------------------------------
 
-async function drawHistory(language: Language): Promise<void> {
+// The consent itself is a card in the corner of youtube.com
+// (historyPrompt.ts). Here, once answered, one line to turn it off or on.
+async function drawHistory(): Promise<void> {
   const stored = await chrome.storage.local.get([HISTORY_CONSENT_KEY, HISTORY_DECLINED_KEY, HISTORY_NEW_ACCOUNT_KEY]);
   const state = historyState(stored);
-  const prompt = $('historyAsk');
   const row = $('historyRow');
-  prompt.classList.toggle('hidden', state !== 'ask');
   row.classList.toggle('hidden', state === 'ask');
-  $('consentText').textContent = consentText(getLanguageInfo(language)?.name ?? 'learning-language');
   $('historyText').textContent = state === 'on' ? 'YouTube history is on' : 'YouTube history is off';
   const toggle = $<HTMLButtonElement>('historyToggle');
   toggle.textContent = state === 'on' ? 'Turn off' : 'Turn on';
-
-  const allow = $<HTMLButtonElement>('historyAllow');
-  const error = $('historyError');
-  allow.onclick = async () => {
-    allow.disabled = true;
-    error.classList.add('hidden');
-    const result = await ask<{ kept?: number; error?: string }>({ type: 'HISTORY_ALLOW' });
-    allow.disabled = false;
-    if (!result || result.error) {
-      error.textContent = result?.error === 'Not signed in to YouTube'
-        ? 'Sign in to YouTube in this browser first.'
-        : 'Could not read the history page. Try again later.';
-      error.classList.remove('hidden');
-      return;
-    }
-    void drawHistory(language);
-  };
-  $('historyNo').onclick = async () => {
-    await chrome.storage.local.set({ [HISTORY_DECLINED_KEY]: true, [HISTORY_NEW_ACCOUNT_KEY]: false });
-    void drawHistory(language);
-  };
   toggle.onclick = async () => {
+    toggle.disabled = true;
     if (state === 'on') {
-      toggle.disabled = true;
       await ask({ type: 'HISTORY_OFF' });
       toggle.disabled = false;
-      void drawHistory(language);
-    } else {
-      prompt.classList.remove('hidden');
-      row.classList.add('hidden');
+      void drawHistory();
+      return;
     }
+    // Asking again: the card shows on the YouTube tab, or on a new one.
+    await chrome.storage.local.set({ [HISTORY_DECLINED_KEY]: false });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!/^https:\/\/www\.youtube\.com\//.test(tabs[0]?.url ?? '')) chrome.tabs.create({ url: 'https://www.youtube.com/' });
+      window.close();
+    });
   };
 }
 
 export function drawYoutube(language: Language): void {
   drawWatched();
   void drawRecap(language);
-  void drawHistory(language);
+  void drawHistory();
 }
