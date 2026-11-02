@@ -565,17 +565,6 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
       return true; // Keeps the message channel open for async response
     }
 
-    case 'OPEN_READER': {
-      // Only the popup asks for this. A content script has no business
-      // pointing the reader (and its script injection) at another tab.
-      if (sender.tab) return;
-      // Answer once the reader is on its way, so the popup can show progress
-      // until then instead of closing on a tab that seems to do nothing.
-      readerOpened.set(message.tabId, () => sendResponse({ opened: true }));
-      openReaderView(message.tabId, 'replace');
-      return true;
-    }
-
     case 'VIDEO_FIT': {
       withUser((userId) => videoFits(message.language, message.videoIds, userId, postBackend))
         .then(sendResponse);
@@ -628,9 +617,9 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
   }
 });
 
-// Where the reader opens. The popup replaces the page it was opened on, like
-// Safari's own Reader: Back returns to the article, which on iOS is the only
-// natural way out. The keyboard command keeps opening a new tab.
+// Where the reader opens. Safari's menu item replaces the page it was opened
+// on, like Safari's own Reader: Back returns to the article, which on iOS is
+// the only natural way out. The keyboard command keeps opening a new tab.
 type ReaderPlacement = 'replace' | 'new-tab';
 
 function openReaderView(tabId: number, placement: ReaderPlacement): void {
@@ -647,13 +636,8 @@ function openReaderView(tabId: number, placement: ReaderPlacement): void {
   });
 }
 
-// Popup callbacks waiting for "the reader is opening", keyed by tab.
-const readerOpened = new Map<number, () => void>();
-
 async function showReader(article: Omit<StoredArticle, 'savedAt'>, tabId: number, placement: ReaderPlacement): Promise<void> {
   const url = readerPageUrl(await storeArticle(article));
-  readerOpened.get(tabId)?.();
-  readerOpened.delete(tabId);
   // Only an article replaces the page; an error page in its place would lose
   // the page (a playing video, a half-filled form) for nothing.
   if (placement === 'replace' && !article.error) {
@@ -672,9 +656,9 @@ function withSource(article: ArticleData, tab: chrome.tabs.Tab): Omit<StoredArti
 }
 
 // Supported subtitle sites load the content script declaratively. Reader mode
-// also works on an arbitrary page the user explicitly invokes via the popup
-// or the keyboard command; activeTab grants temporary access to inject it
-// there. Try messaging first so supported sites are not injected twice --
+// also works on an arbitrary page the user explicitly invokes via Safari's
+// menu item or the keyboard command; activeTab grants temporary access to
+// inject it there. Try messaging first so supported sites are not injected twice --
 // content scripts share one JS realm per frame, and duplicate injection
 // redeclares their top-level bindings.
 function requestArticleExtraction(tab: chrome.tabs.Tab, placement: ReaderPlacement): void {
@@ -742,9 +726,9 @@ function showExtracted(response: ArticleExtractionResponse, tab: chrome.tabs.Tab
 scheduleHistoryReads(backendFetch);
 
 // First run: send new users to the sign-in page with a short how-to.
-// The Safari build skips this: there the popup is the whole sign-in flow
-// (email, then the code), and a tab opening on its own after install was
-// one screen too many.
+// The Safari build skips this: there sign-in starts from the reader (email,
+// then the code), and a tab opening on its own after install was one screen
+// too many.
 chrome.runtime.onInstalled.addListener((details) => {
   // Users already signed in when this version arrives have no dictionary yet.
   if (details.reason === 'update') prepareInBackground();
@@ -765,8 +749,8 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 // Safari on iOS has no commands API, and a top-level throw here would stop
-// the whole service worker from registering. The popup's reader button is
-// the entry point there.
+// the whole service worker from registering. Tapping Langfour in Safari's
+// menu (chrome.action.onClicked above) is the entry point there.
 chrome.commands?.onCommand.addListener((command) => {
   if (command === 'toggle-reader') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {

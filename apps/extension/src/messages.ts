@@ -97,7 +97,6 @@ export type BackgroundMessage =
   | { type: 'AUTH_SUCCESS'; session: Session }
   | { type: 'session' }
   | { type: 'view-popup' }
-  | { type: 'OPEN_READER'; tabId: number }
   | { type: 'REFRESH_KNOWN_WORDS'; language: string }
   | { type: 'CLASSIFY_WORDS'; language: string; tokens: string[] }
   // Words the user read (exposure.ts); the background keeps the learning

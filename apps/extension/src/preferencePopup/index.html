@@ -157,28 +157,6 @@
     #topSection { padding-bottom: 0; }
     #topSection .header { margin-bottom: 12px; }
     #loggedOutPane, #loggedInPane { padding-top: 16px; }
-    /* Same family as the popup's other primary buttons (Log in, Review
-       flashcards): flat indigo, 4px corners, one label. The page it opens
-       is a quiet line underneath. */
-    .reader-btn {
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      width: 100%; height: 46px; padding: 0 16px;
-      border: none; border-radius: 4px;
-      background-color: #4f46e5; color: #fff;
-      font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
-      transition: background-color 0.2s;
-    }
-    .reader-btn:hover:not(:disabled) { background-color: #4338ca; }
-    .reader-btn:disabled { cursor: progress; }
-    .reader-btn .spinner { display: none; }
-    .reader-btn.loading .spinner { display: block; }
-    .reader-btn.loading .reader-icon { display: none; }
-    .reader-page {
-      margin-top: 6px; font-size: 12.5px; color: #888; text-align: center;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .reader-page:empty { display: none; }
-    #readerError { margin: 8px 0 0; }
     .link-btn { background: none; border: none; padding: 0; font: inherit; color: #4f46e5; cursor: pointer; }
     .link-btn:hover:not(:disabled) { text-decoration: underline; }
     .link-btn:disabled { color: #888; cursor: default; }
@@ -392,16 +370,6 @@
         <div class="logo">Langfour</div>
         <div class="version" id="version"></div>
       </div>
-    </div>
-    <!-- The main action, signed in or not: shown when the current tab is a web page. -->
-    <div id="readerCard" class="hidden">
-      <button type="button" id="readerBtn" class="reader-btn">
-        <svg class="reader-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10.3 5.2 7.9 4.5 4 4.5v13c3.9 0 6.3.7 8 2 1.7-1.3 4.1-2 8-2v-13c-3.9 0-6.3.7-8 2z"/><path d="M12 6.5v13"/></svg>
-        <svg class="spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.55"/></svg>
-        <span id="readerBtnTitle">Read this page</span>
-      </button>
-      <p id="readerPageTitle" class="reader-page"></p>
-      <p id="readerError" class="form-message error hidden" role="alert"></p>
     </div>
   </div>
 

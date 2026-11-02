@@ -1,7 +1,7 @@
 /**
  * Page titles usually end in the site name ("Madrid - Wikipedia, la
  * enciclopedia libre"). Drops that last part when it names the site, for the
- * reader's heading and the popup's "Read this page" button.
+ * reader's heading.
  */
 export function cleanTitle(title: string | null | undefined, source: string | null): string | null {
   if (!title) return null;
