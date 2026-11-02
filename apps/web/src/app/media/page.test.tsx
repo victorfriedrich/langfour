@@ -50,13 +50,23 @@ it('explains the reader flow instead once the extension is installed', async () 
   expect(screen.queryByRole('link', { name: 'Get the extension' })).not.toBeInTheDocument();
 });
 
-it('names the reader button instead of the shortcut on a touch device', async () => {
+it('names the Safari menu item instead of the shortcut on an iPad reporting a Mac', async () => {
   extension = { state: 'installed', version: '1.0.0', signedIn: true, email: null };
   vi.mocked(getLibrary).mockResolvedValueOnce({ media: [], layout: [] });
+  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
   vi.spyOn(navigator, 'maxTouchPoints', 'get').mockReturnValue(5);
   render(<MediaPage />);
-  expect(await screen.findByText('Read this page')).toBeInTheDocument();
+  expect(await screen.findByText('Langfour')).toBeInTheDocument();
   expect(screen.queryByLabelText(/Press/)).not.toBeInTheDocument();
+});
+
+it('keeps the shortcut on a touchscreen laptop', async () => {
+  extension = { state: 'installed', version: '1.0.0', signedIn: true, email: null };
+  vi.mocked(getLibrary).mockResolvedValueOnce({ media: [], layout: [] });
+  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+  vi.spyOn(navigator, 'maxTouchPoints', 'get').mockReturnValue(10);
+  render(<MediaPage />);
+  expect(await screen.findByLabelText('Press Ctrl Shift Y')).toBeInTheDocument();
 });
 
 const songs: LayoutNode[] = [{ type: 'folder', id: 'f1', name: 'Songs', color: 'rose', open: true, children: [{ type: 'item', id: 'song' }] }];

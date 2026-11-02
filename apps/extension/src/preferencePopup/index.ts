@@ -1,13 +1,12 @@
 import { supabase } from '../supabaseclient';
 import { setPrefs, Prefs, defaultPrefs } from './prefs';
-import { sendToActiveTab, sendToBackground } from '../messages';
+import { sendToActiveTab } from '../messages';
 import { getLanguageInfo, toLanguage, LanguageInfo, type Language } from '../languages';
 import type { Session } from '@supabase/supabase-js';
 import { getErrorMessage } from '../errors';
 import { WEB_URL } from '../config';
 import { reviewLink } from '../reviewLink';
 import { SIGN_IN_WITH_CODE, normalizeEmailCode, signInWithEmailCode } from '../emailCode';
-import { cleanTitle, hostOf } from '../pageTitle';
 import { requestBackend } from '../api-service';
 import { STUCK_OPENED_KEY, stuckWordsText, stuckWordsToShow, stuckWordsUrl } from '../stuckWords';
 import { drawYoutube } from './youtube';
@@ -381,52 +380,6 @@ reviewBtn.addEventListener('click', () => {
 });
 document.getElementById('openAppBtn')?.addEventListener('click', () => {
   chrome.tabs.create({ url: WEB_URL });
-});
-
-// "Read this page" is the popup's main action, signed in or not. The
-// keyboard command is the only other way into the reader, and Safari on iOS
-// has no extension commands. Opening the popup grants activeTab, which the
-// background needs to inject the extraction script into the page.
-const readerCard = document.getElementById('readerCard') as HTMLElement;
-const readerBtn = document.getElementById('readerBtn') as HTMLButtonElement;
-const readerError = document.getElementById('readerError') as HTMLElement;
-const readerPageTitle = document.getElementById('readerPageTitle') as HTMLElement;
-let readerTabId: number | undefined;
-
-chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-  const tab = tabs[0];
-  readerTabId = tab?.id;
-  // Without site access the URL can be hidden; still offer the button then.
-  const url = tab?.url ?? '';
-  const isWebPage = !url || /^https?:/.test(url);
-  if (readerTabId === undefined || !isWebPage) return;
-  // "Madrid · es.wikipedia.org" rather than the raw <title>, which usually
-  // repeats the site ("Madrid - Wikipedia, la enciclopedia libre").
-  const host = hostOf(url);
-  const title = cleanTitle(tab?.title, host);
-  readerPageTitle.textContent = [title, host].filter(Boolean).join(' · ');
-  readerCard.classList.remove('hidden');
-});
-
-// Extracting the article takes a moment. Closing the popup straight away
-// left a page that seemed to ignore the tap, so show progress until the
-// background reports the reader is opening (or give up after a while).
-const READER_OPEN_TIMEOUT_MS = 10_000;
-readerBtn.addEventListener('click', () => {
-  if (readerTabId === undefined) {
-    readerError.textContent = 'Could not find the current page.';
-    readerError.classList.remove('hidden');
-    return;
-  }
-  readerBtn.disabled = true;
-  readerBtn.classList.add('loading');
-  (document.getElementById('readerBtnTitle') as HTMLElement).textContent = 'Opening…';
-  const done = () => window.close();
-  const timer = window.setTimeout(done, READER_OPEN_TIMEOUT_MS);
-  sendToBackground({ type: 'OPEN_READER', tabId: readerTabId }, () => {
-    window.clearTimeout(timer);
-    done();
-  });
 });
 
 // Logout button event
