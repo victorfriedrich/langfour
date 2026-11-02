@@ -212,6 +212,22 @@ describe('mountChannelPage', () => {
     expect(content.style.display).toBe('');
   });
 
+  it('lines the panel up with the tab bar rather than YouTube\'s centred column', async () => {
+    channelPage();
+    const bar = document.createElement('tp-yt-paper-tabs');
+    document.querySelector('ytd-browse')!.append(bar);
+    const rect = (left: number, width: number) => ({ left, width }) as DOMRect;
+    vi.spyOn(bar, 'getBoundingClientRect').mockReturnValue(rect(141, 1070));
+    vi.spyOn(document.querySelector('ytd-browse')!, 'getBoundingClientRect').mockReturnValue(rect(72, 1208));
+    const { api } = fakeApi({ ok: true, value: view() });
+    await mountChannelPage(document, '/@viajes', 'es', api);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Langfour' }));
+    const panel = await screen.findByRole('tabpanel');
+    expect(panel.style.marginLeft).toBe('69px');
+    expect(panel.style.width).toBe('1070px');
+  });
+
   it('shows YouTube\'s content again even if the page changed underneath', async () => {
     channelPage();
     const { api } = fakeApi({ ok: true, value: view() });

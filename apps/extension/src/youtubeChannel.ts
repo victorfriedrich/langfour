@@ -42,6 +42,8 @@ const BROWSE = 'ytd-browse[page-subtype="channels"]';
 const SELECTORS = {
   actions: `${BROWSE} yt-flexible-actions-view-model`,
   tabs: `${BROWSE} yt-tab-group-shape .tabGroupShapeTabs`,
+  // The full width of the tab bar, the same edges as the channel's header.
+  tabBar: `${BROWSE} tp-yt-paper-tabs`,
   // The selected tab's underline: one bar YouTube slides under it.
   slider: `${BROWSE} yt-tab-group-shape .tabGroupShapeSlider`,
   content: `${BROWSE} ytd-two-column-browse-results-renderer`,
@@ -111,7 +113,7 @@ const CSS = `
 .lf-fav:disabled{cursor:default;}
 .lf-fav[aria-pressed="true"] svg{color:${ACCENT};}
 html[dark] .lf-fav[aria-pressed="true"] svg{color:#a5b4fc;}
-.lf-panel{padding:24px 0;font:400 14px/20px Roboto,Arial,sans-serif;color:var(--lf-text);max-width:720px;}
+.lf-panel{box-sizing:border-box;align-self:flex-start;padding:24px 0;font:400 14px/20px Roboto,Arial,sans-serif;color:var(--lf-text);max-width:720px;}
 .lf-panel p{margin:0;}
 .lf-muted{color:var(--lf-text-2);}
 .lf-card{margin-top:24px;padding:16px;border:1px solid var(--lf-line);border-radius:12px;}
@@ -342,11 +344,22 @@ export async function mountChannelPage(doc: Document, pathname: string, language
   let hidden: HTMLElement | null = null;
   let bar: HTMLElement | null = null;
   let barStyle: string | null = null;
+  let resizes: ResizeObserver | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let requests = 0;
   let favouritedAt = 0;
   let coreWordsAdded = false;
 
+  // YouTube centres the page's children, and its content column has edges of
+  // its own, so the panel takes the tab bar's: it reads as part of the header.
+  const align = () => {
+    const tabBar = doc.querySelector(SELECTORS.tabBar);
+    const parent = panel?.parentElement;
+    if (!panel || !tabBar || !parent) return;
+    const { left, width } = tabBar.getBoundingClientRect();
+    panel.style.marginLeft = `${left - parent.getBoundingClientRect().left}px`;
+    panel.style.width = `${width}px`;
+  };
   const renderOpen = () => {
     if (!view) return;
     const next = renderPanel(doc, view, async () => {
@@ -357,6 +370,7 @@ export async function mountChannelPage(doc: Document, pathname: string, language
     }, api.signIn);
     panel?.replaceWith(next);
     panel = next;
+    align();
   };
   const refresh = async () => {
     clearTimeout(timer);
@@ -396,12 +410,19 @@ export async function mountChannelPage(doc: Document, pathname: string, language
       hidden.style.display = 'none';
       hidden.before(panel);
     }
+    align();
+    // The window, and YouTube's sidebar opening and closing.
+    resizes = new ResizeObserver(align);
+    const page = doc.querySelector(BROWSE);
+    if (page) resizes.observe(page);
     view = null;
     void refresh();
   };
   const close = () => {
     clearTimeout(timer);
     requests += 1;
+    resizes?.disconnect();
+    resizes = null;
     if (!panel) return;
     panel.remove();
     panel = null;
