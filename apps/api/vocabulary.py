@@ -119,7 +119,7 @@ class TextScore(BaseModel):
 
 
 class ExposureSummary(BaseModel):
-    recorded: int  # distinct learning or new words logged as read
+    recorded: int  # distinct words logged as read or seen
     # record_exposure: words asked for that aren't in the user's learning list
     not_learning: list[str] = []
 
