@@ -200,13 +200,13 @@ minutes and leave. Badges answer that before the click, everywhere on YouTube.
 ![YouTube search with fit badges](youtube-plan/f3-fit-badges.png)
 
 *A badge holds one short value, the heard coverage; hovering it adds the number of new words.
-Unindexed videos show "+ Add" on hover. For now there are no bands and no "too easy" state: the higher the number, the more you'll
-understand, and every list sorts highest first. Bands can come back once completion data shows
+Unindexed videos show "+ Add" on hover. For now there are no bands and no "too easy" state: the
+higher the number, the more you'll understand, and every list sorts highest first. Bands can come back once completion data shows
 where people actually give up.*
 
 - A content-script observer collects video ids from Home, Search, channel pages and the watch-page
   sidebar as they render. One batched call, `POST /api/videos/fit` with up to 50 ids, returns
-  coverage, and new words for the hover; each id is one sparse row times the known-words vector.
+  coverage and, for the hover, new words; each id is one sparse row times the known-words vector.
 - Cached per learner for 12 hours. Selectors live in one module with a daily smoke test against
   youtube.com, since YouTube's markup changes often.
 - Editing youtube.com goes against the spirit of YouTube's terms, as many learning extensions do;
@@ -250,7 +250,7 @@ How a channel is described:
   Spanish videos (`video_quality.py`): A, the grammar level (A1–C1); C, content in the words; D,
   developed thought; E, transferable language. A channel's profile is the median of its videos, so
   it covers the whole corpus with no backfill.
-- **Not pace.** Speaking rate isn't shown. Transcripts ingested since PR 111 keep their timings
+- **Not pace.** Speaking rate isn't shown. Transcripts ingested since GitHub PR #111 keep their timings
   (`cues` and `cueSource` in the processed JSON: a caption track's own cues, or Whisper's 15–28 s
   pieces), which moment cards need for clip times and which could give pace later.
 - **From learners:** "Yes, clear / Too fast / Hard accent", asked after a learner's first few
@@ -368,7 +368,7 @@ Five PRs cover features 1–4 and 8.
 |---|---|---|
 | 1 · Coverage counts every word | `int16` count matrix, a binary view for distinct new words and words to learn, a `"weights": "counts"` marker that old matrix files fail, tests, corpus repack. One fit function that 4 and 5 call. | nothing |
 | 2 · Stuck common words | A "Common words you never reviewed" tab on the Learning table with the dark pill, a one-time link in the popup, learning-account advice in onboarding, and the `como`/`vale`/`gracias` re-root fix. | nothing |
-| 3 · Watch signal + recap | `watch_events` with `videos_seen` as a view; watched at 70% played, with unmark; the history-page read after one consent; yesterday's recap. | nothing |
+| 3 · Watch signal + recap | `watch_events` replacing `videos_seen`; watched at 70% played, with unmark; the history-page read after one consent; yesterday's recap. | nothing |
 | 4 · Fit badges | `POST /api/videos/fit`; an observer with all selectors in one module; badges with the percentage only; "+ Add" queues the video. | 1, server queue |
 | 5 · Favourite channels + core words | `channel_favourites`, Favourite replacing Bookmark, the queue bump and lifted cap, and the Langfour tab with the progress line and core words. | 1, server queue |
 
@@ -376,9 +376,9 @@ PR 1 goes first because every later screen shows its numbers. PRs 2 and 3 don't 
 and touch other files, so they can run alongside it. PRs 4 and 5 wait for the server queue
 (`feat/backend-ingest-worker`), so "+ Add" and Favourite lead to indexed videos within hours.
 
-After these: the per-learner feed and Home shelf (5), steering YouTube's feed (6), the watch panel
-(7), and, once there are more learners, "Learners at your level also love" and the clarity
-question.
+After these: the per-learner feed and Home shelf (feature 5), steering YouTube's feed (6), the
+watch panel (7), and, once there are more learners, "Learners at your level also love" and the
+clarity question.
 
 ## Later
 
