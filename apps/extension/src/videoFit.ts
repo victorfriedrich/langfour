@@ -3,9 +3,10 @@
 // cache of those answers.
 //
 // The cache is per user and language and keeps an answer for 12 hours, so
-// scrolling back or reopening Home costs nothing. Any change to the user's
-// words clears it (clearVideoFits), since every percentage depends on them;
-// the content script sees the clear and asks again.
+// scrolling back or reopening Home costs nothing. A change to the words the
+// user knows clears it (clearVideoFits), since every percentage depends on
+// them; the content script sees the clear and asks again. Saving a word
+// doesn't: a word being learned still counts as new.
 import type { BackendResponse } from './messages';
 
 export type VideoFit =

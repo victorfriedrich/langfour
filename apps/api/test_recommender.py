@@ -370,3 +370,15 @@ def test_known_words_page_past_any_row_cap():
     recommender.supabase = Capped([{"word_id": w} for w in range(7)], cap=3)
     assert sorted(recommender.known_word_ids("user")) == list(range(7))
     assert recommender.supabase.requests == 4  # 3 + 3 + 1, then an empty page
+
+
+def test_a_failed_known_words_read_raises_for_badges_only():
+    class Down:
+        def table(self, _name):
+            raise ConnectionError("supabase down")
+
+    recommender = blank_recommender()
+    recommender.supabase = Down()
+    with pytest.raises(ConnectionError):
+        recommender.known_word_ids("user")
+    assert asyncio.run(recommender.get_known_words("user")) == []

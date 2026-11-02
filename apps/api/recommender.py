@@ -469,38 +469,38 @@ class Recommender:
         """Words the user knows: declared known, or learned in reviews
         (sql/known_words.sql). A word only saved, or still being learned,
         does not count, so it shows up as new in a video."""
-        return self.known_word_ids(user_id)
+        try:
+            return self.known_word_ids(user_id)
+        except Exception:
+            logger.error("Error fetching known words from Supabase", exc_info=True)
+            return []
 
     def known_word_ids(self, user_id: str) -> list[int]:
         """get_known_words without the coroutine, for a worker thread: the
         Supabase client blocks, and on the event loop it would stall every
-        other request while the pages come in."""
+        other request while the pages come in. It raises when Supabase fails
+        rather than answering "no words": the extension keeps fit badges for
+        hours, and a page of 0% would stay that long."""
         start_time = time.time()
-        try:
-            known_word_ids = set()
-            # Ask for far more than PostgREST's row cap and carry on from what
-            # came back, so one or two round trips do whatever the cap is.
-            # Fixed pages of 1,000 took five sequential requests (~300 ms) for
-            # 4,000 words, which every fit badge batch waited on.
-            offset = 0
-            while True:
-                response = (self.supabase.table("user_known_words").select("word_id")
-                            .eq("user_id", user_id).order("word_id")
-                            .range(offset, offset + KNOWN_WORDS_PAGE - 1).execute())
-                if not response.data:
-                    break
-                known_word_ids.update(word['word_id'] for word in response.data)
-                offset += len(response.data)
+        known_word_ids = set()
+        # Ask for far more than PostgREST's row cap and carry on from what
+        # came back, so one or two round trips do whatever the cap is.
+        # Fixed pages of 1,000 took five sequential requests (~300 ms) for
+        # 4,000 words, which every fit badge batch waited on.
+        offset = 0
+        while True:
+            response = (self.supabase.table("user_known_words").select("word_id")
+                        .eq("user_id", user_id).order("word_id")
+                        .range(offset, offset + KNOWN_WORDS_PAGE - 1).execute())
+            if not response.data:
+                break
+            known_word_ids.update(word['word_id'] for word in response.data)
+            offset += len(response.data)
 
-            end_time = time.time()
-            logger.debug(
-                "Fetched %d known words in %.2fs", len(known_word_ids), end_time - start_time
-            )
-            return list(known_word_ids)
-
-        except Exception:
-            logger.error("Error fetching known words from Supabase", exc_info=True)
-            return []
+        logger.debug(
+            "Fetched %d known words in %.2fs", len(known_word_ids), time.time() - start_time
+        )
+        return list(known_word_ids)
 
     async def get_saved_words(self, user_id: str) -> list[int]:
         """Every word in the user's list, whatever its status. Unlike known

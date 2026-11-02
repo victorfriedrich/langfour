@@ -212,7 +212,6 @@ async function addWordToUserwords(wordId: string | number): Promise<{ success: b
 
     // The next article marks it as learning without waiting for a refresh.
     await markLearning(Number(wordId)).catch((err: unknown) => console.warn('Could not update word statuses:', err));
-    await clearVideoFits().catch((err: unknown) => console.warn('Could not clear video fits:', err));
     return { success: true };
   } catch (err: unknown) {
     console.error('Error adding words to userwords:', err);
