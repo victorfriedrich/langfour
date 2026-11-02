@@ -430,8 +430,36 @@ def fetch_uploads(channel_id: str, key: str,
                            "title": (snippet.get("title") or "").strip(),
                            "duration_s": length,
                            "views": int(item.get("statistics", {}).get("viewCount") or 0),
-                           "audio": (snippet.get("defaultAudioLanguage") or "").split("-")[0].lower()})
+                           "audio": _language_code(snippet.get("defaultAudioLanguage"))})
     return videos
+
+
+# Tags YouTube accepts that name no language: no speech, undetermined,
+# several, and uncoded.
+_NO_LANGUAGE = {"zxx", "und", "mul", "mis"}
+
+
+def _language_code(tag: str | None) -> str:
+    """'es-419' -> 'es'; '' for a missing tag or one that names no language."""
+    code = (tag or "").split("-")[0].lower()
+    return "" if code in _NO_LANGUAGE else code
+
+
+def stated_languages(video_ids: list[str], key: str,
+                     get: Callable[..., Any] = requests.get) -> dict[str, str]:
+    """The language each video says it is in: its audio language, or failing
+    that its title and description's. '' when it states neither; ids YouTube
+    doesn't return (private, deleted) are left out. 1 quota unit per 50."""
+    out = {}
+    for chunk in ingest.batched(video_ids, 50):
+        res = get(f"{YOUTUBE_API}/videos", headers={"X-Goog-Api-Key": key}, timeout=5,
+                  params={"part": "snippet", "id": ",".join(chunk)})
+        res.raise_for_status()
+        for item in res.json().get("items", []):
+            snippet = item.get("snippet", {})
+            out[item["id"]] = (_language_code(snippet.get("defaultAudioLanguage"))
+                               or _language_code(snippet.get("defaultLanguage")))
+    return out
 
 
 def in_language(uploads: list[dict], language: str, vetted: bool) -> list[dict]:
