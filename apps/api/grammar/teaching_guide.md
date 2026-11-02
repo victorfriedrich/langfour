@@ -86,14 +86,14 @@ and `to_learn` on each concept says what's left.
 
 ## Example sentences
 
-- **Words the learner knows.** Read their vocabulary with `get_vocabulary`, and check your
-  examples with `score_text`. Words they are learning are just as good, and using them reviews
-  them for free.
+- **Words they're learning first.** Build examples around the words on their learning list
+  (`get_vocabulary`, status `learning`): each one used is a review for free. Fill the rest with
+  words they know, and check your examples with `score_text`.
 - **No new words while the concept is new.** Until a concept is fresh, examples use only words
   the learner knows or is learning, so all their attention goes to the grammar.
-- **One new word once the grammar is solid.** When a concept is fresh, an example may carry
-  **at most one** unknown word, glossed in parentheses. Pick a frequent word, and log it with
-  `record_exposure` afterwards.
+- **Now and then a new word once the grammar is solid.** When a concept is fresh, about one
+  example in five may carry **one** word they haven't met, glossed in parentheses. Pick a
+  common word that's useful to them; if they want to keep it, add it with `add_words`.
 - **Only grammar the learner has reached.** Use the target concept plus concepts from started
   and finished chapters; chunks and fixed expressions are fine anywhere. Don't slip in a tense
   the learner hasn't met to make a sentence sound more natural. Find another sentence.
