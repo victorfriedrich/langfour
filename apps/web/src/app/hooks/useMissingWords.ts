@@ -12,6 +12,17 @@ interface MissingWord {
   id: number;
   content: string;
   translation: string;
+  /** Jev's ranking for this text, 1..5; null until the text is ranked. */
+  importance: number | null;
+  /** One of the text's most important words. */
+  key: boolean;
+}
+
+interface ApiMissingWord {
+  id: number;
+  content: string;
+  importance?: number | null;
+  key?: boolean;
 }
 
 interface MissingWordsRequest {
@@ -49,12 +60,13 @@ export const useMissingWords = (videoId: string, source: 'videos' | 'media' = 'v
         }
 
         const data = await response.json();
-        const missingWordsData = data.missing_words;
+        const missingWordsData: ApiMissingWord[] = data.missing_words;
+        const byId = new Map(missingWordsData.map((word) => [word.id, word]));
 
         const { data: wordData, error: supabaseError } = await supabase
           .from('words')
           .select('id, root, translation, status')
-          .in('id', missingWordsData.map((word: { id: number }) => word.id));
+          .in('id', missingWordsData.map((word) => word.id));
 
         if (supabaseError) {
           throw supabaseError;
@@ -65,10 +77,13 @@ export const useMissingWords = (videoId: string, source: 'videos' | 'media' = 'v
 
         wordData.forEach((word: { id: number; root: string; translation: string; status: string }) => {
           if (word.status === 'invalid') return;
+          const missingWord = byId.get(word.id);
           const base = {
             id: word.id,
-            content: missingWordsData.find((w: { id: number }) => w.id === word.id)?.content || '',
+            content: missingWord?.content || '',
             translation: word.translation,
+            importance: missingWord?.importance ?? null,
+            key: missingWord?.key ?? false,
           };
 
           if (word.status === 'flagged') {

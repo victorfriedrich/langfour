@@ -30,6 +30,10 @@ create table if not exists public.user_media (
     chunks              jsonb not null,
     -- Parsed words, the shape the videos' *_processed.json "content" has.
     words               jsonb not null default '[]'::jsonb,
+    -- Jev's ranking of the words, {"<word id>": [here, general]}, saved the
+    -- first time the word list is opened (apps/api/sql/word_ranks.sql).
+    word_ranks          jsonb,
+    word_ranks_version  smallint,
     imported_at         timestamptz not null default now(),
     primary key (user_id, language, id)
 );

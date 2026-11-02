@@ -332,7 +332,7 @@ def get_missing_words_from_db(user_id: str, word_ids: list[int], language: str) 
         return []
 
     # Fetch the missing words' details
-    missing_words_response = supabase.table("words").select("id, root").in_("id", missing_word_ids).eq("language", language).execute()
+    missing_words_response = supabase.table("words").select("id, root, status").in_("id", missing_word_ids).eq("language", language).execute()
     
     # Add logging for response
     logger.info(f"Database response: {missing_words_response.data}")
@@ -342,7 +342,8 @@ def get_missing_words_from_db(user_id: str, word_ids: list[int], language: str) 
         {
             "id": word['id'],
             "content": word['root'],
-            "translation": None  # The frontend will fetch translations separately
+            "translation": None,  # The frontend will fetch translations separately
+            "status": word['status'],
         }
         for word in missing_words_response.data
     ]
