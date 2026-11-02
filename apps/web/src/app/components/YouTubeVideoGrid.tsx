@@ -1,14 +1,16 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useContext, useCallback } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import Wordpanel from '../components/Wordpanel';
 import { useVideoRecommendations } from '../hooks/useVideoRecommendations';
 import ConfirmationPopup from '../components/ConfirmationPopup';
 import { UserContext } from '@/context/UserContext';
-import { useSeenVideos } from '../hooks/useSeenVideos';
+import { useWatchedVideos } from '../hooks/useWatchedVideos';
 
 const DEFAULT_CATEGORY = 'Travel';
+// Not a category: the videos marked watched, each with Unmark.
+const WATCHED = 'Watched';
 
 const YouTubeVideoGrid: React.FC = () => {
   const { language } = useContext(UserContext);
@@ -17,15 +19,20 @@ const YouTubeVideoGrid: React.FC = () => {
   // STATE
   // ────────────────────────────────────────────────────────────────────────────────
   const [selectedCategory, setSelectedCategory] = useState<string>(DEFAULT_CATEGORY);
+  const showWatched = selectedCategory === WATCHED;
+  // The recommendations stay on the last category while Watched is open.
+  const [recommendedCategory, setRecommendedCategory] = useState<string>(DEFAULT_CATEGORY);
   const { videos, categories, isVideosLoading, isCategoriesLoading, error } =
-    useVideoRecommendations(selectedCategory, language?.code || 'es');
+    useVideoRecommendations(recommendedCategory, language?.code || 'es');
+  const { videos: watchedVideos, error: watchedError, unmark } = useWatchedVideos(showWatched);
 
   // A language without Travel videos starts on All Videos instead.
   useEffect(() => {
+    if (showWatched) return;
     if (categories.length > 0 && !categories.some((c) => c.category === selectedCategory)) {
       setSelectedCategory('All Videos');
     }
-  }, [categories, selectedCategory]);
+  }, [categories, selectedCategory, showWatched]);
 
   const [selectedVideo, setSelectedVideo] = useState<{ id: string; title: string } | null>(null);
   const [confirmationPopup, setConfirmationPopup] = useState<{ count: number; visible: boolean }>({
@@ -34,13 +41,6 @@ const YouTubeVideoGrid: React.FC = () => {
   });
   const [loadedVideos, setLoadedVideos] = useState<Set<string>>(new Set());
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
-  const [dismissedVideos, setDismissedVideos] = useState<Set<string>>(new Set());
-
-  const {
-    seenVideos,
-    isLoading: isSeenVideosLoading,
-    markVideoAsSeen,
-  } = useSeenVideos(0);
 
   // ────────────────────────────────────────────────────────────────────────────────
   // INTERSECTION-OBSERVER  (lazy-load thumbnails)
@@ -91,28 +91,18 @@ const YouTubeVideoGrid: React.FC = () => {
     setConfirmationPopup((prev) => ({ ...prev, visible: false }));
   };
 
-  const handleCategoryChange = (category: string) => setSelectedCategory(category);
+  const handleCategoryChange = (category: string) => {
+    setSelectedCategory(category);
+    if (category !== WATCHED) setRecommendedCategory(category);
+  };
 
-  // dismiss-with-X
-  const handleDismissVideo = useCallback(
-    (videoId: string) => {
-      setDismissedVideos((prev) => new Set(prev).add(videoId));
-      markVideoAsSeen(videoId).catch((err) => console.error(err));
-    },
-    [markVideoAsSeen]
-  );
 
   // ────────────────────────────────────────────────────────────────────────────────
   // COMPUTED
   // ────────────────────────────────────────────────────────────────────────────────
   const filteredCategories = categories.filter((c) => !/^(failed|unknown)$/i.test(c.category.trim()));
 
-  const displayedVideos = videos
-    .filter((v) => !seenVideos.includes(v.id))
-    .filter((v) => !dismissedVideos.has(v.id));
-
-  const isInitialSeenLoading = isSeenVideosLoading && seenVideos.length === 0;
-  const isLoading = isCategoriesLoading || isVideosLoading || isInitialSeenLoading;
+  const isLoading = isCategoriesLoading || isVideosLoading;
 
   // ────────────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -146,30 +136,66 @@ const YouTubeVideoGrid: React.FC = () => {
             {category.category}
           </button>
         ))}
+        <button
+          onClick={() => handleCategoryChange(WATCHED)}
+          className={`px-4 py-2 rounded ${showWatched ? 'bg-indigo-500 text-white' : 'bg-gray-200 text-gray-700'}`}
+        >
+          {WATCHED}
+        </button>
       </div>
 
+      {showWatched && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {watchedError ? (
+            <div className="col-span-full text-center text-red-500">{watchedError}</div>
+          ) : watchedVideos === null ? (
+            <div className="col-span-full flex justify-center py-8">
+              <Loader2 className="animate-spin h-6 w-6 text-indigo-500" />
+            </div>
+          ) : watchedVideos.length === 0 ? (
+            <div className="col-span-full text-center text-gray-500">No watched videos yet</div>
+          ) : (
+            watchedVideos.map((video) => (
+              <div key={video.video_id} className="bg-white rounded-lg shadow-md overflow-hidden flex flex-col h-full">
+                <a href={`https://www.youtube.com/watch?v=${video.video_id}`} target="_blank" rel="noreferrer" className="h-40 block">
+                  <img
+                    src={`https://img.youtube.com/vi/${video.video_id}/hqdefault.jpg`}
+                    alt={video.title ?? ''}
+                    className="w-full h-full object-cover"
+                  />
+                </a>
+                <div className="px-4 pt-2 flex-1">
+                  <div className="text-base font-semibold text-gray-900 line-clamp-2" title={video.title ?? undefined}>
+                    {video.title ?? video.video_id}
+                  </div>
+                </div>
+                <div className="p-4 pt-2 mt-auto border-t border-gray-100 flex items-center justify-between">
+                  <span className="text-sm text-gray-500">{new Date(video.watched_at).toLocaleDateString()}</span>
+                  <button
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    onClick={() => unmark(video.video_id).catch((err) => console.error(err))}
+                  >
+                    Unmark
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       {/* ───────────── VIDEO GRID ───────────── */}
+      <div className={showWatched ? 'hidden' : undefined}>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {displayedVideos.length === 0 ? (
+        {/* Watched videos are left out by the API (recommender.get_watched_videos). */}
+        {videos.length === 0 ? (
           <div className="col-span-full text-center text-gray-500">No more videos 🎉</div>
         ) : (
-          displayedVideos.map((video) => (
+          videos.map((video) => (
             <div
               key={video.id}
               className="bg-white rounded-lg shadow-md overflow-hidden group cursor-pointer flex flex-col h-full relative"
             >
-              {/* subtle X button */}
-              <button
-                className="absolute z-20 top-2 right-2 bg-black bg-opacity-50 hover:bg-opacity-75 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto"
-                title="Hide & mark as seen"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDismissVideo(video.id);
-                }}
-              >
-                <X size={14} />
-              </button>
-
               {/* Thumbnail / Player */}
               <div className="aspect-w-16 aspect-h-8 h-40 video-container relative" data-video-id={video.id}>
                 {playingVideoId === video.id ? (
@@ -246,6 +272,8 @@ const YouTubeVideoGrid: React.FC = () => {
             </div>
           ))
         )}
+      </div>
+
       </div>
 
       {/* ───────────── WORDPANEL MODAL ───────────── */}

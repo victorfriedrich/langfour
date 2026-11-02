@@ -56,6 +56,7 @@ def test_record_practice_over_http_as_the_signed_in_user(monkeypatch):
                              "set_word_status": False, "record_grammar": False,
                              "add_words": False,
                              "get_vocabulary": True, "score_text": True,
+                             "get_word_exposures": True,
                              "get_grammar_overview": True, "get_grammar_details": True}
 
         marked = client.post("/mcp", headers=HEADERS, json={
@@ -65,6 +66,27 @@ def test_record_practice_over_http_as_the_signed_in_user(monkeypatch):
         }).json()["result"]
         assert not marked.get("isError"), marked
         assert ("set_status", USER, [7, 8], "known") in vocab_store.calls
+        vocab_store.calls.clear()
+
+        seen = client.post("/mcp", headers=HEADERS, json={
+            "jsonrpc": "2.0", "id": 10, "method": "tools/call",
+            "params": {"name": "record_exposure",
+                       "arguments": {"language": "es", "words": ["el perro", "la"]}},
+        }).json()["result"]
+        assert not seen.get("isError"), seen
+        assert seen["structuredContent"] == {"recorded": 1, "not_learning": ["la"]}
+        assert [e["word_id"] for e in vocab_store.events] == [2]
+        vocab_store.calls.clear()
+
+        exposures = client.post("/mcp", headers=HEADERS, json={
+            "jsonrpc": "2.0", "id": 11, "method": "tools/call",
+            "params": {"name": "get_word_exposures",
+                       "arguments": {"language": "es", "words": ["la"]}},
+        }).json()["result"]
+        assert not exposures.get("isError"), exposures
+        assert exposures["structuredContent"] == {"language": "es", "learning": 0, "words": [],
+                                                  "not_learning": ["la"]}
+        assert ("learning_words", USER, "es") in vocab_store.calls
         vocab_store.calls.clear()
 
         added = client.post("/mcp", headers=HEADERS, json={

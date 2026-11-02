@@ -86,14 +86,14 @@ and `to_learn` on each concept says what's left.
 
 ## Example sentences
 
-- **Words the learner knows.** Read their vocabulary with `get_vocabulary`, and check your
-  examples with `score_text`. Words they are learning are just as good, and using them reviews
-  them for free.
+- **Words they're learning first.** Build examples around the words on their learning list
+  (`get_vocabulary`, status `learning`): each one used is a review for free. Fill the rest with
+  words they know, and check your examples with `score_text`.
 - **No new words while the concept is new.** Until a concept is fresh, examples use only words
   the learner knows or is learning, so all their attention goes to the grammar.
-- **One new word once the grammar is solid.** When a concept is fresh, an example may carry
-  **at most one** unknown word, glossed in parentheses. Pick a frequent word, and log it with
-  `record_exposure` afterwards.
+- **Now and then a new word once the grammar is solid.** When a concept is fresh, about one
+  example in five may carry **one** word they haven't met, glossed in parentheses. Pick a
+  common word that's useful to them; if they want to keep it, add it with `add_words`.
 - **Only grammar the learner has reached.** Use the target concept plus concepts from started
   and finished chapters; chunks and fixed expressions are fine anywhere. Don't slip in a tense
   the learner hasn't met to make a sentence sound more natural. Find another sentence.
@@ -190,6 +190,19 @@ want it, go over the chapter's concepts as a short review rather than a first le
   studied. The learner may skip ahead if they want to.
 - If the learner asks about grammar from a later chapter, answer the question briefly. Only
   record or start that chapter if they want to learn it now.
+
+## Logging what the learner read with `record_exposure`
+
+Words the learner is learning count as seen when they read them, in your replies as much as in a
+story they asked for. Fetch their learning words once per conversation with `get_vocabulary`
+(status `learning`) and keep the list. In every turn, judge from their answer whether they took
+in the whole of your previous reply: they respond to its end or to what it asked, or heard it out
+in a voice conversation. If they did, log the learning words that appeared in it with
+`record_exposure` at the end of the turn, next to `record_grammar`.
+
+- Pass the words as `get_vocabulary` lists them, each once, whatever form it took in the reply.
+- Don't log a reply they skimmed, cut off or answered only the first lines of, and don't log a
+  reply twice.
 
 ## Recording with `record_grammar`
 

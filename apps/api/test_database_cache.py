@@ -147,7 +147,9 @@ def test_new_form_does_not_overwrite_its_roots_audit(db, monkeypatch, status):
     writes = []
 
     class Query:
-        def insert(self, payload):
+        def upsert(self, payload, on_conflict, ignore_duplicates):
+            # The other ingest worker may have added the same form first.
+            assert (on_conflict, ignore_duplicates) == ("word_id,form", True)
             writes.append(payload)
             return self
 
@@ -168,7 +170,7 @@ def test_new_form_does_not_overwrite_its_roots_audit(db, monkeypatch, status):
 def test_a_new_root_does_not_take_over_an_existing_form(db, monkeypatch):
     monkeypatch.setattr(db, "word_cache", {"es": {"words": {}, "wordforms": {"editaron": 111691}}})
     class Insert:
-        def insert(self, row):
+        def upsert(self, row, **_):
             return self
 
         def update(self, row):
