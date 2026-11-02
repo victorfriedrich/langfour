@@ -130,6 +130,27 @@ def submit(sb, lang: str, video_id: str, source: str,
     return bool(res.data)
 
 
+def submit_for_user(sb, lang: str, video_id: str, user_id: str) -> str:
+    """A user asked for this video ("+ Add" on a YouTube thumbnail). Returns
+    the row's status afterwards.
+
+    A new row goes in at the user tier. An existing one is never duplicated
+    and its state is left alone -- done and failed rows stay as they are --
+    except that a pending row below the user tier is moved up to it: a
+    discovery row sits behind tens of thousands of others, and someone is
+    waiting for this one. Like a favourite channel's rows (channels.promote)
+    it becomes the user's, because `ytpipeline select --push` replaces
+    pending discovery rows."""
+    if submit(sb, lang, video_id, "user", submitted_by=user_id):
+        return "pending"
+    (sb.table(TABLE).update({"priority": PRIORITY["user"], "source": "user",
+                             "submitted_by": user_id})
+     .eq("video_id", video_id).eq("status", "pending").lt("priority", PRIORITY["user"])
+     .execute())
+    rows = sb.table(TABLE).select("status").eq("video_id", video_id).limit(1).execute().data
+    return rows[0]["status"] if rows else "pending"
+
+
 def counts(sb, lang: str | None) -> dict[str, int]:
     """limit(1), not head=True: `head` only exists in postgrest >= 0.17, and
     requirements.txt pins supabase==2.7.4, which resolves to 0.16.x. The exact

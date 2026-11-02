@@ -109,6 +109,26 @@ def test_submit_is_idempotent_and_never_resets_state():
     assert sb.row("new")["priority"] == 10 and sb.row("new")["source"] == "manual"
 
 
+def test_a_user_submission_queues_once_and_moves_pending_rows_up_only():
+    sb = FakeSupabase([pending("disc"), pending("done", status="done"),
+                       pending("failed", status="failed", priority=0),
+                       pending("manual", priority=20)])
+
+    assert ingest.submit_for_user(sb, "es", "new", "u1") == "pending"
+    assert ingest.submit_for_user(sb, "es", "new", "u2") == "pending"
+    new = [r for r in sb.rows if r["video_id"] == "new"]
+    assert len(new) == 1 and new[0]["priority"] == 10 and new[0]["submitted_by"] == "u1"
+
+    assert ingest.submit_for_user(sb, "es", "disc", "u1") == "pending"
+    assert sb.row("disc")["priority"] == 10 and sb.row("disc")["source"] == "user"
+    assert sb.row("disc")["submitted_by"] == "u1"
+    assert ingest.submit_for_user(sb, "es", "done", "u1") == "done"
+    assert ingest.submit_for_user(sb, "es", "failed", "u1") == "failed"
+    assert sb.row("failed")["priority"] == 0
+    assert ingest.submit_for_user(sb, "es", "manual", "u1") == "pending"
+    assert sb.row("manual")["priority"] == 20
+
+
 def test_reclaim_returns_only_stale_processing_rows():
     old = (datetime.now(UTC) - timedelta(hours=5)).isoformat()
     sb = FakeSupabase([pending("stale", status="processing", claimed_at=old),

@@ -112,6 +112,9 @@ export type BackgroundMessage =
   // attribute while api-service.ts sends a parsed integer, and both reach the
   // same RPC. Narrowing this to `string` would be a lie about the wire format.
   | { type: 'ADD_WORD_TO_USERWORDS'; wordId: string | number }
+  // YouTube thumbnail badges (youtubeFit.ts, videoFit.ts).
+  | { type: 'VIDEO_FIT'; language: string; videoIds: string[] }
+  | { type: 'QUEUE_VIDEO'; language: string; videoId: string }
   // Desktop watching (watchSignal.ts) and the popup's Unmark.
   | { type: 'WATCH_STATUS'; videoId: string; language: string }
   | { type: 'WATCH_MARK'; videoId: string; share: number; language: string }

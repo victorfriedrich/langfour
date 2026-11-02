@@ -67,6 +67,7 @@ def recommender(videos=VIDEOS):
     return SimpleNamespace(
         languages=["es"], _ensure_language_loaded=lambda language: None,
         filenames={"es": [f"{n}_processed.json" for n in names]},
+        rows_by_video={"es": {n: i for i, n in enumerate(names)}},
         matrices={"es": counts}, presence={"es": presence},
         distinct_words_per_doc={"es": np.diff(counts.indptr)},
     )
@@ -76,7 +77,6 @@ def recommender(videos=VIDEOS):
 def short_videos_count(monkeypatch):
     monkeypatch.setattr(channels, "MIN_DISTINCT_WORDS", 1)
     monkeypatch.setattr(channels, "worker_language", lambda: "es")
-    channels._rows_by_video.clear()
     channels._listings.clear()
 
 
