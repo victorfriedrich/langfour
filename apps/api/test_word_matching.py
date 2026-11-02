@@ -44,3 +44,23 @@ def test_match_outcomes(wm, monkeypatch, probs, real, outcome, root_id):
     monkeypatch.setattr(wm, "ask_jev", Mock(return_value=answers(probs, real)))
     m = wm.match(None, wm.CandidateIndex("es"), "editaron", "es")
     assert (m.outcome, m.root_id) == (outcome, root_id)
+
+
+@pytest.mark.parametrize("table, mid_loop, new_key", [
+    ("words", "editar", "nueva"),
+    ("wordforms", "editaste", "nuevas"),
+])
+def test_index_survives_a_word_added_while_it_builds(wm, monkeypatch, table, mid_loop, new_key):
+    # The other ingest worker's add_wordform landing during this table's loop.
+    # In production that races; adding from _fold makes it happen every time.
+    cache = wm.word_cache["es"]
+    fold = wm._fold
+
+    def fold_while_adding(text):
+        if text == mid_loop:
+            cache[table].setdefault(new_key, 3)
+        return fold(text)
+
+    monkeypatch.setattr(wm, "_fold", fold_while_adding)
+    assert wm.CandidateIndex("es").candidates("editaron")[0] == 3
+    assert new_key in cache[table]
