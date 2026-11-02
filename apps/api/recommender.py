@@ -62,7 +62,8 @@ class Recommender:
         self.supabase: Client = _shared_supabase
         
         self.blacklisted_files = blacklisted_files
-        self.hidden_videos = self._load_hidden_videos()
+        self.hidden_by_score = self._load_hidden_videos()
+        self.hidden_videos = self.hidden_by_score
 
         # Load every language at startup so the first user request for any
         # language does not pay the matrix load/build cost. _ensure_language_loaded
@@ -294,6 +295,16 @@ class Recommender:
             return set()
         logger.info("Hiding %d videos by quality score", len(hidden))
         return hidden
+
+    def video_ids(self) -> list[str]:
+        """Every loaded video, in every language."""
+        return [video_id for rows in self.rows_by_video.values() for video_id in rows]
+
+    def hide_gone_videos(self, gone: set[str]) -> None:
+        """Hide these on top of the quality filter, replacing the last sweep's
+        (video_availability.py): a video can come back, and requests read this
+        set from another thread, so it is swapped rather than changed."""
+        self.hidden_videos = self.hidden_by_score | gone
 
     def _load_blacklist(self) -> set:
         """Load blacklisted filenames from blacklist.txt"""
@@ -587,7 +598,7 @@ class Recommender:
             if video_id in seen_video_ids:
                 continue
 
-            # Skip if the quality scores reject it
+            # Skip if the quality scores reject it or it is gone from YouTube
             if video_id in self.hidden_videos:
                 continue
                 
@@ -642,8 +653,9 @@ class Recommender:
 
         Each id gets a status. "scored" carries percentUnderstood (heard
         coverage) and newWords (distinct); "unindexed" means no transcript;
-        "hidden" is indexed but never recommended (the quality filter, or a
-        clip under MIN_DISTINCT_WORDS), so it gets no number either."""
+        "hidden" is indexed but never recommended (the quality filter, gone
+        from YouTube, or a clip under MIN_DISTINCT_WORDS), so it gets no number
+        either."""
         self._ensure_language_loaded(language)
         rows_by_video = self.rows_by_video[language]
         distinct_words = self.distinct_words_per_doc[language]
