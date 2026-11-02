@@ -2,7 +2,8 @@
 // sign-in (docs/plans/youtube-plan.md, feature 2). It is the one place on
 // desktop that also lists what they watched in the YouTube app on a phone.
 //
-// Only after consent, given once per Google account in the popup. The page
+// Only after consent, given once per Google account on a card on youtube.com
+// (historyPrompt.ts). The page
 // is fetched, the video ids with their red progress bar and day are taken
 // from the data YouTube embeds in it (ytInitialData), and those go to the
 // API, which keeps the ones in Langfour's index for the user's language and
@@ -20,7 +21,8 @@ const MAX_ITEMS = 500;
 /** chrome.storage.local keys. */
 export const HISTORY_CONSENT_KEY = 'historyConsent'; // Google account ids that said yes
 export const HISTORY_DECLINED_KEY = 'historyDeclined'; // "Not now", until turned on
-export const HISTORY_NEW_ACCOUNT_KEY = 'historyNewAccount'; // signed in, not asked yet
+export const HISTORY_NEW_ACCOUNT_KEY = 'historyNewAccount'; // the account signed in, not asked yet
+export const HISTORY_DECLINED_ACCOUNTS_KEY = 'historyDeclinedAccounts'; // new accounts that said "Not now"
 export const HISTORY_LAST_READ_KEY = 'historyLastRead';
 
 export type HistoryItem = { video_id: string; share: number | null; day: 0 | 1 | null };
@@ -145,8 +147,8 @@ export function parseHistoryPage(html: string): HistoryPage {
 export type HistoryState = 'ask' | 'on' | 'off';
 
 /**
- * What the popup shows: the consent prompt, until answered and again for
- * another Google account; then a line to turn it off, or on again.
+ * 'ask' shows the card on youtube.com, until answered and again for another
+ * Google account; otherwise the popup has a line to turn it off, or on again.
  */
 export function historyState(stored: Record<string, unknown>): HistoryState {
   const consented = Array.isArray(stored[HISTORY_CONSENT_KEY]) && (stored[HISTORY_CONSENT_KEY] as unknown[]).length > 0;
