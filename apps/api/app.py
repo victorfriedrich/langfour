@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, confloat, conint
 
 from auth import AuthMiddleware, get_current_user
+from channel_routes import router as channel_router
 from database import cached_word_id, initialize_cache
 from exposure_routes import router as exposure_router
 from flashcards import router as flashcards_router
@@ -142,6 +143,7 @@ app.include_router(grammar_router, tags=["grammar"])
 app.include_router(language_check_router, tags=["language-check"])
 app.include_router(exposure_router, tags=["exposure"])
 app.include_router(vocabulary_router, tags=["vocabulary"])
+app.include_router(channel_router, tags=["channels"])
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 

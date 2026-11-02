@@ -66,7 +66,7 @@
       "resources": [
         "src/index.ts",
         "src/index.css",
-        "src/youtubeBookmark.ts",
+        "src/youtubeFavourite.ts",
         "src/contentScript.ts",
         "images/demo.webp"
       ],

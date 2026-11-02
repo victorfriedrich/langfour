@@ -88,13 +88,13 @@ document.addEventListener('open-sign-in', () => {
 });
 
 // The paths the MAIN world is allowed to reach: exactly what index.ts and
-// youtubeBookmark.ts call. The expensive endpoints (/parse, /api/translate)
+// youtubeFavourite.ts call. The expensive endpoints (/parse, /api/translate)
 // are deliberately absent -- only reader.ts uses them, and as an extension
 // page it messages the background directly instead of coming through here.
 const RELAY_PATHS = [
   /^\/api\/translate-word$/,
-  /^\/youtube\/bookmarks$/,
-  /^\/youtube\/bookmarks\/[^/?#]+$/,
+  /^\/api\/channels\/UC[A-Za-z0-9_-]{22}\?language=(es|de|it|fr)$/,
+  /^\/api\/channels\/UC[A-Za-z0-9_-]{22}\/(favourite|core-words)$/,
 ];
 
 // Backend calls from the MAIN world (translate.ts, api-service.ts) come in as
@@ -109,8 +109,9 @@ const RELAY_PATHS = [
 // below performs.
 //
 // The same caveat as that bridge still applies to what is left: the host page
-// can trigger these three endpoints as the signed-in user and can forge the
-// reply event. Both need index.ts out of the page's world to fix properly.
+// can trigger these endpoints as the signed-in user -- look up a word,
+// favourite a channel, add a channel's core words -- and can forge the reply
+// event. Both need index.ts out of the page's world to fix properly.
 document.addEventListener('backend-request', ((event: CustomEvent<BackendRequestEvent>) => {
   const { id, path, method, body } = event.detail;
   const respond = (response: BackendResponse) => {
@@ -147,14 +148,17 @@ if (isAllowedHost(location.host)) {
     // Safari applies the page's CSP to <script>/<link> tags pointing at the
     // extension, and YouTube's script-src blocks them. So the Safari manifest
     // loads index.js and index.css as content scripts right after this one
-    // (scripts/build-safari.mjs), in this isolated world. The bookmark button
+    // (scripts/build-safari.mjs), in this isolated world. The Favourite button
     // stays desktop-only.
     sendCurrentPrefsToInjectedScripts();
   } else {
     injectCss('src/index.css');
     injectJs('src/index.js').then(sendCurrentPrefsToInjectedScripts);
     if (location.host === 'www.youtube.com') {
-      injectJs('src/youtubeBookmark.js');
+      // It may load after the prefs above went out, so they go again.
+      injectJs('src/youtubeFavourite.js').then(() => {
+        if (prefs) document.dispatchEvent(new CustomEvent('prefs', { detail: prefs }));
+      });
     }
   }
 }
