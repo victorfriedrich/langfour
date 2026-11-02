@@ -254,6 +254,8 @@ class VocabularyStore:
                   source: str = SOURCE) -> None:
         # As move_words_to_userwords, which works on auth.uid(): a row added
         # meanwhile is kept, and the user's known-words timestamp moves.
+        # `source` is where the words came from, as the Practice page filters
+        # them: the AI app, or a video's id.
         (self.db.table("userwords")
          .upsert([{"user_id": user_id, "word_id": w, "status": status, "source": source}
                   for w in word_ids], on_conflict="user_id,word_id", ignore_duplicates=True)

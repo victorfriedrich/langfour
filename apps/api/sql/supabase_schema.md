@@ -31,7 +31,7 @@ Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 | `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known, disabled` (`disabled`: flashcards turned off in RemNote, set by the sync; see `remnote_sync.sql`); SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
 | `flashcardtests` | `id`, `user_id`, `word_id`, `test_type`, `test_result`, `tested_at` | PK `id`; `test_type` in `flashcard, typing`; index `(user_id, word_id, test_result)` |
 | `usertranslations` | `id`, `user_id`, `word_id`, `custom_translation`, `created_at` | PK `id`; index `(user_id, word_id)` |
-| `videos_seen` | `id`, `user_id`, `video_id`, `seen_at` | PK `id` (identity); unique `(user_id, video_id)` |
+| `videos_seen` | `id`, `user_id`, `video_id`, `seen_at` | PK `id` (identity); unique `(user_id, video_id)`. Becomes a view over `watch_events` with `watch_events.sql` (not applied yet) |
 | `user_roles` | `user_id`, `role`, `created_at` | PK `user_id`; `role` in `user, admin` |
 
 Policies: `*_select_own`, `*_insert_own`, `*_update_own`, `*_delete_own` on
@@ -60,6 +60,19 @@ writes them.
 |---|---|---|
 | `word_events` | `id`, `user_id`, `word_id`, `kind`, `source`, `occurred_at`, `context jsonb` | PK `id` (identity); FK `user_id → auth.users` on delete cascade, `word_id → words`; `kind` in `saved, lookup, exposure, recall_correct, recall_wrong`; `source` in `chatgpt, reader, video, extension, web`; indexes `(user_id, word_id)`, `(user_id, occurred_at)`. Append-only: policies `select_own`, `insert_own`, no update/delete for clients |
 | `srs_outbox` | `event_id`, `card_id`, `outcome`, `status`, `decided_at`, `reason`, `applied_review_at` | PK `event_id` → `word_events` on delete cascade; FK `card_id → srs_cards` on delete set null; `outcome` in `again, good`; `status` in `pending, applied, skipped`; partial index `(card_id) where status = 'pending'`. Policy `select_own` through `word_events`; written only by the API |
+
+### Watched videos (`watch_events.sql`, not applied yet)
+
+| Table | Columns | Keys and constraints |
+|---|---|---|
+| `watch_events` | `id`, `user_id`, `video_id`, `language`, `watched_at`, `share`, `source`, `unmarked_at`, `created_at` | PK `id` (identity, continuing `videos_seen`'s ids); FK `user_id → auth.users` on delete cascade; unique `(user_id, video_id)`; `source` in `desktop, history, manual`; `share` 0..1; index `(user_id, watched_at)`. One row per video; the rules in `watch.py` |
+
+Policies: `*_select_own`, `*_insert_own`, `*_update_own`, `*_delete_own`
+(`mark_video_as_seen` runs as the user). `videos_seen` turns into a
+`security_invoker` view of the watched rows (not unmarked; 70% played, share
+unknown, or marked by hand), so `get_seen_video_ids` and the recommender read
+it unchanged; the old table moves to `archive.videos_seen_2026_11`. Also
+`userdata.watch_recap_closed_on`: the day whose recap got "Not now".
 
 ### Grammar progress (`grammar.sql`, applied 2026-10-29)
 

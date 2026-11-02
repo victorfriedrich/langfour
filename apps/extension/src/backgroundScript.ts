@@ -23,6 +23,7 @@ import { reviewLink } from './reviewLink';
 import { readerPageUrl, storeArticle, StoredArticle } from './readerArticles';
 import { classifyTokens } from './lexicon';
 import { clearStatuses, getLexicon, getStatuses, markLearning } from './lexiconCache';
+import { historyOff, readHistory, scheduleHistoryReads, watchMark, watchStatus, watchUnmark } from './watchBackground';
 
 let sessionId: string | undefined;
 
@@ -550,6 +551,34 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
       return true;
     }
 
+    case 'WATCH_STATUS': {
+      watchStatus(backendFetch, message.videoId, message.language).then(sendResponse);
+      return true;
+    }
+
+    case 'WATCH_MARK': {
+      watchMark(backendFetch, message.videoId, message.share, message.language).then(sendResponse);
+      return true;
+    }
+
+    case 'WATCH_UNMARK': {
+      watchUnmark(backendFetch, message.videoId).then(sendResponse);
+      return true;
+    }
+
+    // The consent and turning it off are the popup's alone, never a page's.
+    case 'HISTORY_ALLOW': {
+      if (sender.tab) return;
+      readHistory(backendFetch, true).then(sendResponse);
+      return true;
+    }
+
+    case 'HISTORY_OFF': {
+      if (sender.tab) return;
+      historyOff(backendFetch).then(sendResponse);
+      return true;
+    }
+
     case 'BACKEND_FETCH': {
       const { path, method, body } = message;
       backendFetch({ path, method, body }).then(sendResponse);
@@ -671,6 +700,9 @@ function showExtracted(response: ArticleExtractionResponse, tab: chrome.tabs.Tab
     error: true,
   }, tab.id!, placement);
 }
+
+// The history page read, for users who turned it on (watchBackground.ts).
+scheduleHistoryReads(backendFetch);
 
 // First run: send new users to the sign-in page with a short how-to.
 // The Safari build skips this: there the popup is the whole sign-in flow

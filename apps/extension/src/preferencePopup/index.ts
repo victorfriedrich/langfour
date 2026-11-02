@@ -10,6 +10,7 @@ import { SIGN_IN_WITH_CODE, normalizeEmailCode, signInWithEmailCode } from '../e
 import { cleanTitle, hostOf } from '../pageTitle';
 import { requestBackend } from '../api-service';
 import { STUCK_OPENED_KEY, stuckWordsText, stuckWordsToShow, stuckWordsUrl } from '../stuckWords';
+import { drawYoutube } from './youtube';
 
 // --- DOM Elements for Logged In View ---
 const loggedInPane = document.getElementById('loggedInPane') as HTMLElement;
@@ -342,6 +343,7 @@ function setReviewLanguage(language: Language) {
   reviewLanguage = language;
   drawReviewLink();
   void drawStuckRow(language);
+  drawYoutube(language);
 }
 
 // "45 common words are still marked learning · Review", until opened once.

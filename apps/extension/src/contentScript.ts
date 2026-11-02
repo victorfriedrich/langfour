@@ -8,6 +8,7 @@ import { BackendRequest, BackendResponse, ContentScriptMessage, mayRelay, sendTo
 import { BackendRequestEvent, BackendResponseEvent, CaptionExposureEvent, KnownWordsEvent } from './types';
 import { isAllowedHost } from './siteApi';
 import { getErrorMessage } from './errors';
+import { watchDesktop } from './watchSignal';
 
 export type Prefs = {
   preferredLanguage: Language;
@@ -152,6 +153,7 @@ if (isAllowedHost(location.host)) {
       });
     }
   }
+  if (location.host === 'www.youtube.com') watchDesktop();
 }
 
 // Caption words index.ts saw watched (captionExposure.ts), on to the
