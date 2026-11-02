@@ -617,9 +617,9 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
   }
 });
 
-// Where the reader opens. Safari's menu item replaces the page it was opened on, like
-// Safari's own Reader: Back returns to the article, which on iOS is the only
-// natural way out. The keyboard command keeps opening a new tab.
+// Where the reader opens. Safari's menu item replaces the page it was opened
+// on, like Safari's own Reader: Back returns to the article, which on iOS is
+// the only natural way out. The keyboard command keeps opening a new tab.
 type ReaderPlacement = 'replace' | 'new-tab';
 
 function openReaderView(tabId: number, placement: ReaderPlacement): void {
@@ -657,8 +657,8 @@ function withSource(article: ArticleData, tab: chrome.tabs.Tab): Omit<StoredArti
 
 // Supported subtitle sites load the content script declaratively. Reader mode
 // also works on an arbitrary page the user explicitly invokes via Safari's
-// menu item or the keyboard command; activeTab grants temporary access to inject it
-// there. Try messaging first so supported sites are not injected twice --
+// menu item or the keyboard command; activeTab grants temporary access to
+// inject it there. Try messaging first so supported sites are not injected twice --
 // content scripts share one JS realm per frame, and duplicate injection
 // redeclares their top-level bindings.
 function requestArticleExtraction(tab: chrome.tabs.Tab, placement: ReaderPlacement): void {
@@ -726,9 +726,9 @@ function showExtracted(response: ArticleExtractionResponse, tab: chrome.tabs.Tab
 scheduleHistoryReads(backendFetch);
 
 // First run: send new users to the sign-in page with a short how-to.
-// The Safari build skips this: there the popup is the whole sign-in flow
-// (email, then the code), and a tab opening on its own after install was
-// one screen too many.
+// The Safari build skips this: there sign-in starts from the reader (email,
+// then the code), and a tab opening on its own after install was one screen
+// too many.
 chrome.runtime.onInstalled.addListener((details) => {
   // Users already signed in when this version arrives have no dictionary yet.
   if (details.reason === 'update') prepareInBackground();

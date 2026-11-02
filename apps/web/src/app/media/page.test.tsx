@@ -56,7 +56,17 @@ it('names the Safari menu item instead of the shortcut on an iPad reporting a Ma
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
   vi.spyOn(navigator, 'maxTouchPoints', 'get').mockReturnValue(5);
   render(<MediaPage />);
-  expect(await screen.findByText('Langfour')).toBeInTheDocument();
+  expect(await screen.findByText('Page menu')).toBeInTheDocument();
+  expect(screen.queryByLabelText(/Press/)).not.toBeInTheDocument();
+});
+
+it('names the Safari menu item instead of the shortcut on an iPhone', async () => {
+  extension = { state: 'installed', version: '1.0.0', signedIn: true, email: null };
+  vi.mocked(getLibrary).mockResolvedValueOnce({ media: [], layout: [] });
+  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)');
+  vi.spyOn(navigator, 'maxTouchPoints', 'get').mockReturnValue(5);
+  render(<MediaPage />);
+  expect(await screen.findByText('Page menu')).toBeInTheDocument();
   expect(screen.queryByLabelText(/Press/)).not.toBeInTheDocument();
 });
 
