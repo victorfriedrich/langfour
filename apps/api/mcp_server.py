@@ -10,7 +10,7 @@ any request.
 Clients discover Supabase OAuth through mcp_auth.py. See docs/mcp-oauth.md
 for project setup and connecting ChatGPT or Claude.
 
-Tools: get_vocabulary and score_text read (vocabulary.py); record_practice
+Tools: get_vocabulary, get_word_exposures and score_text read (vocabulary.py); record_practice
 (practice.py), record_exposure, set_word_status and add_words (vocabulary.py)
 write.
 get_grammar_overview and get_grammar_details read the grammar curriculum and
@@ -53,10 +53,12 @@ from vocabulary import (
     StatusChange,
     TextScore,
     Vocabulary,
+    WordExposures,
     WordsAdded,
     add_words,
     get_vocabulary,
     get_vocabulary_store,
+    get_word_exposures,
     record_exposure,
     score_text,
     set_word_status,
@@ -171,6 +173,35 @@ async def get_vocabulary_tool(
     """
     return await asyncio.to_thread(get_vocabulary, get_vocabulary_store(), _user_id(ctx),
                                    language, status, limit)
+
+
+@mcp.tool(name="get_word_exposures", annotations=ToolAnnotations(
+    title="See how often words were seen and produced", readOnlyHint=True, openWorldHint=False,
+))
+async def get_word_exposures_tool(
+    ctx: Context,
+    language: Language | None = None,
+    words: Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]],
+                     Field(max_length=200)] = [],  # noqa: B006
+    order: Literal["least", "most"] = "least",
+    limit: Annotated[int, Field(ge=1)] = 50,
+) -> WordExposures:
+    """How often the user has met each word they're learning: seen counts the times they
+    read or heard it (in a reply of yours they took in, a text, Langfour's reader or a
+    video's captions), produced the times they came up with it themselves in practice
+    and got it right (produce_wrong when they didn't), with the date of the last of each.
+
+    Use it when the user asks how often they've seen or used their words, or to find
+    learning words they've barely met, to build a text or practice around. order 'least'
+    lists the least seen first, 'most' the most seen. words narrows it to a few words, as
+    get_vocabulary lists them (with the article, e.g. 'la casa') or as the user saw them;
+    leave it out for all of their learning words. language is an ISO code (es, de, it or
+    fr); leave it out for the language the user is studying. learning says how many
+    learning words there are; not_learning lists words asked for that aren't in their
+    learning list.
+    """
+    return await asyncio.to_thread(get_word_exposures, get_vocabulary_store(), _user_id(ctx),
+                                   language, words, order, limit)
 
 
 @mcp.tool(name="score_text", annotations=ToolAnnotations(
