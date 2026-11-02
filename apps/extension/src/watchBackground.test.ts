@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readHistory } from './watchBackground';
 
-const page = (account: string) => `<html><script>ytcfg.set({"LOGGED_IN":true,"DATASYNC_ID":"${account}","HL":"en"});</script></html>`;
+const page = (account: string, data: unknown = {}) => `<html><script>ytcfg.set({"LOGGED_IN":true,"DATASYNC_ID":"${account}","HL":"en"});</script>` +
+  `<script>var ytInitialData = ${JSON.stringify(data)};</script></html>`;
+const oneVideo = { itemSectionRenderer: { contents: [{ videoRenderer: { videoId: 'sdZNzAberEc' } }] } };
 const local = () => (chrome.storage.local as unknown as { __store: Map<string, unknown> }).__store;
 
 describe('readHistory', () => {
@@ -30,6 +32,13 @@ describe('readHistory', () => {
     local().set('historyDeclinedAccounts', ['b||']);
     await readHistory(backend);
     expect(local().has('historyNewAccount')).toBe(false);
+  });
+
+  it('keeps no yes when the read fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(page('b||', oneVideo))));
+    backend.mockResolvedValue({ ok: false, status: 500, statusText: 'Internal Server Error', body: '' });
+    expect(await readHistory(backend, true)).toEqual({ error: 'Internal Server Error' });
+    expect(local().has('historyConsent')).toBe(false);
   });
 
   it('takes the yes for the account signed in', async () => {

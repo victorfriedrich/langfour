@@ -80,6 +80,9 @@ class FakeStore:
         return {v: dict(self.data[v]) for v in video_ids if v in self.data}
 
     def write(self, user_id, language, video_id, fields):
+        # Like the real upsert: Postgres checks not-null on the insert half
+        # before it sees the conflict, so an existing row doesn't excuse it.
+        assert "source" in fields, "null value in column source"
         row = self.data.setdefault(video_id, {"video_id": video_id, "unmarked_at": None,
                                               "share": None, "source": "history",
                                               "created_at": NOW.isoformat()})

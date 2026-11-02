@@ -80,16 +80,21 @@ export async function readHistory(backend: Backend, consenting = false): Promise
     }
     consented.push(page.account);
   }
-  await chrome.storage.local.set({
+  // Kept only once the read worked: a yes that showed an error isn't a yes.
+  const remember = () => chrome.storage.local.set({
     [HISTORY_CONSENT_KEY]: consented,
     [HISTORY_NEW_ACCOUNT_KEY]: false,
     [HISTORY_DECLINED_KEY]: false,
   });
-  if (page.items.length === 0) return { kept: 0 };
+  if (page.items.length === 0) {
+    await remember();
+    return { kept: 0 };
+  }
 
   const response = await backend({ path: '/api/watch/history', method: 'POST', body: { language, items: page.items } });
   const kept = json<{ kept: number }>(response);
   if (!kept) return { error: response.statusText || `API answered ${response.status}` };
+  await remember();
   await chrome.storage.local.set({ [HISTORY_LAST_READ_KEY]: Date.now() });
   return { kept: kept.kept };
 }

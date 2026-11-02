@@ -1,4 +1,4 @@
-// The history consent as a small card in the bottom-right corner of
+// The history consent as a small card in the top-right corner of
 // youtube.com (watchHistory.ts has the read itself). Shown to a signed-in
 // learner until they answer, and again when another Google account is
 // signed in. Allow reads the history page straight away; Not now keeps it
@@ -18,9 +18,10 @@ const DONE_MS = 4000;
 const CSS = `
 :host { all: initial; }
 .card {
-  position: fixed; right: 24px; bottom: 24px; z-index: 2147483000; width: 340px; box-sizing: border-box;
+  position: fixed; right: 24px; top: 72px; z-index: 2147483000; width: 340px; box-sizing: border-box;
   padding: 16px 18px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; color: #111827;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  animation: arrive 320ms cubic-bezier(0.2, 0.8, 0.2, 1), notice 1400ms ease-out 450ms;
   font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 .title { margin: 0; font-size: 15px; font-weight: 600; }
@@ -33,6 +34,13 @@ button {
 button.primary { border-color: #4f46e5; background: #4f46e5; color: #fff; }
 button:disabled { opacity: 0.5; cursor: default; }
 .error { margin: 8px 0 0; color: #b91c1c; font-size: 13px; }
+/* Slides in from the corner, then one ring so it's noticed. */
+@keyframes arrive { from { opacity: 0; transform: translateX(24px); } }
+@keyframes notice {
+  from { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18), 0 0 0 0 rgba(79, 70, 229, 0.45); }
+  to { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18), 0 0 0 12px rgba(79, 70, 229, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .card { animation: none; } }
 :host-context(html[dark]) .card { background: #212121; border-color: #3f3f3f; color: #f1f1f1; }
 :host-context(html[dark]) .text { color: #c4c4c4; }
 :host-context(html[dark]) button:not(.primary) { background: #212121; border-color: #3f3f3f; color: #f1f1f1; }
