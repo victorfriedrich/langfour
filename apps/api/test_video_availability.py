@@ -51,8 +51,8 @@ def test_a_sweep_where_too_many_look_gone_is_ignored():
 def test_a_sweep_does_not_log_each_request(caplog):
     with caplog.at_level(logging.INFO, logger="httpx"):
         run(sweeper(), [ALIVE])
-        sweeper().get("https://example.com/")
-    assert [r.getMessage().split()[3] for r in caplog.records] == ["https://example.com/"]
+        sweeper().head("https://example.com/vi/other/")
+    assert [r.getMessage().split()[3] for r in caplog.records] == ["https://example.com/vi/other/"]
 
 
 def test_a_stopped_sweep_makes_no_requests_and_keeps_what_it_had():

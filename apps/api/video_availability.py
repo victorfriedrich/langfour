@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 # httpx logs each request at INFO: 23,000 lines a sweep, burying everything else.
 logging.getLogger("httpx").addFilter(lambda record: "i.ytimg.com" not in record.getMessage())
 
-THUMBNAIL ="https://i.ytimg.com/vi/{}/mqdefault.jpg"
+THUMBNAIL = "https://i.ytimg.com/vi/{}/mqdefault.jpg"
 PARALLEL = 8
 SWEEP_EVERY_S = 24 * 3600
 # 2% of all transcripts ever ingested were gone on 2026-11-02. Far above that the
