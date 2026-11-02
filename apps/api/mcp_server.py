@@ -69,8 +69,16 @@ mcp = FastMCP(
         "flashcard reviews, itself or in a connected app such as RemNote. Before practising "
         "vocabulary with the user, pick words with get_vocabulary (due words first); at the end "
         "of the session, report the results with record_practice. When you write a text for "
-        "the user to read in the language, check its level with score_text, and once they have "
-        "read it, log it with record_exposure. Take the user at their word about what they "
+        "the user to read in the language, check its level with score_text. In a "
+        "conversation in the language, fetch the words the user is learning once with "
+        "get_vocabulary (status 'learning', limit 5000) and keep the list. In every turn, "
+        "judge from the user's answer whether they took in the whole of your previous reply "
+        "or a text they asked for (they respond to its end or what it asked, or heard it out "
+        "in a voice conversation), and if they did, log the learning words that appeared in "
+        "it with record_exposure. When you write examples or texts in the language, build them "
+        "around the words the user is learning, fill the rest with words they know, and now "
+        "and then bring in one common word they haven't met, glossed in parentheses. "
+        "Take the user at their word about what they "
         "know: words they know outright go to known with set_word_status, and words they say "
         "they can read but not produce get a correct 'recognize' answer, self_reported, with "
         "record_practice. Don't quiz them first unless they ask. When the user asks to add "
@@ -185,23 +193,30 @@ async def score_text_tool(
 
 
 @mcp.tool(name="record_exposure", annotations=ToolAnnotations(
-    title="Log a text the user read",
+    title="Log words the user read",
     readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False,
 ))
 async def record_exposure_tool(
     language: Language,
-    text: Annotated[str, Field(min_length=1, max_length=MAX_TEXT)],
+    words: Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]],
+                     Field(min_length=1, max_length=200)],
     ctx: Context,
 ) -> ExposureSummary:
-    """Log that the user read a text in the target language, once per text, after they
-    have read it. Langfour notes each word they're learning or haven't met as seen; it
-    doesn't change their flashcard schedule.
+    """Log that the user read words they're learning: the learning words in a reply of
+    yours they took in, or in a text they asked for (a story, an article) once they've
+    read it. Langfour notes each as seen; it doesn't change their flashcard schedule.
 
-    Only for texts the user chose to read (a story or article they asked for), not for
-    everything you wrote in the conversation.
+    Know the learning words before you write: fetch them once per conversation with
+    get_vocabulary (status 'learning', limit 5000) and keep the list. In every turn, judge
+    from the user's answer whether they engaged with the whole of your previous reply:
+    they respond to its end or to what it asked, or heard it out in a voice conversation.
+    If they did, log the learning words that appeared in it, in any form, each once and
+    written as get_vocabulary lists them (with the article, e.g. 'la casa'). If they
+    skimmed it, cut you off or answered only its first lines, don't, and never log a
+    reply twice. not_learning lists words that aren't in their learning list.
     """
     return await asyncio.to_thread(record_exposure, get_vocabulary_store(), _user_id(ctx),
-                                   language, text)
+                                   language, words)
 
 
 @mcp.tool(name="set_word_status", annotations=ToolAnnotations(

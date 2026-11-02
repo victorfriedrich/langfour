@@ -119,15 +119,23 @@ def test_words_split_on_apostrophes_and_digits():
     assert vocabulary._WORD.findall("l'homme 4K über-groß") == ["l", "homme", "K", "über", "groß"]
 
 
-def test_record_exposure_logs_learning_and_new_words_once_each():
+def test_record_exposure_logs_only_learning_words_once_each():
     store = FakeStore()
+    # 'encontré' is a form of a learning word; 'la' is known; of the homographs
+    # 'de', 7 is known and 8 learning; 'casa' isn't in the list.
     summary = vocabulary.record_exposure(store, USER, "es",
-                                         "El perro come la manzana, casa, perro.")
-    assert summary.recorded == 2
-    assert store.events == [
-        {"user_id": USER, "word_id": 2, "kind": "exposure", "source": "chatgpt"},
-        {"user_id": USER, "word_id": 5, "kind": "exposure", "source": "chatgpt"},
-    ]
+                                         ["el perro", "encontré", "la", "de", "casa", "el perro"])
+    assert summary.recorded == 3
+    assert [e["word_id"] for e in store.events] == [2, 8, 10]
+    assert store.events[0] == {"user_id": USER, "word_id": 2, "kind": "exposure", "source": "chatgpt"}
+    assert summary.not_learning == ["la", "casa"]
+
+
+def test_record_exposure_with_no_learning_words_writes_nothing():
+    store = FakeStore()
+    summary = vocabulary.record_exposure(store, USER, "es", ["la", "apagar"])
+    assert summary.recorded == 0 and store.events == []
+    assert summary.not_learning == ["la", "apagar"]
 
 
 def test_record_seen_logs_each_word_once_per_media():

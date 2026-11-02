@@ -11,8 +11,11 @@ what it reports back about texts the user read with it.
     reader's rules (classify_words_for in sql/classify_words.sql): names,
     acronyms and other non-vocabulary are left out, a spelling of several
     words counts as known if any of them is.
-  - record_exposure: one word_events 'exposure' row per learning or new word of
-    a text the user chose to read (docs/plans/learner-word-data-model.md:
+  - record_exposure: one word_events 'exposure' row per word the user is
+    learning that an AI app says they read, in its own reply they took in
+    whole or in a text they asked for. Learning words only, which the app
+    knows from get_vocabulary, so it names a few words rather than resending
+    the text (docs/plans/learner-word-data-model.md:
     exposure counts only what the user chose to read or hear, never every
     word an AI wrote).
   - record_seen: the same rows for words the extension saw the user read in
@@ -117,6 +120,8 @@ class TextScore(BaseModel):
 
 class ExposureSummary(BaseModel):
     recorded: int  # distinct learning or new words logged as read
+    # record_exposure: words asked for that aren't in the user's learning list
+    not_learning: list[str] = []
 
 
 class SeenRequest(BaseModel):
@@ -368,14 +373,19 @@ def score_text(store: VocabularyStore, user_id: str, language: str, text: str) -
 
 
 def record_exposure(store: VocabularyStore, user_id: str, language: str,
-                    text: str) -> ExposureSummary:
-    word_ids = sorted({w for w, status in _classified(store, user_id, language, text)
-                       if status in ("learning", "new")})
+                    words: list[str]) -> ExposureSummary:
+    asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
+    by_word = _list_words(store, user_id, language, asked)
+    ids = sorted(set().union(*by_word.values()))
+    statuses = store.statuses(user_id, ids) if ids else {}
+    # Of homographs listed under one spelling, only the ones being learned.
+    learning = {w for w in ids if statuses.get(w) == "learning"}
     recorded = store.insert_events([
         {"user_id": user_id, "word_id": w, "kind": "exposure", "source": SOURCE}
-        for w in word_ids
+        for w in sorted(learning)
     ])
-    return ExposureSummary(recorded=recorded)
+    return ExposureSummary(recorded=recorded,
+                           not_learning=[w for w in asked if not by_word.get(w, set()) & learning])
 
 
 def record_seen(store: VocabularyStore, user_id: str, req: SeenRequest) -> ExposureSummary:
@@ -393,22 +403,29 @@ def record_seen(store: VocabularyStore, user_id: str, req: SeenRequest) -> Expos
     return ExposureSummary(recorded=recorded)
 
 
+def _list_words(store: VocabularyStore, user_id: str, language: str,
+                asked: list[str]) -> dict[str, set[int]]:
+    """word as given -> the ids of the user's learning or known words it names.
+    By root first, so every homograph listed under one spelling is found; then
+    forms ('encontré' -> encontrar) for the rest."""
+    by_word: dict[str, set[int]] = {}
+    for r in store.user_words(user_id, language, asked):
+        by_word.setdefault(r["root"], set()).add(r["word_id"])
+    forms = store.resolve_words(language, [w for w in asked if w not in by_word])
+    owned = store.owned(user_id, sorted(set(forms.values()))) if forms else set()
+    by_word |= {w: {word_id} for w, word_id in forms.items() if word_id in owned}
+    return by_word
+
+
 def set_word_status(store: VocabularyStore, user_id: str, language: str, words: list[str],
                     status: Literal["known", "learning"]) -> StatusChange:
     asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
-    # By root first, so every homograph listed under one spelling moves; then
-    # forms ('encontré' -> encontrar) for the rest.
-    rows = store.user_words(user_id, language, asked)
-    found = {r["root"] for r in rows}
-    ids = {r["word_id"] for r in rows}
-    forms = store.resolve_words(language, [w for w in asked if w not in found])
-    owned = store.owned(user_id, sorted(set(forms.values()))) if forms else set()
-    found |= {w for w, word_id in forms.items() if word_id in owned}
-    ids |= owned
+    by_word = _list_words(store, user_id, language, asked)
+    ids = set().union(*by_word.values())
     if ids:
         store.set_status(user_id, sorted(ids), status)
-    return StatusChange(changed=[w for w in asked if w in found],
-                        not_found=[w for w in asked if w not in found])
+    return StatusChange(changed=[w for w in asked if w in by_word],
+                        not_found=[w for w in asked if w not in by_word])
 
 
 def add_words(store: VocabularyStore, user_id: str, language: str, words: list[str],
