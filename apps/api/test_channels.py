@@ -340,7 +340,7 @@ def test_a_channel_without_uploads_queues_nothing():
     assert channels.fetch_uploads(CHANNEL, "key", get) == []
 
 
-def test_reads_each_videos_stated_language():
+def test_reads_each_videos_stated_audio_language():
     def video(video_id, **snippet):
         return {"id": video_id, "snippet": snippet}
     items = {"a": video("a", defaultAudioLanguage="es-419", defaultLanguage="en"),
@@ -349,7 +349,8 @@ def test_reads_each_videos_stated_language():
              "d": video("d")}
     get, calls = youtube({}, items)
     ids = [*items, "gone", *(f"x{n}" for n in range(50))]
-    assert channels.stated_languages(ids, "key", get) == {"a": "es", "b": "en", "c": "", "d": ""}
+    # b's English is its title's, not what is spoken.
+    assert channels.stated_languages(ids, "key", get) == {"a": "es", "b": "", "c": "", "d": ""}
     assert [len(params["id"].split(",")) for _, params in calls] == [50, 5]
     assert all(params["part"] == "snippet" for _, params in calls)
 

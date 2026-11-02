@@ -447,9 +447,11 @@ def _language_code(tag: str | None) -> str:
 
 def stated_languages(video_ids: list[str], key: str,
                      get: Callable[..., Any] = requests.get) -> dict[str, str]:
-    """The language each video says it is in: its audio language, or failing
-    that its title and description's. '' when it states neither; ids YouTube
-    doesn't return (private, deleted) are left out. 1 quota unit per 50."""
+    """The language each video says it is spoken in, its defaultAudioLanguage.
+    '' when it states none. Not defaultLanguage, as in_language doesn't use it
+    either: that is the title's language, and learner channels often title
+    Spanish videos in English. Ids YouTube doesn't return (private, deleted)
+    are left out. 1 quota unit per 50."""
     out = {}
     for chunk in ingest.batched(video_ids, 50):
         res = get(f"{YOUTUBE_API}/videos", headers={"X-Goog-Api-Key": key}, timeout=5,
@@ -457,8 +459,7 @@ def stated_languages(video_ids: list[str], key: str,
         res.raise_for_status()
         for item in res.json().get("items", []):
             snippet = item.get("snippet", {})
-            out[item["id"]] = (_language_code(snippet.get("defaultAudioLanguage"))
-                               or _language_code(snippet.get("defaultLanguage")))
+            out[item["id"]] = _language_code(snippet.get("defaultAudioLanguage"))
     return out
 
 
