@@ -70,6 +70,14 @@ class FakeStore:
     def owned(self, user_id, word_ids):
         return {w for w in word_ids if w in self.LIST}
 
+    def default_language(self, user_id):
+        return "es"
+
+    def learning_words(self, user_id, language):
+        self.calls.append(("learning_words", user_id, language))
+        return [{"word_id": w, "root": root, "translation": f"t{w}"}
+                for w, root in self.LIST.items() if self.STATUSES.get(w) == "learning"]
+
     def set_status(self, user_id, word_ids, status):
         self.calls.append(("set_status", user_id, word_ids, status))
 
@@ -300,4 +308,67 @@ def test_move_words_moves_only_words_in_the_users_list():
 def test_move_words_with_none_in_the_list_updates_nothing():
     store = FakeStore()
     assert vocabulary.move_words(store, USER, [11], "known").moved == []
+    assert store.calls == []
+
+
+class ExposureStore(FakeStore):
+    def __init__(self, events=()):
+        super().__init__()
+        del self.events  # FakeStore's log of inserts; here events() reads
+        self.logged = list(events)
+
+    def events(self, user_id, word_ids, kinds):
+        self.calls.append(("events", user_id, word_ids, kinds))
+        return [e for e in self.logged if e["word_id"] in word_ids and e["kind"] in kinds]
+
+
+def event(word_id, kind, day, source="chatgpt", **context):
+    return {"word_id": word_id, "kind": kind, "source": source,
+            "occurred_at": f"{day}T10:00:00+00:00", "context": context or None}
+
+
+EXPOSURES = [
+    event(2, "exposure", "2026-10-01"), event(2, "exposure", "2026-10-03", source="video",
+                                              media="youtube:a"),
+    event(2, "recall_correct", "2026-10-02", direction="produce"),
+    event(2, "recall_correct", "2026-10-04", direction="recognize"),
+    event(2, "recall_correct", "2026-10-05", direction="produce", self_reported=True),
+    event(10, "exposure", "2026-09-01", source="reader", media="https://example.com"),
+    event(10, "recall_wrong", "2026-09-02", direction="produce", note="wrote encuentré"),
+    event(4, "exposure", "2026-09-01"),  # known, not learning
+]
+
+
+def test_word_exposures_count_seen_and_produced_for_learning_words():
+    store = ExposureStore(EXPOSURES)
+    out = vocabulary.get_word_exposures(store, USER, "es", [], "most", 50)
+    assert out.language == "es" and out.learning == 3 and out.not_learning == []
+    assert [(w.word, w.seen, w.produced, w.produce_wrong, w.last_seen, w.last_produced)
+            for w in out.words] == [
+        ("el perro", 2, 1, 0, "2026-10-03", "2026-10-02"),
+        ("encontrar", 1, 0, 1, "2026-09-01", None),
+        ("de", 0, 0, 0, None, None),
+    ]
+    assert ("events", USER, [2, 8, 10], ["exposure", "recall_correct", "recall_wrong"]) in store.calls
+
+
+def test_word_exposures_least_seen_first_and_limited():
+    out = vocabulary.get_word_exposures(ExposureStore(EXPOSURES), USER, "es", [], "least", 2)
+    assert [w.word for w in out.words] == ["de", "encontrar"]
+    assert out.learning == 3
+
+
+def test_word_exposures_for_named_words_and_the_default_language():
+    store = ExposureStore(EXPOSURES)
+    out = vocabulary.get_word_exposures(store, USER, None, ["encontré", "la", "hablé"], "least", 50)
+    assert out.language == "es"
+    assert [(w.word, w.seen) for w in out.words] == [("encontrar", 1)]
+    assert out.learning == 1 and out.not_learning == ["la", "hablé"]
+
+
+def test_word_exposures_with_no_language_reads_nothing():
+    store = ExposureStore()
+    store.default_language = lambda user_id: None
+    out = vocabulary.get_word_exposures(store, USER, None, [], "least", 50)
+    assert (out.language, out.learning, out.words) == (None, 0, [])
     assert store.calls == []
