@@ -24,6 +24,7 @@ def blank_recommender(base_folder=None):
     recommender.total_words_per_doc = {}
     recommender.distinct_words_per_doc = {}
     recommender.rows_by_video = {}
+    recommender.video_signals = {}
     return recommender
 
 
@@ -62,6 +63,58 @@ def test_hidden_videos_are_never_recommended():
     by_words = [v["id"] for v in recommender.recommend_videos_by_words([0], "es")]
     for_user = [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es"))]
     assert sorted(by_words) == sorted(for_user) == ["video-0", "video-2"]
+
+
+def test_a_category_list_is_cut_after_the_pool_and_order_follows_the_blend():
+    # Video 0 is understood best but looks like trash, video 1 is next and fine.
+    rows = [np.r_[np.full(50, 9), np.ones(100, dtype=np.int8)] for _ in range(4)]
+    recommender = make_recommender(rows, categories=["A", "A", "B", "A"])
+    recommender.video_signals = {"es": {
+        "video-0": {"look": {"interest": 6, "trash": 9, "sensitive": "none", "channel": "x"}},
+    }}
+
+    async def get_known_words(_user_id):
+        return list(range(50))
+
+    async def get_watched_videos(_user_id):
+        return []
+
+    recommender.get_known_words = get_known_words
+    recommender.get_watched_videos = get_watched_videos
+
+    ids = [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es"))]
+    assert sorted(ids) == ["video-1", "video-2", "video-3"]
+    in_a = [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es", filter_category="A"))]
+    assert sorted(in_a) == ["video-1", "video-3"]
+
+
+def test_a_language_without_verdicts_keeps_known_words_order_and_category():
+    rows = [np.r_[np.full(50, count), np.ones(100, dtype=np.int8)] for count in (1, 9, 5)]
+    recommender = make_recommender(rows, categories=["A", "A", "B"])
+
+    async def get_known_words(_user_id):
+        return list(range(50))
+
+    async def get_watched_videos(_user_id):
+        return []
+
+    recommender.get_known_words = get_known_words
+    recommender.get_watched_videos = get_watched_videos
+
+    assert [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es"))] == [
+        "video-1", "video-2", "video-0"]
+    assert [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es", filter_category="A"))] == [
+        "video-1", "video-0"]
+
+
+def test_unreadable_video_signals_keep_known_words_order(monkeypatch):
+    def boom(_sb):
+        raise RuntimeError("no such table")
+
+    monkeypatch.setattr("video_blend.load_signals", boom)
+    recommender = blank_recommender()
+    recommender.supabase = None
+    assert recommender._load_video_signals() == {}
 
 
 def test_unreadable_scores_hide_nothing(monkeypatch):
