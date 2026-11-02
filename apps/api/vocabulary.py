@@ -11,8 +11,11 @@ what it reports back about texts the user read with it.
     reader's rules (classify_words_for in sql/classify_words.sql): names,
     acronyms and other non-vocabulary are left out, a spelling of several
     words counts as known if any of them is.
-  - record_exposure: one word_events 'exposure' row per learning or new word of
-    a text the user chose to read (docs/plans/learner-word-data-model.md:
+  - record_exposure: one word_events 'exposure' row per word the user is
+    learning that an AI app says they read, in its own reply they took in
+    whole or in a text they asked for. Learning words only, which the app
+    knows from get_vocabulary, so it names a few words rather than resending
+    the text (docs/plans/learner-word-data-model.md:
     exposure counts only what the user chose to read or hear, never every
     word an AI wrote).
   - record_seen: the same rows for words the extension saw the user read in
@@ -25,6 +28,11 @@ what it reports back about texts the user read with it.
     learning or known, as the web app's move_words_to_userwords does. Words
     already in the list keep their row, except learning ones asked for as
     known; a known word never goes back to learning here.
+  - get_word_exposures: for each learning word, how often the user has seen
+    it (exposure rows: read with an AI app, in the reader, in a video's
+    captions) and produced it (practice answers where they came up with the
+    word themselves, self-reported ones left out), with the dates of the last
+    of each.
   - stuck_words: the web app's "Common words you never reviewed": learning
     words among the corpus's most common that were never reviewed, with the
     videos they were seen in and their look-ups. move_words moves the ones the
@@ -116,7 +124,9 @@ class TextScore(BaseModel):
 
 
 class ExposureSummary(BaseModel):
-    recorded: int  # distinct learning or new words logged as read
+    recorded: int  # distinct words logged as read or seen
+    # record_exposure: words asked for that aren't in the user's learning list
+    not_learning: list[str] = []
 
 
 class SeenRequest(BaseModel):
@@ -137,6 +147,23 @@ class WordsAdded(BaseModel):
     added: list[str]      # now in the user's list in the requested status
     already: list[str]    # in their list already and left as it was
     not_found: list[str]  # not in the dictionary in that language
+
+
+class WordExposure(BaseModel):
+    word: str
+    translation: str | None
+    seen: int                  # exposure rows, every source
+    produced: int              # correct 'produce' answers, self-reported left out
+    produce_wrong: int         # wrong 'produce' answers
+    last_seen: str | None      # YYYY-MM-DD
+    last_produced: str | None  # of the last correct 'produce' answer, YYYY-MM-DD
+
+
+class WordExposures(BaseModel):
+    language: str | None  # None: no language given and the user has no default
+    learning: int         # learning words in the language, or among those asked for
+    words: list[WordExposure]
+    not_learning: list[str] = []  # words asked for that aren't in the user's learning list
 
 
 class StuckWord(BaseModel):
@@ -231,6 +258,30 @@ class VocabularyStore:
         """word as given -> word_id, conjugated or inflected forms included."""
         return PracticeStore(self.db).resolve_words(language, words)
 
+    def default_language(self, user_id: str) -> str | None:
+        rows = (self.db.table("userdata").select("default_language")
+                .eq("user_id", user_id).limit(1).execute().data or [])
+        return rows[0]["default_language"] if rows else None
+
+    def learning_words(self, user_id: str, language: str) -> list[dict]:
+        """The user's learning words in a language: [{word_id, root, translation}],
+        every page of them."""
+        out: list[dict] = []
+        start = 0
+        while True:
+            res = (self.db.table("userwords")
+                   .select("word_id, words!inner(root, translation, language)")
+                   .eq("user_id", user_id).eq("status", "learning")
+                   .eq("words.language", language)
+                   .order("word_id").range(start, start + _PAGE - 1).execute())
+            rows = res.data or []
+            out.extend({"word_id": r["word_id"], "root": r["words"]["root"],
+                        "translation": r["words"].get("translation")} for r in rows)
+            if len(rows) < _PAGE:
+                break
+            start += _PAGE
+        return out
+
     def owned(self, user_id: str, word_ids: list[int]) -> set[int]:
         """Which of these words are in the user's list as learning or known."""
         res = (self.db.table("userwords").select("word_id").eq("user_id", user_id)
@@ -254,6 +305,8 @@ class VocabularyStore:
                   source: str = SOURCE) -> None:
         # As move_words_to_userwords, which works on auth.uid(): a row added
         # meanwhile is kept, and the user's known-words timestamp moves.
+        # `source` is where the words came from, as the Practice page filters
+        # them: the AI app, or a video's id.
         (self.db.table("userwords")
          .upsert([{"user_id": user_id, "word_id": w, "status": status, "source": source}
                   for w in word_ids], on_conflict="user_id,word_id", ignore_duplicates=True)
@@ -285,12 +338,12 @@ class VocabularyStore:
 
     def events(self, user_id: str, word_ids: list[int], kinds: list[str]) -> list[dict]:
         """The user's word_events of these kinds for these words: [{word_id,
-        kind, source, context}], every page of them."""
+        kind, source, occurred_at, context}], every page of them."""
         out: list[dict] = []
         for chunk in _chunks(word_ids, _IN_CHUNK):
             start = 0
             while True:
-                res = (self.db.table("word_events").select("word_id, kind, source, context")
+                res = (self.db.table("word_events").select("word_id, kind, source, occurred_at, context")
                        .eq("user_id", user_id).in_("kind", kinds).in_("word_id", chunk)
                        .order("id").range(start, start + _PAGE - 1).execute())
                 rows = res.data or []
@@ -368,14 +421,19 @@ def score_text(store: VocabularyStore, user_id: str, language: str, text: str) -
 
 
 def record_exposure(store: VocabularyStore, user_id: str, language: str,
-                    text: str) -> ExposureSummary:
-    word_ids = sorted({w for w, status in _classified(store, user_id, language, text)
-                       if status in ("learning", "new")})
+                    words: list[str]) -> ExposureSummary:
+    asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
+    by_word = _list_words(store, user_id, language, asked)
+    ids = sorted(set().union(*by_word.values()))
+    statuses = store.statuses(user_id, ids) if ids else {}
+    # Of homographs listed under one spelling, only the ones being learned.
+    learning = {w for w in ids if statuses.get(w) == "learning"}
     recorded = store.insert_events([
         {"user_id": user_id, "word_id": w, "kind": "exposure", "source": SOURCE}
-        for w in word_ids
+        for w in sorted(learning)
     ])
-    return ExposureSummary(recorded=recorded)
+    return ExposureSummary(recorded=recorded,
+                           not_learning=[w for w in asked if not by_word.get(w, set()) & learning])
 
 
 def record_seen(store: VocabularyStore, user_id: str, req: SeenRequest) -> ExposureSummary:
@@ -393,22 +451,29 @@ def record_seen(store: VocabularyStore, user_id: str, req: SeenRequest) -> Expos
     return ExposureSummary(recorded=recorded)
 
 
+def _list_words(store: VocabularyStore, user_id: str, language: str,
+                asked: list[str]) -> dict[str, set[int]]:
+    """word as given -> the ids of the user's learning or known words it names.
+    By root first, so every homograph listed under one spelling is found; then
+    forms ('encontré' -> encontrar) for the rest."""
+    by_word: dict[str, set[int]] = {}
+    for r in store.user_words(user_id, language, asked):
+        by_word.setdefault(r["root"], set()).add(r["word_id"])
+    forms = store.resolve_words(language, [w for w in asked if w not in by_word])
+    owned = store.owned(user_id, sorted(set(forms.values()))) if forms else set()
+    by_word |= {w: {word_id} for w, word_id in forms.items() if word_id in owned}
+    return by_word
+
+
 def set_word_status(store: VocabularyStore, user_id: str, language: str, words: list[str],
                     status: Literal["known", "learning"]) -> StatusChange:
     asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
-    # By root first, so every homograph listed under one spelling moves; then
-    # forms ('encontré' -> encontrar) for the rest.
-    rows = store.user_words(user_id, language, asked)
-    found = {r["root"] for r in rows}
-    ids = {r["word_id"] for r in rows}
-    forms = store.resolve_words(language, [w for w in asked if w not in found])
-    owned = store.owned(user_id, sorted(set(forms.values()))) if forms else set()
-    found |= {w for w, word_id in forms.items() if word_id in owned}
-    ids |= owned
+    by_word = _list_words(store, user_id, language, asked)
+    ids = set().union(*by_word.values())
     if ids:
         store.set_status(user_id, sorted(ids), status)
-    return StatusChange(changed=[w for w in asked if w in found],
-                        not_found=[w for w in asked if w not in found])
+    return StatusChange(changed=[w for w in asked if w in by_word],
+                        not_found=[w for w in asked if w not in by_word])
 
 
 def add_words(store: VocabularyStore, user_id: str, language: str, words: list[str],
@@ -431,6 +496,57 @@ def add_words(store: VocabularyStore, user_id: str, language: str, words: list[s
     return WordsAdded(added=[w for w in asked if ids.get(w) in moved],
                       already=[w for w in asked if w in ids and ids[w] not in moved],
                       not_found=[w for w in asked if w not in ids])
+
+
+def get_word_exposures(store: VocabularyStore, user_id: str, language: str | None,
+                       words: list[str], order: Literal["least", "most"],
+                       limit: int) -> WordExposures:
+    """How often each learning word was seen and produced: all of the user's
+    learning words in the language, or those among `words`."""
+    language = language or store.default_language(user_id)
+    if not language:
+        return WordExposures(language=None, learning=0, words=[])
+    learning = {r["word_id"]: r for r in store.learning_words(user_id, language)}
+    asked = list(dict.fromkeys(w.strip() for w in words if w.strip()))
+    not_learning: list[str] = []
+    if asked:
+        by_word = _list_words(store, user_id, language, asked)
+        picked = set().union(*by_word.values()) & set(learning)
+        not_learning = [w for w in asked if not by_word.get(w, set()) & picked]
+        learning = {w: r for w, r in learning.items() if w in picked}
+    ids = sorted(learning)
+
+    seen: Counter[int] = Counter()
+    produced: Counter[int] = Counter()
+    produce_wrong: Counter[int] = Counter()
+    last_seen: dict[int, str] = {}
+    last_produced: dict[int, str] = {}
+    for e in store.events(user_id, ids, ["exposure", "recall_correct", "recall_wrong"]) if ids else []:
+        w, day = e["word_id"], (e.get("occurred_at") or "")[:10] or None
+        context = e.get("context") or {}
+        if e["kind"] == "exposure":
+            seen[w] += 1
+            if day and day > last_seen.get(w, ""):
+                last_seen[w] = day
+        elif context.get("direction") != "produce":
+            continue
+        elif e["kind"] == "recall_wrong":
+            produce_wrong[w] += 1
+        elif not context.get("self_reported"):
+            produced[w] += 1
+            if day and day > last_produced.get(w, ""):
+                last_produced[w] = day
+
+    def key(w: int):
+        count = (seen[w], produced[w])
+        return (count if order == "least" else (-count[0], -count[1]), learning[w]["root"])
+
+    return WordExposures(language=language, learning=len(ids), not_learning=not_learning, words=[
+        WordExposure(word=learning[w]["root"], translation=learning[w].get("translation"),
+                     seen=seen[w], produced=produced[w], produce_wrong=produce_wrong[w],
+                     last_seen=last_seen.get(w), last_produced=last_produced.get(w))
+        for w in sorted(ids, key=key)[:limit]
+    ])
 
 
 def stuck_words(store: VocabularyStore, user_id: str, common: list[int]) -> StuckWords:

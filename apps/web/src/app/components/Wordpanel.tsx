@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, ChevronUp, Eye, Loader2, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
 import { useMissingWords } from '../hooks/useMissingWords';
 import { useUpdateUserwords } from '../hooks/useUpdateUserwords';
-import { useSeenVideos } from '../hooks/useSeenVideos';
 import type { TranscriptChunk } from '../media/api';
 import EmptyState from './EmptyState';
 import MediaText from './MediaText';
@@ -40,15 +39,10 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   const flaggedWords = useMemo(() => inTextOrder(missing.flaggedWords, firstSeen), [missing.flaggedWords, firstSeen]);
   const allWords = useMemo(() => [...keyWords, ...recommendedWords, ...flaggedWords], [keyWords, recommendedWords, flaggedWords]);
   const { addWordsToUserwords } = useUpdateUserwords();
-  const { seenVideos, markVideoAsSeen } = useSeenVideos(0);
   const fullPage = variant === 'page';
   // On the page, the text sits beside the list, laid out as the reader showed it.
   const showText = fullPage && transcript.length > 0;
   const newIds = useMemo(() => new Set(allWords.map((word) => word.id)), [allWords]);
-
-  const toggleVideoSeen = useCallback(async () => {
-    await markVideoAsSeen(videoId);
-  }, [videoId, markVideoAsSeen]);
 
   const toggleWordSelection = useCallback((wordId: number) => {
     setSelectedWords((current) => current.includes(wordId) ? current.filter((id) => id !== wordId) : [...current, wordId]);
@@ -125,10 +119,10 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   return (
     <div className={`${shell} ${isShiftPressed ? 'select-none' : ''}`} onClick={(event) => event.stopPropagation()}>
       {body}
-      {/* The page uses the app's floating selection pill; the panel keeps its bar for the Seen button. */}
+      {/* The page uses the app's floating selection pill; the panel has a bar, while there are words to add. */}
       {fullPage
         ? <SelectionPill count={selectedWords.length} onAdd={addToLearningSet} onClear={() => setSelectedWords([])} />
-        : <ActionBar isVideoSeen={seenVideos.includes(videoId)} selectedWordsCount={selectedWords.length} toggleVideoSeen={toggleVideoSeen} addToLearningSet={addToLearningSet} />}
+        : allWords.length > 0 && <ActionBar selectedWordsCount={selectedWords.length} addToLearningSet={addToLearningSet} />}
     </div>
   );
 };
@@ -188,8 +182,8 @@ function SelectionPill({ count, onAdd, onClear }: { count: number; onAdd: () => 
   return <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full bg-gray-900 py-1.5 pl-4 pr-1.5 text-sm text-white shadow-lg"><span className="mr-2 tabular-nums">{count} selected</span><button className="rounded-full bg-white px-3 py-1 font-medium text-gray-900 hover:bg-gray-100" onClick={onAdd}>Add to learning set</button><button className="rounded-full p-1.5 text-gray-400 hover:text-white" onClick={onClear} aria-label="Clear selection"><X size={16}/></button></div>;
 }
 
-function ActionBar({ isVideoSeen, selectedWordsCount, toggleVideoSeen, addToLearningSet }: { isVideoSeen: boolean; selectedWordsCount: number; toggleVideoSeen: () => void; addToLearningSet: () => void }) {
-  return <div className="flex items-center gap-2 border-t p-4"><button onClick={toggleVideoSeen} className={`flex items-center justify-center rounded-lg px-4 py-2.5 font-semibold transition ${isVideoSeen ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}><Eye size={19} className="mr-2"/>Seen</button><button onClick={addToLearningSet} disabled={selectedWordsCount === 0} className={`flex-grow rounded-lg px-5 py-2.5 font-semibold transition ${selectedWordsCount > 0 ? 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700' : 'cursor-not-allowed bg-slate-200 text-slate-400'}`}>Add {selectedWordsCount} {selectedWordsCount === 1 ? 'word' : 'words'} to learning set</button></div>;
+function ActionBar({ selectedWordsCount, addToLearningSet }: { selectedWordsCount: number; addToLearningSet: () => void }) {
+  return <div className="flex items-center gap-2 border-t p-4"><button onClick={addToLearningSet} disabled={selectedWordsCount === 0} className={`flex-grow rounded-lg px-5 py-2.5 font-semibold transition ${selectedWordsCount > 0 ? 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700' : 'cursor-not-allowed bg-slate-200 text-slate-400'}`}>Add {selectedWordsCount} {selectedWordsCount === 1 ? 'word' : 'words'} to learning set</button></div>;
 }
 
 export default Wordpanel;

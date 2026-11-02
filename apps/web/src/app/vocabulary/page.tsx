@@ -18,6 +18,8 @@ import { wordsDueToday } from './due';
 import ProgressOverview from './ProgressOverview';
 import RemnoteSection from './RemnoteSection';
 import SchedulerLabel from './SchedulerLabel';
+import YoutubeRecap from './YoutubeRecap';
+import { useYoutubeRecap } from '../hooks/useYoutubeRecap';
 
 /** The page's shape in grey, shown until everything above the fold can
  *  appear at once. */
@@ -70,6 +72,7 @@ const PracticePage = () => {
   const { words: overdueWords, isLoading: overdueLoading, error: overdueError } = useOverdueWords(refreshTrigger, { source: sourceFilter ?? undefined });
 
   const refresh = useCallback(() => setRefreshTrigger((n) => n + 1), []);
+  const { recap, add: addRecapWords, close: closeRecap } = useYoutubeRecap();
 
   // Everything appears together, once: a skeleton until the first answers
   // are in, then no more placeholders when filters or reviews refresh.
@@ -171,6 +174,20 @@ const PracticePage = () => {
                 : 'hidden'
             }
           >
+            {recap && (
+              <div className="mb-10">
+                <YoutubeRecap
+                  recap={recap}
+                  onAdd={async (words) => {
+                    const added = await addRecapWords(words);
+                    refresh();
+                    return added;
+                  }}
+                  onClose={closeRecap}
+                />
+              </div>
+            )}
+
             {(progressError || progressWords) && (
               <section>
                 {progressError ? (

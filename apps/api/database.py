@@ -366,12 +366,15 @@ def add_wordform(wordform: str, root_id: int, language: str,
     """
     language = language_key(language)
     try:
-        # Add the new wordform and associate it with the found root ID
-        supabase.table("wordforms").insert({
+        # Add the new wordform and associate it with the found root ID. The
+        # two ingest workers can attach the same new form at once; the
+        # second keeps the first's row instead of failing its whole video
+        # on the unique (word_id, form).
+        supabase.table("wordforms").upsert({
             "word_id": root_id,
             "form": wordform,
             "status": status,
-        }).execute()
+        }, on_conflict="word_id,form", ignore_duplicates=True).execute()
 
         # Flagged means awaiting review, not invalid. Do not overwrite the
         # root's independent verdict because of a new form.

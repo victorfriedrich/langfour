@@ -84,6 +84,11 @@ export type Account = {
 };
 export type AccountResponse = { account: Account | null; error?: string };
 
+// What a youtube.com tab is playing, as watchSignal.ts counts it: whether
+// the video is in Langfour's index for the learning language, whether it is
+// marked watched, and the share played so far.
+export type WatchState = { videoId: string | null; indexed: boolean; watched: boolean; share: number };
+
 // Messages the background service worker owns and handles.
 export type BackgroundMessage =
   | { type: 'STORE_WORDS'; words: string[]; language: string }
@@ -110,13 +115,23 @@ export type BackgroundMessage =
   // YouTube thumbnail badges (youtubeFit.ts, videoFit.ts).
   | { type: 'VIDEO_FIT'; language: string; videoIds: string[] }
   | { type: 'QUEUE_VIDEO'; language: string; videoId: string }
+  // Desktop watching (watchSignal.ts) and the popup's Unmark.
+  | { type: 'WATCH_STATUS'; videoId: string; language: string }
+  | { type: 'WATCH_MARK'; videoId: string; share: number; language: string }
+  | { type: 'WATCH_UNMARK'; videoId: string }
+  // The history page read (watchHistory.ts), from the popup only.
+  | { type: 'HISTORY_ALLOW' }
+  | { type: 'HISTORY_OFF' }
   | ({ type: 'BACKEND_FETCH' } & BackendRequest);
 
 // Messages a content script owns and handles.
 export type ContentScriptMessage =
   | { type: 'EXTRACT_ARTICLE' }
   | { type: 'AUTH_SUCCESS'; session?: Session }
-  | { type: 'PREFS_UPDATED' };
+  | { type: 'PREFS_UPDATED' }
+  // To watchSignal.ts, from the popup.
+  | { type: 'WATCH_STATE' }
+  | { type: 'WATCH_RESET' };
 
 export function sendToBackground<TResponse = unknown>(
   message: BackgroundMessage,

@@ -50,6 +50,7 @@ from utils import get_video_words, is_special_character
 from video_fit_routes import router as video_fit_router
 from videoparsing import main as process_video
 from vocabulary_routes import router as vocabulary_router
+from watch_routes import router as watch_router
 from word_importance import media_ranks, video_ranks, with_importance
 
 app = FastAPI()
@@ -147,6 +148,7 @@ app.include_router(exposure_router, tags=["exposure"])
 app.include_router(vocabulary_router, tags=["vocabulary"])
 app.include_router(channel_router, tags=["channels"])
 app.include_router(video_fit_router, tags=["videos"])
+app.include_router(watch_router, tags=["watch"])
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 

@@ -10,7 +10,7 @@ any request.
 Clients discover Supabase OAuth through mcp_auth.py. See docs/mcp-oauth.md
 for project setup and connecting ChatGPT or Claude.
 
-Tools: get_vocabulary and score_text read (vocabulary.py); record_practice
+Tools: get_vocabulary, get_word_exposures and score_text read (vocabulary.py); record_practice
 (practice.py), record_exposure, set_word_status and add_words (vocabulary.py)
 write.
 get_grammar_overview and get_grammar_details read the grammar curriculum and
@@ -53,10 +53,12 @@ from vocabulary import (
     StatusChange,
     TextScore,
     Vocabulary,
+    WordExposures,
     WordsAdded,
     add_words,
     get_vocabulary,
     get_vocabulary_store,
+    get_word_exposures,
     record_exposure,
     score_text,
     set_word_status,
@@ -69,8 +71,16 @@ mcp = FastMCP(
         "flashcard reviews, itself or in a connected app such as RemNote. Before practising "
         "vocabulary with the user, pick words with get_vocabulary (due words first); at the end "
         "of the session, report the results with record_practice. When you write a text for "
-        "the user to read in the language, check its level with score_text, and once they have "
-        "read it, log it with record_exposure. Take the user at their word about what they "
+        "the user to read in the language, check its level with score_text. In a "
+        "conversation in the language, fetch the words the user is learning once with "
+        "get_vocabulary (status 'learning', limit 5000) and keep the list. In every turn, "
+        "judge from the user's answer whether they took in the whole of your previous reply "
+        "or a text they asked for (they respond to its end or what it asked, or heard it out "
+        "in a voice conversation), and if they did, log the learning words that appeared in "
+        "it with record_exposure. When you write examples or texts in the language, build them "
+        "around the words the user is learning, fill the rest with words they know, and now "
+        "and then bring in one common word they haven't met, glossed in parentheses. "
+        "Take the user at their word about what they "
         "know: words they know outright go to known with set_word_status, and words they say "
         "they can read but not produce get a correct 'recognize' answer, self_reported, with "
         "record_practice. Don't quiz them first unless they ask. When the user asks to add "
@@ -165,6 +175,35 @@ async def get_vocabulary_tool(
                                    language, status, limit)
 
 
+@mcp.tool(name="get_word_exposures", annotations=ToolAnnotations(
+    title="See how often words were seen and produced", readOnlyHint=True, openWorldHint=False,
+))
+async def get_word_exposures_tool(
+    ctx: Context,
+    language: Language | None = None,
+    words: Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]],
+                     Field(max_length=200)] = [],  # noqa: B006
+    order: Literal["least", "most"] = "least",
+    limit: Annotated[int, Field(ge=1)] = 50,
+) -> WordExposures:
+    """How often the user has met each word they're learning: seen counts the times they
+    read or heard it (in a reply of yours they took in, a text, Langfour's reader or a
+    video's captions), produced the times they came up with it themselves in practice
+    and got it right (produce_wrong when they didn't), with the date of the last of each.
+
+    Use it when the user asks how often they've seen or used their words, or to find
+    learning words they've barely met, to build a text or practice around. order 'least'
+    lists the least seen first, 'most' the most seen. words narrows it to a few words, as
+    get_vocabulary lists them (with the article, e.g. 'la casa') or as the user saw them;
+    leave it out for all of their learning words. language is an ISO code (es, de, it or
+    fr); leave it out for the language the user is studying. learning says how many
+    learning words there are; not_learning lists words asked for that aren't in their
+    learning list.
+    """
+    return await asyncio.to_thread(get_word_exposures, get_vocabulary_store(), _user_id(ctx),
+                                   language, words, order, limit)
+
+
 @mcp.tool(name="score_text", annotations=ToolAnnotations(
     title="Check a text's level", readOnlyHint=True, openWorldHint=False,
 ))
@@ -185,23 +224,30 @@ async def score_text_tool(
 
 
 @mcp.tool(name="record_exposure", annotations=ToolAnnotations(
-    title="Log a text the user read",
+    title="Log words the user read",
     readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False,
 ))
 async def record_exposure_tool(
     language: Language,
-    text: Annotated[str, Field(min_length=1, max_length=MAX_TEXT)],
+    words: Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]],
+                     Field(min_length=1, max_length=200)],
     ctx: Context,
 ) -> ExposureSummary:
-    """Log that the user read a text in the target language, once per text, after they
-    have read it. Langfour notes each word they're learning or haven't met as seen; it
-    doesn't change their flashcard schedule.
+    """Log that the user read words they're learning: the learning words in a reply of
+    yours they took in, or in a text they asked for (a story, an article) once they've
+    read it. Langfour notes each as seen; it doesn't change their flashcard schedule.
 
-    Only for texts the user chose to read (a story or article they asked for), not for
-    everything you wrote in the conversation.
+    Know the learning words before you write: fetch them once per conversation with
+    get_vocabulary (status 'learning', limit 5000) and keep the list. In every turn, judge
+    from the user's answer whether they engaged with the whole of your previous reply:
+    they respond to its end or to what it asked, or heard it out in a voice conversation.
+    If they did, log the learning words that appeared in it, in any form, each once and
+    written as get_vocabulary lists them (with the article, e.g. 'la casa'). If they
+    skimmed it, cut you off or answered only its first lines, don't, and never log a
+    reply twice. not_learning lists words that aren't in their learning list.
     """
     return await asyncio.to_thread(record_exposure, get_vocabulary_store(), _user_id(ctx),
-                                   language, text)
+                                   language, words)
 
 
 @mcp.tool(name="set_word_status", annotations=ToolAnnotations(
