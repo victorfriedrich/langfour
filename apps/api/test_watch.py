@@ -81,7 +81,7 @@ class FakeStore:
 
     def write(self, user_id, language, video_id, fields):
         row = self.data.setdefault(video_id, {"video_id": video_id, "unmarked_at": None,
-                                              "share": None, "source": "manual",
+                                              "share": None, "source": "history",
                                               "created_at": NOW.isoformat()})
         row.update({"language": language, **fields})
 
@@ -133,10 +133,9 @@ def at(day_offset=0):
 
 # --- watched or not --------------------------------------------------------
 
-def test_watched_means_70_percent_unknown_share_or_marked_by_hand():
+def test_watched_means_70_percent_or_unknown_share():
     assert watch.is_watched({"share": 0.7, "source": "history", "unmarked_at": None})
     assert watch.is_watched({"share": None, "source": "history", "unmarked_at": None})
-    assert watch.is_watched({"share": 0.1, "source": "manual", "unmarked_at": None})
     assert not watch.is_watched({"share": 0.69, "source": "history", "unmarked_at": None})
     assert not watch.is_watched({"share": 1.0, "source": "desktop", "unmarked_at": at()})
 
@@ -231,9 +230,9 @@ def test_an_unmarked_video_stays_unmarked_on_the_next_history_read(videos):
 
 
 def test_an_unmarked_video_the_user_quit_comes_back_when_rewatched(videos):
-    # Unmarked after quitting at 30%; then watched to the end on the phone.
+    # Unmarked with the bar at 30%; then watched to the end on the phone.
     store = FakeStore([{"video_id": A, "share": 0.3, "watched_at": None, "unmarked_at": at(2),
-                        "source": "manual"}])
+                        "source": "history"}])
     _, heard = watch.record_history(store, USER, history({"video_id": A, "share": 1.0, "day": 0}))
     assert watch.status(store, USER, "es", A).watched and heard == [A]
 
@@ -290,14 +289,12 @@ def test_no_recap_without_qualifying_words(videos):
     assert recap(store).words == []
 
 
-def test_recap_leaves_out_other_days_unmarked_quit_and_hand_marked_videos(videos):
+def test_recap_leaves_out_other_days_unmarked_and_quit_videos(videos):
     store = FakeStore([
         {"video_id": A, "watched_at": at(0)},                      # today
         {"video_id": B, "watched_at": at(1), "unmarked_at": at()},  # unmarked
         {"video_id": C, "watched_at": at(1), "share": 0.2, "source": "history"},
     ])
-    assert recap(store).videos == 0
-    store = FakeStore([{"video_id": A, "watched_at": at(1), "source": "manual"}])
     assert recap(store).videos == 0
 
 

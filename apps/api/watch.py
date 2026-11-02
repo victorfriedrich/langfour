@@ -2,15 +2,16 @@
 Which YouTube videos the user watched, and the next day's recap of their
 words (docs/plans/youtube-plan.md, feature 2).
 
-Three sources fill watch_events (sql/watch_events.sql), one row per video:
+Two sources fill watch_events (sql/watch_events.sql), one row per video:
 
   - desktop: the extension counts the seconds played on youtube.com and
     reports a video once 70% of it was played.
   - history: with the user's consent, the extension reads
     youtube.com/feed/history, which also lists what they watched in the
     YouTube app on their phone, with each video's red progress bar.
-  - manual: the web Videos page's "Hide & mark as seen" (mark_video_as_seen,
-    in SQL).
+
+The recommender leaves watched videos out (get_watched_videos), and the web
+Videos page lists them with Unmark.
 
 Only videos in Langfour's index for the user's language are kept: the
 history page lists everything the account watched, and an id that isn't a
@@ -213,10 +214,9 @@ def sentence_with(doc: dict, word_id: int) -> str | None:
 # ---------------------------------------------------------------------------
 
 def is_watched(row: dict) -> bool:
-    """As the videos_seen view decides it."""
+    """Not unmarked, and 70% played or the share unknown."""
     share = row.get("share")
-    return (row.get("unmarked_at") is None
-            and (share is None or share >= WATCHED_SHARE or row.get("source") == "manual"))
+    return row.get("unmarked_at") is None and (share is None or share >= WATCHED_SHARE)
 
 
 def merge_desktop(row: dict | None, share: float, now: datetime) -> dict:
@@ -398,9 +398,7 @@ def watched_list(store: WatchStore, user_id: str, language: str) -> WatchedList:
 
 def _recap_rows(store: WatchStore, user_id: str, language: str,
                 start: datetime, end: datetime) -> list[dict]:
-    # Marking by hand on the Videos page is putting a video away, not watching it.
-    return [r for r in store.watched_between(user_id, language, start, end)
-            if is_watched(r) and r["source"] != "manual"]
+    return [r for r in store.watched_between(user_id, language, start, end) if is_watched(r)]
 
 
 def recap(store: WatchStore, user_id: str, language: str, day: date,

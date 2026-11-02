@@ -435,21 +435,28 @@ class Recommender:
 
         return D
     
-    async def get_seen_videos(self, user_id: str) -> list[str]:
+    async def get_watched_videos(self, user_id: str) -> list[str]:
+        """Videos the user watched (watch_events, rules in watch.py), which
+        recommendations leave out. Unmarked ones and ones left under 70% come
+        back."""
+        from watch import is_watched  # imports the Supabase client, like __init__ does
         try:
-            seen_video_ids = set()
+            watched: set[str] = set()
             page = 0
             while True:
-                response = self.supabase.table("videos_seen").select("video_id").eq("user_id", user_id).range(page*1000, (page+1)*1000-1).execute()
+                response = (self.supabase.table("watch_events")
+                            .select("video_id, share, unmarked_at")
+                            .eq("user_id", user_id).is_("unmarked_at", "null")
+                            .order("id").range(page*1000, (page+1)*1000-1).execute())
                 if not response.data:
                     break
-                seen_video_ids.update(word['video_id'] for word in response.data)
+                watched.update(r["video_id"] for r in response.data if is_watched(r))
                 page += 1
-            return list(seen_video_ids)
+            return list(watched)
         except Exception:
-            logger.error("Error fetching seen videos from Supabase", exc_info=True)
+            logger.error("Error fetching watched videos from Supabase", exc_info=True)
             return []
-    
+
     async def get_known_words(self, user_id: str) -> list[int]:
         """Words the user knows: declared known, or learned in reviews
         (sql/known_words.sql). A word only saved, or still being learned,
@@ -513,7 +520,7 @@ class Recommender:
             return []
 
         user_known_words = await self.get_known_words(user_id)
-        seen_videos = await self.get_seen_videos(user_id)
+        seen_videos = await self.get_watched_videos(user_id)
 
         logger.debug(
             "User has %d known words and has seen %d videos.",

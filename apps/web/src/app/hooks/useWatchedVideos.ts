@@ -5,14 +5,14 @@ export interface WatchedVideo {
   video_id: string;
   title: string | null;
   watched_at: string;
-  source: 'desktop' | 'history' | 'manual';
+  source: 'desktop' | 'history';
 }
 
 /**
  * The videos marked watched in the sidebar's language, newest first
- * (GET /api/watch): played to 70% on desktop, read from the YouTube history
- * page, or hidden here by hand. Unmark takes one off, so it shows up in the
- * recommendations again and can be watched again.
+ * (GET /api/watch): played to 70% on desktop, or read from the YouTube
+ * history page. Unmark takes one off, so it shows up in the recommendations
+ * again and can be watched again.
  */
 export const useWatchedVideos = (enabled: boolean) => {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';

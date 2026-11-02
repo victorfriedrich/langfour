@@ -52,11 +52,11 @@ def test_hidden_videos_are_never_recommended():
     async def get_known_words(_user_id):
         return [0]
 
-    async def get_seen_videos(_user_id):
+    async def get_watched_videos(_user_id):
         return []
 
     recommender.get_known_words = get_known_words
-    recommender.get_seen_videos = get_seen_videos
+    recommender.get_watched_videos = get_watched_videos
 
     by_words = [v["id"] for v in recommender.recommend_videos_by_words([0], "es")]
     for_user = [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es"))]
@@ -157,11 +157,11 @@ def test_recommendations_use_manifest_titles_without_opening_transcripts(monkeyp
     async def get_known_words(_user_id):
         return [0]
 
-    async def get_seen_videos(_user_id):
+    async def get_watched_videos(_user_id):
         return []
 
     recommender.get_known_words = get_known_words
-    recommender.get_seen_videos = get_seen_videos
+    recommender.get_watched_videos = get_watched_videos
 
     def fail_if_opened(*args, **kwargs):
         raise AssertionError("recommendations must not open transcript files")
@@ -229,7 +229,7 @@ def test_too_short_videos_are_judged_on_distinct_words():
         return []
 
     recommender.get_known_words = none
-    recommender.get_seen_videos = none
+    recommender.get_watched_videos = none
     assert [v["id"] for v in asyncio.run(recommender.recommend_videos("user", "es"))] == ["video-1"]
 
 
@@ -285,3 +285,50 @@ def test_videos_by_words_skip_clips_and_can_rank_by_distinct_targets():
 
     chart = recommender.recommend_videos_by_words(targets, "es", distinct=False)
     assert "newWords" not in chart[0] and chart[0]["percentUnderstood"] > 0
+
+
+class _WatchEvents:
+    """watch_events as PostgREST pages it, for get_watched_videos."""
+
+    def __init__(self, rows):
+        self.rows, self.asked = rows, []
+
+    def table(self, name):
+        self.asked.append(name)
+        return self
+
+    def select(self, *_):
+        return self
+
+    def eq(self, *_):
+        return self
+
+    def is_(self, column, value):
+        self.rows = [r for r in self.rows if r[column] is None]
+        return self
+
+    def order(self, *_):
+        return self
+
+    def range(self, start, end):
+        self.span = (start, end)
+        return self
+
+    def execute(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(data=self.rows[self.span[0]:self.span[1] + 1])
+
+
+def test_recommendations_leave_out_watched_videos_only(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("REQUIRE_SERVICE_ROLE", "0")
+    monkeypatch.setenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.x")
+    recommender = blank_recommender()
+    recommender.supabase = _WatchEvents([
+        {"video_id": "watched", "share": 0.9, "unmarked_at": None},
+        {"video_id": "unknown-share", "share": None, "unmarked_at": None},
+        {"video_id": "quit", "share": 0.3, "unmarked_at": None},
+        {"video_id": "unmarked", "share": 1.0, "unmarked_at": "2026-11-02T10:00:00+00:00"},
+    ])
+    assert sorted(asyncio.run(recommender.get_watched_videos("user"))) == ["unknown-share", "watched"]
+    assert recommender.supabase.asked[0] == "watch_events"

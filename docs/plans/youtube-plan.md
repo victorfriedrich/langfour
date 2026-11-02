@@ -184,9 +184,10 @@ The recap has to be simple and fast: one glance, at most one tap, never a chore.
 - Ignoring it is fine. It is replaced the next day, and nothing piles up.
 - Added words go to reviews (or RemNote) with a line from the video as context.
 
-- 70% played on desktop marks a video watched and replaces the manual "Hide & mark as seen".
+- 70% played on desktop marks a video watched; the Videos page's "Hide & mark as seen" goes.
 - A `watch_events` table: learner, video, watched at, share played when known, source. Own rows
-  only, like `user_media`. `videos_seen` becomes a view over it so current callers keep working.
+  only, like `user_media`. It replaces `videos_seen`, whose rows were mostly dismissals rather
+  than watching, so they aren't carried over (built in PR 123).
 - What it enables: watched marks, feed seeds and "favourite this channel?" suggestions, word recaps
   and next-video suggestions for phone watching, and "heard" evidence for feature 1.
 

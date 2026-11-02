@@ -1,12 +1,11 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useContext, useCallback } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import Wordpanel from '../components/Wordpanel';
 import { useVideoRecommendations } from '../hooks/useVideoRecommendations';
 import ConfirmationPopup from '../components/ConfirmationPopup';
 import { UserContext } from '@/context/UserContext';
-import { useSeenVideos } from '../hooks/useSeenVideos';
 import { useWatchedVideos } from '../hooks/useWatchedVideos';
 
 const DEFAULT_CATEGORY = 'Travel';
@@ -26,7 +25,6 @@ const YouTubeVideoGrid: React.FC = () => {
   const { videos, categories, isVideosLoading, isCategoriesLoading, error } =
     useVideoRecommendations(recommendedCategory, language?.code || 'es');
   const { videos: watchedVideos, error: watchedError, unmark } = useWatchedVideos(showWatched);
-  const [seenRefresh, setSeenRefresh] = useState(0);
 
   // A language without Travel videos starts on All Videos instead.
   useEffect(() => {
@@ -34,7 +32,7 @@ const YouTubeVideoGrid: React.FC = () => {
     if (categories.length > 0 && !categories.some((c) => c.category === selectedCategory)) {
       setSelectedCategory('All Videos');
     }
-  }, [categories, selectedCategory]);
+  }, [categories, selectedCategory, showWatched]);
 
   const [selectedVideo, setSelectedVideo] = useState<{ id: string; title: string } | null>(null);
   const [confirmationPopup, setConfirmationPopup] = useState<{ count: number; visible: boolean }>({
@@ -43,13 +41,6 @@ const YouTubeVideoGrid: React.FC = () => {
   });
   const [loadedVideos, setLoadedVideos] = useState<Set<string>>(new Set());
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
-  const [dismissedVideos, setDismissedVideos] = useState<Set<string>>(new Set());
-
-  const {
-    seenVideos,
-    isLoading: isSeenVideosLoading,
-    markVideoAsSeen,
-  } = useSeenVideos(seenRefresh);
 
   // ────────────────────────────────────────────────────────────────────────────────
   // INTERSECTION-OBSERVER  (lazy-load thumbnails)
@@ -105,39 +96,13 @@ const YouTubeVideoGrid: React.FC = () => {
     if (category !== WATCHED) setRecommendedCategory(category);
   };
 
-  const handleUnmark = useCallback(
-    async (videoId: string) => {
-      await unmark(videoId);
-      setDismissedVideos((prev) => {
-        const next = new Set(prev);
-        next.delete(videoId);
-        return next;
-      });
-      setSeenRefresh((n) => n + 1);
-    },
-    [unmark]
-  );
-
-  // dismiss-with-X
-  const handleDismissVideo = useCallback(
-    (videoId: string) => {
-      setDismissedVideos((prev) => new Set(prev).add(videoId));
-      markVideoAsSeen(videoId).catch((err) => console.error(err));
-    },
-    [markVideoAsSeen]
-  );
 
   // ────────────────────────────────────────────────────────────────────────────────
   // COMPUTED
   // ────────────────────────────────────────────────────────────────────────────────
   const filteredCategories = categories.filter((c) => !/^(failed|unknown)$/i.test(c.category.trim()));
 
-  const displayedVideos = videos
-    .filter((v) => !seenVideos.includes(v.id))
-    .filter((v) => !dismissedVideos.has(v.id));
-
-  const isInitialSeenLoading = isSeenVideosLoading && seenVideos.length === 0;
-  const isLoading = isCategoriesLoading || isVideosLoading || isInitialSeenLoading;
+  const isLoading = isCategoriesLoading || isVideosLoading;
 
   // ────────────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -208,7 +173,7 @@ const YouTubeVideoGrid: React.FC = () => {
                   <span className="text-sm text-gray-500">{new Date(video.watched_at).toLocaleDateString()}</span>
                   <button
                     className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    onClick={() => handleUnmark(video.video_id).catch((err) => console.error(err))}
+                    onClick={() => unmark(video.video_id).catch((err) => console.error(err))}
                   >
                     Unmark
                   </button>
@@ -222,26 +187,15 @@ const YouTubeVideoGrid: React.FC = () => {
       {/* ───────────── VIDEO GRID ───────────── */}
       <div className={showWatched ? 'hidden' : undefined}>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {displayedVideos.length === 0 ? (
+        {/* Watched videos are left out by the API (recommender.get_watched_videos). */}
+        {videos.length === 0 ? (
           <div className="col-span-full text-center text-gray-500">No more videos 🎉</div>
         ) : (
-          displayedVideos.map((video) => (
+          videos.map((video) => (
             <div
               key={video.id}
               className="bg-white rounded-lg shadow-md overflow-hidden group cursor-pointer flex flex-col h-full relative"
             >
-              {/* subtle X button */}
-              <button
-                className="absolute z-20 top-2 right-2 bg-black bg-opacity-50 hover:bg-opacity-75 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto"
-                title="Hide & mark as seen"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDismissVideo(video.id);
-                }}
-              >
-                <X size={14} />
-              </button>
-
               {/* Thumbnail / Player */}
               <div className="aspect-w-16 aspect-h-8 h-40 video-container relative" data-video-id={video.id}>
                 {playingVideoId === video.id ? (
