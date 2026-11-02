@@ -5,16 +5,18 @@ A private or deleted video's thumbnail answers 404 at i.ytimg.com. That is free
 437 of the corpus's 404s were also refused by YouTube's oEmbed (357 private, 80
 not found), and of 400 sampled 200s none had gone.
 
-A daemon thread sweeps every loaded video at boot and once a day after, so a
-video that goes dark later is hidden within a day, and one that comes back is
-shown again. The result only lives in memory: a sweep costs a few minutes of
-small requests, and a table would add a write path to save the few minutes after
-a deploy before the first sweep ends. Those minutes recommend as before.
+blacklist.txt removed the 434 that were gone on 2026-10-17, once. This is what
+keeps up after that: a daemon thread sweeps every loaded video at boot and once
+a day after, so a video that goes dark later is hidden within a day, and one
+that comes back is shown again. The first sweep from Koyeb found 7 of 23,495,
+all 200s or 404s, so YouTube's block on cloud IPs for captions and audio does
+not reach thumbnails. The result only lives in memory: a sweep costs a few
+minutes of small requests, and a table would add a write path to save the few
+minutes after a deploy before the first sweep ends. Those minutes recommend as
+before.
 
 Anything but a 404 or a 200 says nothing about the video, so it keeps the state
-it had. YouTube blocks cloud IPs for captions and audio; if it ever did so here
-the sweep would find nothing rather than hide everything, and its log line says
-how many went unanswered.
+it had, and the log line says how many went unanswered.
 """
 
 from __future__ import annotations
@@ -27,12 +29,15 @@ from concurrent.futures import ThreadPoolExecutor
 import httpx
 
 log = logging.getLogger(__name__)
+# httpx logs each request at INFO: 23,000 lines a sweep, burying everything else.
+logging.getLogger("httpx").addFilter(lambda record: "i.ytimg.com" not in record.getMessage())
 
 THUMBNAIL = "https://i.ytimg.com/vi/{}/mqdefault.jpg"
 PARALLEL = 8
 SWEEP_EVERY_S = 24 * 3600
-# 2% of the corpus was gone on 2026-11-02. Far above that the answers aren't
-# about the videos, and believing them would empty the recommendations.
+# 2% of all transcripts ever ingested were gone on 2026-11-02. Far above that the
+# answers aren't about the videos, and believing them would empty the
+# recommendations.
 MAX_GONE_SHARE = 0.2
 
 
@@ -60,7 +65,6 @@ def sweep(http: httpx.Client, video_ids: Sequence[str], previous: set[str],
     gone = {v for v, answer in zip(video_ids, answers, strict=True)
             if answer or (answer is None and v in previous)}
     unanswered = answers.count(None)
-    # print, like ingest_worker.py: the app configures no logging, so info is dropped.
     if len(gone) > MAX_GONE_SHARE * len(video_ids):
         print(f"video sweep: ignored, {len(gone)} of {len(video_ids)} look gone", flush=True)
         return previous
