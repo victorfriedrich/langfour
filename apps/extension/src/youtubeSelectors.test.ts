@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { findVideoCards, videoIdFromHref } from './youtubeSelectors';
+import { findVideoCards, titleAt, videoIdFromHref } from './youtubeSelectors';
 
 // Saved YouTube pages (test/youtube/README.md). A failure here after a
 // recapture means YouTube changed its markup and youtubeSelectors.ts needs
@@ -37,6 +37,15 @@ describe('YouTube selectors against saved pages', () => {
       { videoId: 'zrSyyNugKYo', card: 'yt-lockup-view-model', box: 'yt-thumbnail-view-model' },
       { videoId: 'DZ-DkAtQrGo', card: 'yt-lockup-view-model', box: 'yt-thumbnail-view-model' },
     ]);
+  });
+
+  it('find each card\'s title', () => {
+    for (const name of ['home.html', 'search.html', 'watch-sidebar.html']) {
+      for (const { card } of findVideoCards(page(name))) {
+        const heading = card.querySelector('h3')!;
+        expect(titleAt(heading.querySelector('span') ?? heading.firstElementChild!), name).toBeTruthy();
+      }
+    }
   });
 
   it('ignore thumbnails outside the known cards', () => {
