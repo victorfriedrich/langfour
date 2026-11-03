@@ -19,6 +19,12 @@
 --    logan, cesar, andalucia, agustin, cia. So are unclear ones: ex, cristo,
 --    debate, tina, serena, id, can, tara.
 --
+-- Ids follow the CREA order only for the original entries: the added words
+-- get new ids, after every original one. Membership is unaffected, which is
+-- all initialize_account and scripts/judge_thumbnails.py read. The one reader
+-- that takes "the first N by id" as the most frequent words is app.py's
+-- /recommendations/words/chart-data, which nothing calls.
+--
 -- HOW THIS GETS APPLIED: by hand, through the Supabase connector or the SQL
 -- editor, in one transaction. APPLIED 2026-11-03: the check below gave the
 -- expected counts, with 9,310 rows archived. Undo:
