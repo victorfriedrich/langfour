@@ -462,7 +462,9 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
                     className="form-checkbox block h-4 w-4 text-indigo-600"
                   />
                 </td>
-                <td className="whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900 sm:min-w-56">{w.word}</td>
+                <td className="whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900">
+                  <div className="sm:min-w-56">{w.word}</div>
+                </td>
                 <td className="w-full whitespace-nowrap py-2.5 text-gray-500">{w.translation}</td>
                 <td className="whitespace-nowrap py-2.5 pr-1 text-right text-xs text-gray-400">{evidence(w)}</td>
               </tr>
@@ -499,14 +501,17 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
                       onClick={(e) => e.stopPropagation()}
                     />
                   </td>
-                  <td className="whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900 sm:min-w-56">
-                    {stages?.has(w.word_id) && (
-                      <span
-                        className={`mr-2.5 inline-block h-1.5 w-1.5 -translate-y-px rounded-full ${STAGE_DOT[stages.get(w.word_id)!].className}`}
-                        title={STAGE_DOT[stages.get(w.word_id)!].label}
-                      />
-                    )}
-                    {w.word}
+                  <td className="whitespace-nowrap py-2.5 pr-4 font-medium text-gray-900">
+                    {/* min-width on the cell itself isn't honoured everywhere; on a block inside it is */}
+                    <div className="sm:min-w-56">
+                      {stages?.has(w.word_id) && (
+                        <span
+                          className={`mr-2.5 inline-block h-1.5 w-1.5 -translate-y-px rounded-full ${STAGE_DOT[stages.get(w.word_id)!].className}`}
+                          title={STAGE_DOT[stages.get(w.word_id)!].label}
+                        />
+                      )}
+                      {w.word}
+                    </div>
                   </td>
                   <td className="w-full whitespace-nowrap py-2.5 text-gray-500">{w.translation}</td>
                   {showDue && (
