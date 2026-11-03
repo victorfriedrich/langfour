@@ -27,7 +27,7 @@ Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 
 | Table | Columns | Keys and constraints |
 |---|---|---|
-| `userdata` | `user_id`, `languages text[]`, `default_language`, `known_words_updated_at`, `review_provider`, `chatgpt_language_check` | PK `user_id`; FK → `auth.users`; `default_language` in the four codes; `review_provider` in `langfour, remnote`, default `langfour`; `chatgpt_language_check` default false (`language_check.sql`, not applied yet) |
+| `userdata` | `user_id`, `languages text[]`, `default_language`, `known_words_updated_at`, `review_provider`, `chatgpt_language_check` | PK `user_id`; FK → `auth.users`; `default_language` in the four codes; `review_provider` in `langfour, remnote`, default `langfour`; `chatgpt_language_check` default false (`language_check.sql`, applied 2026-10-30) |
 | `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known, disabled` (`disabled`: flashcards turned off in RemNote, set by the sync; see `remnote_sync.sql`); SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
 | `flashcardtests` | `id`, `user_id`, `word_id`, `test_type`, `test_result`, `tested_at` | PK `id`; `test_type` in `flashcard, typing`; index `(user_id, word_id, test_result)` |
 | `usertranslations` | `id`, `user_id`, `word_id`, `custom_translation`, `created_at` | PK `id`; index `(user_id, word_id)` |
@@ -90,7 +90,7 @@ All three: policy `select_own`; written only by the API, through
 `record_grammar(p_user_id, p_events, p_concepts, p_chapters)` (service role
 only), which writes a session's events and new state in one transaction.
 
-### Langfour as a provider (`langfour_provider.sql`, not applied yet)
+### Langfour as a provider (`langfour_provider.sql`, applied 2026-10-29)
 
 Langfour's schedule moves from the SM-2 columns on `userwords` into the
 `srs_*` tables as provider `langfour`: a note and one `forward` card per
@@ -129,7 +129,7 @@ Policies: `users queue own videos [insert]`, `users read own submissions
 [select]`. Workers claim and update rows with `service_role`. Definition in
 `video_queue.sql`. `pending_words` (`pending_words.sql`, applied 2026-10-15) has RLS on
 and no policies: only `service_role` reads or writes it. The same holds for
-`video_scores` (`video_scores.sql`, applied 2026-10-29), for `video_looks` (`video_looks.sql`, not applied yet). And for `video_word_ranks` (`word_ranks.sql`, which also adds
+`video_scores` (`video_scores.sql`, applied 2026-10-29), for `video_looks` (`video_looks.sql`, applied 2026-11-02). And for `video_word_ranks` (`word_ranks.sql`, which also adds
 `user_media.word_ranks` and `word_ranks_version`, the same ranking for a
 Library item).
 
@@ -176,7 +176,7 @@ name in each app; `none` means nothing in the repo calls it today.
 | `set_userwords_status(_word_ids int[], _status)` | void | web |
 | `total_words_known()` | integer | web |
 | `total_words_known(language_filter)` | integer | web |
-| `update_spaced_repetition(_word_id, _test_result)` | void | web. The SM-2 update lives here, not in client code. `langfour_provider.sql` (not applied yet) makes it record the review too and work on the word's Langfour card |
+| `update_spaced_repetition(_word_id, _test_result)` | void | web. The SM-2 update lives here, not in client code. `langfour_provider.sql` (applied 2026-10-29) makes it record the review too and work on the word's Langfour card |
 
 `unaccent`, `unaccent_init`, `unaccent_lexize` are the `unaccent` extension,
 installed into `public`.
