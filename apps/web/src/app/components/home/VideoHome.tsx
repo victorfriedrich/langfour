@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ChevronDown, Loader2, Search } from 'lucide-react';
+import { UserContext } from '@/context/UserContext';
 import { useHome } from '../../hooks/useHome';
 import { useExtensionStatus } from '../../hooks/useExtensionStatus';
 import { useWatchedVideos } from '../../hooks/useWatchedVideos';
@@ -80,7 +81,7 @@ function FilterSelect<T extends string>({ label, value, options, onChange }: {
   );
 }
 
-function WatchedList({ language }: { language: string }) {
+function WatchedList({ language, onUnmark }: { language: string; onUnmark: () => void }) {
   const { videos, error, unmark } = useWatchedVideos(true);
   if (error) return <p className="py-8 text-center text-red-500">{error}</p>;
   if (videos === null) return <Loader2 className="mx-auto my-8 h-6 w-6 animate-spin text-indigo-500" />;
@@ -112,7 +113,7 @@ function WatchedList({ language }: { language: string }) {
             <span className="text-xs text-gray-500">{new Date(video.watched_at).toLocaleDateString()}</span>
             <button
               type="button"
-              onClick={() => unmark(video.video_id).catch((err) => console.error(err))}
+              onClick={() => unmark(video.video_id).then(onUnmark).catch((err) => console.error(err))}
               className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Unmark
@@ -129,17 +130,46 @@ function WatchedList({ language }: { language: string }) {
  * YouTube with the extension, come back to what you saved.
  */
 export default function VideoHome() {
+  const { user, language } = useContext(UserContext);
+  // Filters and pending UI actions belong to this learner and language.
+  return <VideoHomeContent key={`${user?.id}:${language?.code}`} />;
+}
+
+function VideoHomeContent() {
   const [filters, setFilters] = useState<HomeFilters>(DEFAULT_FILTERS);
   const [view, setView] = useState<string>(ALL); // a topic, or WATCHED
   const [search, setSearch] = useState('');
-  const { page, loading, error, reload, setHidden, setFollowing, cameBack, language } = useHome(filters);
+  const { page: loadedPage, loading, error, reload, setHidden, setFollowing, cameBack, language } = useHome(filters);
   const [shown, setShown] = useState(PAGE);
   const [grammarFor, setGrammarFor] = useState<string | null>(null);
   const [hiddenVideos, setHiddenVideos] = useState<Set<string>>(new Set());
   const [hiddenChannels, setHiddenChannels] = useState<Set<string>>(new Set());
   const [pill, setPill] = useState<PillState | null>(null);
   const [prompt, setPrompt] = useState<HomeVideo | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const extension = useExtensionStatus();
+
+  const page = useMemo(() => {
+    if (!loadedPage) return null;
+    const visible = (videos: HomeVideo[]) => videos.filter(
+      (v) => !hiddenVideos.has(v.id) && !(v.channel && hiddenChannels.has(v.channel)),
+    );
+    return {
+      ...loadedPage,
+      videos: visible(loadedPage.videos),
+      channels: loadedPage.channels.filter((c) => !hiddenChannels.has(c.name))
+        .map((c) => ({ ...c, best: visible(c.best) })),
+      empty: loadedPage.empty && {
+        ...loadedPage.empty,
+        nearest: loadedPage.empty.nearest && {
+          ...loadedPage.empty.nearest, videos: visible(loadedPage.empty.nearest.videos),
+        },
+        other: loadedPage.empty.other && {
+          ...loadedPage.empty.other, videos: visible(loadedPage.empty.other.videos),
+        },
+      },
+    };
+  }, [loadedPage, hiddenVideos, hiddenChannels]);
 
   const update = useCallback((change: Partial<HomeFilters>) => {
     setFilters((f) => ({ ...f, ...change }));
@@ -215,44 +245,67 @@ export default function VideoHome() {
     leave(video);
   };
 
-  const hide = (video: HomeVideo) => {
+  const hide = async (video: HomeVideo) => {
+    setActionError(null);
     setHiddenVideos((s) => new Set(s).add(video.id));
-    setPill({ kind: 'hidden', video, scope: 'video' });
-    setHidden(video.id, false, true).catch((err) => {
+    setPill(null);
+    try {
+      await setHidden(video.id, false, true);
+      setPill({ kind: 'hidden', video, scope: 'video' });
+    } catch (err) {
       console.error(err);
       setHiddenVideos((s) => {
         const next = new Set(s);
         next.delete(video.id);
         return next;
       });
-      setPill(null);
-    });
+      setActionError('Could not hide this video. Please try again.');
+    }
   };
 
-  const hideChannel = (video: HomeVideo) => {
+  const hideChannel = async (video: HomeVideo) => {
     if (!video.channel) return;
+    setActionError(null);
     setHiddenChannels((s) => new Set(s).add(video.channel!));
-    setPill({ kind: 'hidden', video, scope: 'channel' });
-    setHidden(video.id, true, true).catch((err) => console.error(err));
+    setPill(null);
+    try {
+      const channel = await setHidden(video.id, true, true);
+      if (!channel) throw new Error('Channel unavailable');
+      setPill({ kind: 'hidden', video, scope: 'channel' });
+    } catch (err) {
+      console.error(err);
+      setHiddenChannels((s) => {
+        const next = new Set(s);
+        next.delete(video.channel!);
+        return next;
+      });
+      setPill({ kind: 'hidden', video, scope: 'video' });
+      setActionError('Could not hide this channel. Please try again.');
+    }
   };
 
-  const undo = (video: HomeVideo, scope: 'video' | 'channel') => {
+  const undo = async (video: HomeVideo, scope: 'video' | 'channel') => {
+    setActionError(null);
     setPill(null);
     const without = <T,>(s: Set<T>, item: T) => {
       const next = new Set(s);
       next.delete(item);
       return next;
     };
-    if (scope === 'video') setHiddenVideos((s) => without(s, video.id));
-    else setHiddenChannels((s) => without(s, video.channel!));
-    setHidden(video.id, scope === 'channel', false).catch((err) => console.error(err));
+    try {
+      await setHidden(video.id, scope === 'channel', false);
+      if (scope === 'video') setHiddenVideos((s) => without(s, video.id));
+      else setHiddenChannels((s) => without(s, video.channel!));
+      reload();
+    } catch (err) {
+      console.error(err);
+      setPill({ kind: 'hidden', video, scope });
+      setActionError('Could not undo hiding. Please try again.');
+    }
   };
 
-  const visible = useMemo(
-    () => (page?.videos ?? []).filter((v) => !hiddenVideos.has(v.id) && !(v.channel && hiddenChannels.has(v.channel))),
-    [page, hiddenVideos, hiddenChannels],
-  );
-  const channels = (page?.channels ?? []).filter((c) => !hiddenChannels.has(c.name));
+  const visible = page?.videos ?? [];
+  const channels = page?.channels ?? [];
   const code = language ?? 'es';
   const query = filters.q.trim();
 
@@ -377,8 +430,9 @@ export default function VideoHome() {
       </div>
 
       <div className={loading && page ? 'opacity-60 transition-opacity' : undefined}>
-        {view === WATCHED ? <WatchedList language={code} /> : content()}
+        {view === WATCHED ? <WatchedList language={code} onUnmark={reload} /> : content()}
       </div>
+      {actionError && <p role="alert" className="mt-4 text-sm text-red-500">{actionError}</p>}
 
       {pill?.kind === 'hidden' && (
         <Pill>

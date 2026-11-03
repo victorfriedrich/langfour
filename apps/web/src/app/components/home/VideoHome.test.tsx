@@ -45,32 +45,36 @@ const EMPTY: HomePage = {
   channels: [],
 };
 
-let fetchWithAuth: ReturnType<typeof vi.fn>;
+let fetchWithAuth = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>();
 
 function respond(handler: (url: URL, init?: RequestInit) => unknown) {
   fetchWithAuth = vi.fn(async (url: string, init?: RequestInit) =>
     new Response(JSON.stringify(handler(new URL(url), init) ?? {}), { status: 200 }));
 }
 
-function renderHome() {
-  return render(
+function homeElement(language = 'es') {
+  return (
     <UserContext.Provider value={{
       user: { id: 'u', email: null, is_anonymous: false } as never,
       fetchWithAuth,
       loading: false,
-      language: { code: 'es', name: 'Spanish' } as never,
+      language: { code: language, name: language } as never,
       availableLanguages: [],
       setLanguage: () => {},
       initializeLanguage: async () => {},
     }}>
       <VideoHome />
-    </UserContext.Provider>,
+    </UserContext.Provider>
   );
+}
+
+function renderHome() {
+  return render(homeElement());
 }
 
 beforeEach(() => {
   extension.state = 'installed';
-  respond((url) => (url.pathname === '/api/home' ? PAGE : {}));
+  respond((url) => (url.pathname === '/api/home' ? PAGE : { channel: 'Molaviajar' }));
 });
 
 afterEach(() => {
@@ -100,16 +104,16 @@ it('takes a card away at once with Not interested, and brings it back with Undo'
   fireEvent.click(within(butler).getByRole('menuitem', { name: 'Not interested' }));
 
   expect(screen.queryByText(BUTLER.title)).toBeNull();
-  const pill = screen.getByRole('status');
+  const pill = await screen.findByRole('status');
   expect(pill.textContent).toContain('Hidden.');
   const hide = fetchWithAuth.mock.calls.find(([url]) => String(url).endsWith('/api/home/hide'))!;
-  expect(JSON.parse(hide[1].body)).toEqual({ language: 'es', video_id: BUTLER.id, channel: false });
+  expect(JSON.parse(String(hide[1]?.body))).toEqual({ language: 'es', video_id: BUTLER.id, channel: false });
 
   fireEvent.click(within(pill).getByRole('button', { name: 'Hide all from Molaviajar' }));
-  expect(screen.getByRole('status').textContent).toContain('Videos from Molaviajar hidden.');
+  expect((await screen.findByRole('status')).textContent).toContain('Videos from Molaviajar hidden.');
   fireEvent.click(within(screen.getByRole('status')).getByRole('button', { name: 'Undo' }));
   const unhide = fetchWithAuth.mock.calls.find(([url]) => String(url).endsWith('/api/home/unhide'))!;
-  expect(JSON.parse(unhide[1].body)).toEqual({ language: 'es', video_id: BUTLER.id, channel: true });
+  expect(JSON.parse(String(unhide[1]?.body))).toEqual({ language: 'es', video_id: BUTLER.id, channel: true });
 });
 
 it('says where a topic starts when the grammar filter leaves nothing', async () => {
@@ -166,4 +170,96 @@ it('explains the extension once, on the first video opened without it', async ()
   fireEvent.click(screen.getByText(BUTLER.title));
   expect(screen.queryByRole('dialog')).toBeNull();
   matchMedia.mockRestore();
+});
+
+async function hideCard(title: string) {
+  const card = (await screen.findAllByText(title))[0].closest('li')!;
+  fireEvent.click(within(card).getByRole('button', { name: 'More actions' }));
+  fireEvent.click(within(card).getByRole('menuitem', { name: 'Not interested' }));
+}
+
+it('hides a video from channel previews as well as the grid', async () => {
+  respond(() => ({ ...PAGE, channels: [{ ...PAGE.channels[0], best: [BASURERO] }] }));
+  renderHome();
+  await hideCard(BASURERO.title);
+  expect(screen.queryByText(BASURERO.title)).toBeNull();
+});
+
+it('hides videos from the empty-filter shelves', async () => {
+  localStorage.setItem('langfour-home-grammar-es', 'A2');
+  respond((url) => url.pathname === '/api/home' ? EMPTY : {});
+  renderHome();
+  const title = EMPTY.empty!.nearest!.videos[0].title;
+  await hideCard(title);
+  expect(screen.queryByText(title)).toBeNull();
+});
+
+it('only offers Undo after the hide has been persisted', async () => {
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => { finish = resolve; });
+  fetchWithAuth = vi.fn((url: string) => url.endsWith('/hide')
+    ? pending : Promise.resolve(new Response(JSON.stringify(PAGE))));
+  renderHome();
+  await hideCard(BUTLER.title);
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  finish(new Response(JSON.stringify({ channel: null })));
+  expect(await screen.findByRole('button', { name: 'Undo' })).toBeTruthy();
+});
+
+it('restores the channel when hiding it fails', async () => {
+  respond((url, init) => {
+    if (url.pathname === '/api/home') return PAGE;
+    if (init?.body && JSON.parse(String(init.body)).channel) throw new Error('Offline');
+    return {};
+  });
+  renderHome();
+  await hideCard(BASURERO.title);
+  fireEvent.click(await screen.findByRole('button', { name: 'Hide all from Ary Tenorio' }));
+  expect(await screen.findByText(PAGE.channels[0].best[0].title)).toBeTruthy();
+});
+
+it('keeps a video hidden when Undo fails', async () => {
+  respond((url) => {
+    if (url.pathname.endsWith('/unhide')) throw new Error('Offline');
+    return url.pathname === '/api/home' ? PAGE : {};
+  });
+  renderHome();
+  await hideCard(BUTLER.title);
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not undo hiding');
+  expect(screen.queryByText(BUTLER.title)).toBeNull();
+});
+
+it('reloads the recommendations after unmarking a watched video', async () => {
+  let unmarked = false;
+  respond((url) => {
+    if (url.pathname === '/api/watch') return { videos: [{
+      video_id: BUTLER.id, title: BUTLER.title, watched_at: '2026-11-03', source: 'desktop',
+    }] };
+    if (url.pathname === '/api/watch/unmark') { unmarked = true; return {}; }
+    return { ...PAGE, videos: unmarked ? PAGE.videos : [NIGHT] };
+  });
+  renderHome();
+  await screen.findByText(NIGHT.title);
+  fireEvent.click(screen.getByRole('button', { name: 'Watched' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Unmark' }));
+  await screen.findByText('No watched videos yet');
+  fireEvent.click(screen.getByRole('button', { name: 'All' }));
+  expect(await screen.findByText(BUTLER.title)).toBeTruthy();
+});
+
+it('clears the previous language’s cards, topic and optimistic hides on a language switch', async () => {
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => { finish = resolve; });
+  fetchWithAuth = vi.fn((url: string) => url.includes('language=de')
+    ? pending : Promise.resolve(new Response(JSON.stringify(url.includes('/api/home?') ? PAGE : {}))));
+  const { rerender } = renderHome();
+  await hideCard(BUTLER.title);
+  await screen.findByRole('button', { name: 'Undo' });
+  fireEvent.click(screen.getByRole('button', { name: 'Travel' }));
+  rerender(homeElement('de'));
+  expect(screen.queryByText(NIGHT.title)).toBeNull();
+  expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+  finish(new Response(JSON.stringify(PAGE)));
+  expect(await screen.findByText(BUTLER.title)).toBeTruthy();
 });
