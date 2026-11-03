@@ -12,10 +12,10 @@
 // Signed out, Home has no feed, so it isn't checked; channel Videos tabs use
 // the same cards. CHROME_PATH picks the browser; otherwise the installed
 // Google Chrome is used.
-import { chromium, type Browser, type Page } from 'playwright-core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { BROWSE, SELECTORS } from './youtubeChannel';
-import { findVideoCards } from './youtubeSelectors';
+import { findVideoCards, videoIdFromHref } from './youtubeSelectors';
 
 const enabled = Boolean(process.env.YOUTUBE_LIVE);
 
@@ -32,9 +32,12 @@ const TIMEOUT_MS = 90_000;
 const CONSENT = { name: 'SOCS', value: 'CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg', domain: '.youtube.com', path: '/' };
 
 let browser: Browser;
+// Closed after each test, so a page left playing doesn't slow the next one.
+const contexts: BrowserContext[] = [];
 
 async function open(url: string, waitFor: string): Promise<Page> {
   const context = await browser.newContext({ locale: 'es-ES', viewport: { width: 1400, height: 1000 } });
+  contexts.push(context);
   await context.addCookies([CONSENT]);
   const page = await context.newPage();
   await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -64,22 +67,27 @@ describe.skipIf(!enabled)('YouTube selectors on youtube.com', () => {
   beforeAll(async () => {
     browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' });
   }, TIMEOUT_MS);
+  afterEach(async () => {
+    await Promise.all(contexts.splice(0).map((context) => context.close()));
+  });
   afterAll(async () => {
     await browser?.close();
   });
-
-  let watchUrl: string | null = null;
 
   it('find video cards in search results', async () => {
     const page = await open(SEARCH, 'ytd-video-renderer');
     const cards = findVideoCards(await snapshot(page));
     expect(cards.length, 'video cards found in search results').toBeGreaterThanOrEqual(MIN_CARDS);
-    watchUrl = `https://www.youtube.com/watch?v=${cards[0].videoId}&hl=es`;
   }, TIMEOUT_MS);
 
   it('find video cards in the watch page sidebar', async () => {
-    expect(watchUrl, 'a video from the search test').not.toBeNull();
-    const page = await open(watchUrl!, '#related yt-lockup-view-model, #related ytd-compact-video-renderer');
+    // A current video, found without the selectors under test, so this test
+    // stands alone: the first watch link in the search results.
+    const search = await open(SEARCH, 'a[href^="/watch?v="]');
+    const videoId = videoIdFromHref(await search.locator('a[href^="/watch?v="]').first().getAttribute('href'));
+    expect(videoId, 'a watch link in the search results').not.toBeNull();
+    const page = await open(`https://www.youtube.com/watch?v=${videoId}&hl=es`,
+      '#related yt-lockup-view-model, #related ytd-compact-video-renderer');
     const doc = await snapshot(page);
     const related = doc.querySelector('#related');
     expect(findVideoCards(related ?? doc).length, 'video cards found in the sidebar').toBeGreaterThanOrEqual(MIN_CARDS);

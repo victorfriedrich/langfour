@@ -4,6 +4,8 @@ name: YouTube selectors
 # runner's Google Chrome (apps/extension/src/youtubeSelectors.live.test.ts).
 # YouTube changes its markup without notice; a failure here means the fit
 # badges, the Favourite button or the Langfour tab may have stopped showing.
+# GitHub turns the schedule off after 60 days without a commit; re-enable it
+# on the Actions tab (apps/extension/test/youtube/README.md).
 on:
   schedule:
     - cron: "17 6 * * *"

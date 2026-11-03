@@ -19,7 +19,10 @@ the thumbnail link, the thumbnail box and the duration label.
 channel page's (`youtubeChannel.ts`), against youtube.com itself, signed out,
 in Google Chrome (`src/youtubeSelectors.live.test.ts`). CI runs it daily
 (`.github/workflows/youtube-selectors.yml`), so a markup change shows up as a
-failed run, usually before anyone notices missing badges.
+failed run, usually before anyone notices missing badges. GitHub turns a
+schedule off after 60 days without a commit to the repository, and says so
+only by email and on the Actions tab; turn it back on there ("Enable
+workflow"), or start a run by hand with "Run workflow".
 
 ## Recapturing
 
