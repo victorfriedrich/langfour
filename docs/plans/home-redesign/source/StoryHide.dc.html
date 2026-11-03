@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Not interested</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: #ffffff; font-family: Geist, system-ui, sans-serif; color: #111827">
+  <dc-import name="Main" hover-index="{{none}}" hidden-index="{{hidden}}" hint-size="1440px,1500px"></dc-import>
+
+  <div role="status" style="position: absolute; left: 840px; bottom: 32px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 18px; border-radius: 999px; background: #111827; box-shadow: 0 12px 32px rgba(17,24,39,0.3); white-space: nowrap">
+    <span style="font-size: 14px; color: #ffffff; margin-right: 8px">Hidden. You'll see fewer videos like it.</span>
+    <button style="height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: rgba(255,255,255,0.14); color: #ffffff; font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer">Undo</button>
+    <button style="height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; color: #c7d2fe; font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer">Hide all from Molaviajar</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { none: -1, hidden: 5 };
+  }
+}
+</script>
+</body>
+</html>

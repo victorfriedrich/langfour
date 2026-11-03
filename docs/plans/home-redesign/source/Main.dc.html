@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Langfour Videos</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1780px; background: #f3f4f6; font-family: Geist, system-ui, -apple-system, sans-serif; color: #111827; -webkit-font-smoothing: antialiased">
+
+  <nav aria-label="Main" lang="en" style="flex: 1 1 240px; max-width: 240px; box-sizing: border-box; padding: 12px; display: flex; flex-direction: column">
+    <a href="#" aria-label="Langfour home" style="display: flex; align-items: center; gap: 6px; height: 36px; padding-left: 6px; margin-bottom: 16px; text-decoration: none">
+      <svg aria-hidden="true" width="24" height="24" viewBox="0 0 128 128" fill="none"><circle cx="64" cy="64" r="64" fill="#2F80ED"></circle><circle cx="64" cy="64" r="54" fill="#D7E7FF"></circle><path d="M43 26L104 64L43 102V26Z" fill="#3B82F6"></path></svg>
+      <span style="font-size: 18px; font-weight: 700; color: #1f2937">Langfour</span>
+    </a>
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 4px">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="6">
+        <a href="#" aria-current="{{n.current}}" style="display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; background: {{n.bg}}; font-size: 14px; font-weight: 500; color: #1f2937; text-decoration: none">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{n.stroke}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{n.d}}"></path></svg>
+          {{n.label}}
+        </a>
+      </sc-for>
+    </div>
+    <div style="border-top: 1px solid #e5e7eb; padding: 12px 4px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px">
+      <span style="display: flex; flex-direction: column; min-width: 0">
+        <span style="font-size: 14px; font-weight: 500; color: #1f2937">Profile</span>
+        <span style="font-size: 12px; color: #6b7280">[your email]</span>
+      </span>
+      <span aria-hidden="true" style="display: flex; flex-direction: column; width: 20px; height: 14px; border-radius: 2px; overflow: hidden; margin-right: 8px"><span style="flex: 1; background: #c60b1e"></span><span style="flex: 2; background: #ffc400"></span><span style="flex: 1; background: #c60b1e"></span></span>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; background: #ffffff; padding: 40px 32px 64px">
+
+    <header lang="en" style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 36px; position: relative; z-index: 3">
+      <h1 style="margin: 0 auto 0 0; font-size: 24px; font-weight: 600; color: #111827">Videos</h1>
+      <div style="flex: 0 1 288px; position: relative">
+        <label style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #ffffff">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+          <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search videos</span>
+          <input type="search" placeholder="Search" style="flex: 1; min-width: 0; border: 0; outline: 0; font-family: inherit; font-size: 14px; color: #111827; background: transparent">
+        </label>
+      </div>
+      <button style="display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 14px; font-weight: 500; color: #374151; cursor: pointer">
+        {{grammarLabel}}
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+      </button>
+      <button style="display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 14px; font-weight: 500; color: #374151; cursor: pointer">
+        Any length
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+      </button>
+    </header>
+
+    <div lang="en" role="group" aria-label="Topics" style="display: flex; flex-wrap: wrap; gap: 4px; margin: 28px 0 24px -12px">
+      <sc-for list="{{chips}}" as="t" hint-placeholder-count="10">
+        <sc-if value="{{t.active}}" hint-placeholder-val="{{false}}">
+          <button aria-pressed="true" style="height: 32px; padding: 0 12px; border: 0; border-radius: 999px; background: #111827; color: #ffffff; font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer">{{t.name}}</button>
+        </sc-if>
+        <sc-if value="{{t.idle}}" hint-placeholder-val="{{true}}">
+          <button aria-pressed="false" style="height: 32px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: #4b5563; font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer">{{t.name}}</button>
+        </sc-if>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{empty}}" hint-placeholder-val="{{false}}">
+      <div lang="en" style="display: flex; flex-direction: column; gap: 32px; padding-top: 16px">
+        <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px 32px">
+          <h2 style="margin: 0; font-size: 44px; line-height: 60px; font-weight: 600; letter-spacing: -0.02em; color: #111827">Gaming starts at B1</h2>
+          <div role="group" aria-label="Gaming videos at each grammar level" style="display: flex; gap: 4px">
+            <sc-for list="{{levels}}" as="l" hint-placeholder-count="5">
+              <button disabled="{{l.off}}" aria-pressed="{{l.current}}" style="width: 84px; height: 60px; box-sizing: border-box; padding: 0; border: {{l.border}}; border-radius: 8px; background: {{l.bg}}; color: {{l.fg}}; font-family: inherit; cursor: {{l.cursor}}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px">
+                <span style="font-size: 16px; line-height: 20px; font-weight: 600">{{l.name}}</span>
+                <span style="font-size: 12px; line-height: 16px">{{l.count}}</span>
+              </button>
+            </sc-for>
+          </div>
+        </div>
+        <sc-for list="{{nearby}}" as="s" hint-placeholder-count="2">
+          <section style="display: flex; flex-direction: column; gap: 12px">
+            <div style="display: flex; align-items: baseline; gap: 8px">
+              <h3 style="margin: 0; font-size: 16px; line-height: 20px; font-weight: 600; color: #111827">{{s.name}}</h3>
+              <a href="#" style="margin-left: auto; font-size: 14px; font-weight: 500; color: #4f46e5; text-decoration: none">{{s.link}}</a>
+            </div>
+            <ul style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px">
+              <sc-for list="{{s.cards}}" as="v" hint-placeholder-count="4">
+                <li style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+                  <a href="#" style="position: relative; display: block; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: #e5e7eb">
+                    <span style="position: absolute; left: 6px; bottom: 6px; padding: 2px 6px; border-radius: 4px; background: #ffffff; font-size: 12px; font-weight: 600; color: #111827">{{v.fit}}</span>
+                    <span style="position: absolute; right: 6px; bottom: 6px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.75); font-size: 12px; font-weight: 500; color: #ffffff">{{v.len}}</span>
+                  </a>
+                  <div style="display: flex; gap: 4px; align-items: flex-start">
+                    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+                      <a href="#" lang="es" style="font-size: 14px; font-weight: 500; line-height: 20px; color: #111827; text-decoration: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{v.title}}</a>
+                      <span style="font-size: 12px; line-height: 16px; color: #6b7280">{{v.channel}}</span>
+                    </div>
+                    <button aria-label="More actions" style="flex: 0 0 28px; height: 28px; margin: -4px -6px 0 0; border: 0; border-radius: 6px; background: transparent; color: #6b7280; display: flex; align-items: center; justify-content: center; cursor: pointer">
+                      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+                    </button>
+                  </div>
+                </li>
+              </sc-for>
+            </ul>
+          </section>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{hasVideos}}" hint-placeholder-val="{{true}}">
+      <ul style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 32px 20px">
+        <sc-for list="{{videos}}" as="v" hint-placeholder-count="12">
+          <li style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+            <a href="#" style="position: relative; display: block; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: {{v.thumb}}">
+              <span lang="en" style="position: absolute; left: 6px; bottom: {{v.badgeBottom}}; padding: 2px 6px; border-radius: 4px; background: #ffffff; font-size: 12px; font-weight: 600; color: #111827">{{v.badge}}</span>
+              <span style="position: absolute; right: 6px; bottom: {{v.badgeBottom}}; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.75); font-size: 12px; font-weight: 500; color: #ffffff">{{v.len}}</span>
+              <sc-if value="{{v.watched}}" hint-placeholder-val="{{false}}">
+                <span aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,0.55)"><span style="display: block; width: 42%; height: 4px; background: #4f46e5"></span></span>
+              </sc-if>
+            </a>
+            <div style="display: flex; gap: 4px; align-items: flex-start">
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+                <a href="#" style="font-size: 14px; font-weight: 500; line-height: 20px; color: #111827; text-decoration: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{v.title}}</a>
+                <span lang="en" style="font-size: 12px; line-height: 16px; color: #6b7280">{{v.meta}}</span>
+              </div>
+              <button aria-label="More actions" style="flex: 0 0 28px; height: 28px; margin: -4px -6px 0 0; border: 0; border-radius: 6px; background: transparent; color: #6b7280; display: flex; align-items: center; justify-content: center; cursor: pointer">
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+              </button>
+            </div>
+          </li>
+        </sc-for>
+      </ul>
+    </sc-if>
+
+    <sc-if value="{{hasVideos}}" hint-placeholder-val="{{true}}">
+    <section lang="en" aria-labelledby="hf-ch" style="margin-top: 48px; padding-top: 32px; border-top: 1px solid #f3f4f6">
+      <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px">
+        <h2 id="hf-ch" style="margin: 0; font-size: 16px; font-weight: 600">Channels at your level</h2>
+        <a href="#" style="margin-left: auto; font-size: 14px; font-weight: 500; color: #4f46e5; text-decoration: none">See all</a>
+      </div>
+      <ul style="list-style: none; margin: 0; padding: 0">
+        <sc-for list="{{channels}}" as="c" hint-placeholder-count="3">
+          <li style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 32px; padding: 24px 0; border-bottom: 1px solid #f3f4f6">
+            <div style="flex: 0 0 200px; display: flex; flex-direction: column; gap: 4px">
+              <a href="#" style="font-size: 16px; font-weight: 600; color: #111827; text-decoration: none">{{c.name}}</a>
+              <span style="font-size: 12px; color: #6b7280">{{c.detail}}</span>
+              <button aria-pressed="{{c.following}}" style="align-self: flex-start; margin-top: 12px; height: 36px; padding: 0 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 14px; font-weight: 500; color: #374151; cursor: pointer">{{c.button}}</button>
+            </div>
+            <ul lang="es" style="flex: 1 1 560px; min-width: 0; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px">
+              <sc-for list="{{c.vids}}" as="t" hint-placeholder-count="4">
+                <li style="display: flex; flex-direction: column; gap: 8px; min-width: 0">
+                  <a href="#" aria-label="{{t.title}}" style="display: block; aspect-ratio: 16 / 9; border-radius: 6px; background: #e5e7eb"></a>
+                  <a href="#" style="font-size: 14px; font-weight: 500; line-height: 18px; color: #111827; text-decoration: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{t.title}}</a>
+                  <span lang="en" style="font-size: 12px; color: #6b7280"><span style="font-weight: 600; color: #111827">{{t.fit}}</span> · {{t.len}}</span>
+                </li>
+              </sc-for>
+            </ul>
+          </li>
+        </sc-for>
+      </ul>
+    </section>
+    </sc-if>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"hoverIndex":{"editor":"int","default":0,"min":-1,"max":11},"hiddenIndex":{"editor":"int","default":-1,"min":-1,"max":11},"watchedIndex":{"editor":"int","default":-1,"min":-1,"max":11},"empty":{"editor":"boolean","default":false},"followingIndex":{"editor":"int","default":-1,"min":-1,"max":2},"$preview":{"width":1440,"height":1780}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const hover = this.props.hoverIndex ?? 0;
+    const hidden = this.props.hiddenIndex ?? -1;
+    const watched = this.props.watchedIndex ?? -1;
+    const empty = this.props.empty ?? false;
+    const followingIndex = this.props.followingIndex ?? -1;
+    const icons = {
+      Videos: 'M3 3h18v18H3zM7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4M3 12h18',
+      Media: 'M6 3h12v18l-6-4-6 4z',
+      Practice: 'M5 10h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM6 6h12M9 2h6',
+      Vocabulary: 'M5 20 12 4l7 16M7.6 14h8.8',
+      Grammar: 'M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z',
+      Extension: 'M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z'
+    };
+    const nav = Object.keys(icons).map((label) => ({
+      label, d: icons[label], current: label === 'Videos' ? 'page' : 'false',
+      bg: label === 'Videos' ? '#e5e7eb' : 'transparent', stroke: label === 'Videos' ? '#374151' : '#6b7280'
+    }));
+    const all = [
+      ['En este lugar no existe la noche: 24 horas de sol', 'Katy Travels', '22:28', '96%', 14],
+      ['Qué es la música 8D y por qué se ha hecho viral', 'Jaime Altozano', '12:18', '94%', 19],
+      ['El basurero de ropa más grande del mundo', 'Ary Tenorio', '17:25', '97%', 9],
+      ['La historia de mi familia que vivió en Chernobyl', 'Iryna Fedchenko', '10:19', '91%', 27],
+      ['Capirotada de 3 leches, la más sabrosa', 'De mi Rancho a Tu Cocina', '9:13', '98%', 4],
+      ['Soy mayordomo de un multimillonario en Nueva York', 'Molaviajar', '16:12', '95%', 16],
+      ['Así es vivir 24 horas en una casa inteligente', 'Just Unboxing', '23:35', '97%', 11],
+      ['Desayuno espacial', 'NASA en Español', '9:17', '96%', 8],
+      ['23 cosas que no debes hacer en Alemania', 'Crónicas Germánicas', '15:35', '96%', 13],
+      ['Este gimnasio aún se conserva: lugares abandonados', 'Imix', '11:36', '95%', 12],
+      ['¿Cómo compro un vuelo barato? Paso a paso', 'Mundukos', '18:58', '97%', 10],
+      ['Lo que no te cuentan de vivir en China', 'WithZack', '11:04', '97%', 7]
+    ];
+    const videos = all.map(([title, channel, len, fit, nw], i) => ({
+      i, title, len,
+      meta: i === watched ? channel + ' · watched 9 of 22 min' : channel,
+      badge: i === hover ? fit + ' · ' + nw + ' new words' : fit,
+      thumb: i === hover ? '#d1d5db' : '#e5e7eb',
+      watched: i === watched,
+      badgeBottom: i === watched ? '10px' : '6px'
+    })).filter((v) => v.i !== hidden);
+    const names = empty
+      ? ['All', 'Following', 'Travel', 'Stories', 'Explainers', 'Food', 'Money', 'Talk', 'Gaming', 'Books']
+      : ['All', 'Following', 'Travel', 'Stories', 'Explainers', 'Food', 'Money', 'Talk', 'Gaming', 'Books'];
+    const activeChip = empty ? 'Gaming' : 'All';
+    const v = (list) => list.map(([title, fit, len]) => ({ title, fit, len }));
+    const channels = [
+      { name: 'Ary Tenorio', detail: '96% known · 8 videos', vids: v([
+        ['El basurero de ropa más grande del mundo', '97%', '17 min'],
+        ['Visité una comunidad de mujeres jirafa', '97%', '13 min'],
+        ['Cazando ofertas en Tepito', '96%', '15 min'],
+        ['La primera tienda en México que vende paquetitos perdidos', '95%', '18 min']
+      ]) },
+      { name: 'No Hay Tos Podcast', detail: '97% known · 10 videos', vids: v([
+        ['Los whitexicans', '98%', '24 min'],
+        ['Cómo realmente se saluda en México', '97%', '16 min'],
+        ['Estereotipos y misconceptions sobre México', '97%', '28 min'],
+        ['14 usos de «ya» en el español mexicano', '96%', '26 min']
+      ]) },
+      { name: 'Aislinn Derbez', detail: '95% known · 13 videos', vids: v([
+        ['Yo no quería ser papá, con Eugenio Derbez', '96%', '10 min'],
+        ['Relaciones: ninguno de los dos tiene la razón', '96%', '30 min'],
+        ['Aprende a no perderte a ti en una relación', '95%', '20 min'],
+        ['¿Cómo hacer que me valga lo que piensen?', '94%', '32 min']
+      ]) }
+    ].map((c, i) => ({ ...c, following: i === followingIndex ? 'true' : 'false', button: i === followingIndex ? 'Following' : 'Follow' }));
+    const levelStyle = {
+      none: { off: true, border: '0', bg: '#f3f4f6', fg: '#4b5563', cursor: 'default' },
+      filter: { off: true, border: '2px solid #111827', bg: '#f3f4f6', fg: '#111827', cursor: 'default' },
+      nearest: { off: false, border: '0', bg: '#4f46e5', fg: '#ffffff', cursor: 'pointer' },
+      more: { off: false, border: '1px solid #e5e7eb', bg: '#ffffff', fg: '#374151', cursor: 'pointer' }
+    };
+    const levels = [['A1', 0, 'none'], ['A2', 0, 'filter'], ['B1', 35, 'nearest'], ['B2', 82, 'more'], ['C1', 0, 'none']]
+      .map(([name, count, kind]) => ({ name, count, current: kind === 'filter' ? 'true' : 'false', ...levelStyle[kind] }));
+    const cards = (list) => list.map(([title, channel, len, fit]) => ({ title, channel, len, fit }));
+    const nearby = [
+      { name: 'Gaming up to B1', link: 'Show all 35', cards: cards([
+        ['Encontré a CJ en GTA 5...', 'Fisper', '12:17', '93%'],
+        ['Mi nueva FURGONETA GAMING', 'Mayichi', '12:08', '95%'],
+        ['Vacaciones de $1 vs $1,000,000!', 'Jardred', '33:58', '92%'],
+        ['UNBOXING DRAGON BALL Z: BATTLE OF Z', 'Portastation', '3:20', '94%']
+      ]) },
+      { name: 'Other topics up to A2', link: 'Show all 339', cards: cards([
+        ['Mi primer día de universidad en Estados Unidos', 'Eva Bleider', '11:12', '97%'],
+        ['Las 5 cosas que tienes que hacer en Acapulco', 'Kukis González', '8:10', '98%'],
+        ['Ser vs Estar: usos de ser y estar en español', 'Hoy Hablamos', '8:31', '99%'],
+        ['Cesta Calabaza de Crochet para Halloween', 'cosicasraquel', '14:27', '96%']
+      ]) }
+    ];
+    return {
+      levels,
+      nearby,
+      nav,
+      empty,
+      hasVideos: !empty,
+      grammarLabel: empty ? 'Grammar up to A2' : 'Grammar up to B1',
+      chips: names.map((name) => ({ name, active: name === activeChip, idle: name !== activeChip })),
+      videos,
+      channels
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>First click without the extension</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: #ffffff; font-family: Geist, system-ui, sans-serif; color: #111827">
+  <dc-import name="Main" hover-index="{{none}}" hint-size="1440px,1500px"></dc-import>
+
+  <div style="position: absolute; inset: 0; background: rgba(17,24,39,0.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 150px">
+    <div role="dialog" aria-modal="true" aria-labelledby="sx-h" style="width: 460px; box-sizing: border-box; padding: 24px; background: #ffffff; border-radius: 14px; box-shadow: 0 24px 60px rgba(17,24,39,0.28); display: flex; flex-direction: column; gap: 20px">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <span style="flex: 0 0 104px; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: #e5e7eb"></span>
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span lang="es" style="font-size: 14px; font-weight: 500; line-height: 20px; color: #111827">En este lugar no existe la noche: 24 horas de sol</span>
+          <span style="font-size: 12px; color: #6b7280">Katy Travels · 96% known</span>
+        </span>
+        <button aria-label="Close" style="flex: 0 0 32px; height: 32px; align-self: flex-start; border: 0; border-radius: 6px; background: transparent; color: #6b7280; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <h2 id="sx-h" style="margin: 0; font-size: 16px; font-weight: 600">Watch it with Langfour on YouTube</h2>
+        <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.5; color: #374151">
+          <li>The 14 words you don't know are marked in the subtitles</li>
+          <li>Hover a word to pause and see what it means</li>
+          <li>Words you save go straight to Practice</li>
+        </ul>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+        <button style="height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: #4f46e5; color: #ffffff; font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer">Add to Chrome</button>
+        <button style="height: 36px; padding: 0 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #ffffff; color: #374151; font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer">Watch without it</button>
+        <a href="#" style="margin-left: auto; font-size: 14px; font-weight: 500; color: #4f46e5; text-decoration: none">On iPhone?</a>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { none: -1 };
+  }
+}
+</script>
+</body>
+</html>
