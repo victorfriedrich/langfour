@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-import YouTubeVideoGrid from './YouTubeVideoGrid';
+import VideoHome from './home/VideoHome';
 import ProtectedRoute from './ProtectedRoute';
 
 /**
@@ -12,7 +12,7 @@ import ProtectedRoute from './ProtectedRoute';
  */
 const AppClient: React.FC = () => (
   <ProtectedRoute>
-    <YouTubeVideoGrid />
+    <VideoHome />
   </ProtectedRoute>
 );
 

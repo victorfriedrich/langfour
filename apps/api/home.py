@@ -1,0 +1,431 @@
+"""
+The web Videos page (docs/plans/home-redesign.md): the grid, its filters, what
+to show when they leave nothing, Channels at your level, Not interested, and
+what happened on YouTube since a card was opened.
+
+  - grid: the recommendation order (video_blend.rank over the videos the
+    learner hasn't watched), cut by topic, length, a search and grammar.
+    Topics are the transcripts' categories, plus Following: the videos of the
+    channels the learner made a favourite on YouTube (channels.py).
+  - grammar: video_scores.grammar puts A1..C1 at 1, 3, 5, 7, 9; a video's
+    level is the nearest one, cutting halfway between. "Up to B1" keeps
+    A1..B1. A video without a score has no level, so it is left out while the
+    filter is on and is not counted.
+  - levels: how many videos each level has in the current topic, length and
+    search, whatever the grammar filter. None for a language without scores,
+    where the page offers no grammar filter.
+  - empty: when the grammar filter leaves nothing in a topic, the nearest
+    level above it that has videos, the topic's videos up to that level, and
+    the other topics' videos up to the filter's level.
+  - channels: on All without a search, the CHANNELS channels whose unwatched
+    videos the learner understands most of, by share of all their speech, as
+    channels.py computes "understood". A channel is its transcripts' creator
+    name; its UC id, for Follow, comes from video_queue.
+  - hides: Not interested and "Hide all from <channel>" (sql/video_hides.sql).
+    Only this grid leaves them out.
+  - return: when the learner comes back from YouTube, how far into the video
+    they got (watch_events.share) and how many words they saved from it
+    (word_events 'saved' whose context names the video; the extension writes
+    that context for words saved on a YouTube watch page).
+
+Coverage counts every word spoken, as the recommender's percentages do.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections import defaultdict
+from collections.abc import Iterable
+from datetime import datetime
+from typing import Literal
+
+import numpy as np
+from pydantic import BaseModel
+
+import video_blend
+from recommender import MIN_DISTINCT_WORDS
+from vocabulary import Language
+from watch import WATCHED_SHARE, VideoId, is_watched
+
+log = logging.getLogger(__name__)
+
+ALL = "All"
+FOLLOWING = "Following"
+LEVELS = ("A1", "A2", "B1", "B2", "C1")
+Level = Literal["A1", "A2", "B1", "B2", "C1"]
+# Seconds; a video without a length only shows under "any".
+LENGTHS: dict[str, tuple[float, float]] = {
+    "any": (0, float("inf")),
+    "short": (0, 10 * 60),
+    "medium": (10 * 60, 20 * 60),
+    "long": (20 * 60, float("inf")),
+}
+Length = Literal["any", "short", "medium", "long"]
+GRID = 48             # cards sent; the page shows 12 at a time
+SHELF = 4             # cards in a row of the empty state or a channel
+CHANNELS = 3
+CHANNEL_MIN_VIDEOS = 4
+
+_PAGE = 1000          # PostgREST's row cap per request
+_IN_CHUNK = 200
+
+
+# ---------------------------------------------------------------------------
+# Payloads
+# ---------------------------------------------------------------------------
+
+class HomeVideo(BaseModel):
+    id: str
+    title: str
+    channel: str | None
+    duration_s: int | None
+    understood: float            # % of the speech the learner knows
+    new_words: int               # distinct words they don't
+    watched_share: float | None  # played so far, for a video started and not finished
+
+
+class Shelf(BaseModel):
+    count: int
+    videos: list[HomeVideo]
+
+
+class Empty(BaseModel):
+    nearest_level: Level | None  # the first level above the filter with videos
+    nearest: Shelf | None        # the topic up to nearest_level
+    other: Shelf | None          # every other topic up to the filter's level
+
+
+class HomeChannel(BaseModel):
+    name: str
+    channel_id: str | None       # None when video_queue doesn't know it: no Follow
+    following: bool
+    understood: float
+    videos: int                  # unwatched videos of the channel in the index
+    best: list[HomeVideo]
+
+
+class Home(BaseModel):
+    videos: list[HomeVideo]
+    total: int
+    topics: list[str]
+    levels: dict[Level, int] | None
+    empty: Empty | None
+    channels: list[HomeChannel]
+
+
+class HideRequest(BaseModel):
+    language: Language
+    video_id: VideoId
+    channel: bool = False        # the video's whole channel rather than the video
+
+
+class Hidden(BaseModel):
+    channel: str | None          # the name hidden or shown again, with channel
+
+
+class Return(BaseModel):
+    share: float | None
+    saved: int
+
+
+# ---------------------------------------------------------------------------
+# Storage. Like channels.ChannelStore: everything that touches Supabase is
+# here, so the logic below runs against an in-memory stand-in in tests.
+# ---------------------------------------------------------------------------
+
+def _chunks(items: list, size: int) -> Iterable[list]:
+    for start in range(0, len(items), size):
+        yield items[start:start + size]
+
+
+class HomeStore:
+    def __init__(self, client):
+        self.db = client
+
+    def _paged(self, query) -> list[dict]:
+        out: list[dict] = []
+        while True:
+            rows = query().range(len(out), len(out) + _PAGE - 1).execute().data or []
+            out += rows
+            if len(rows) < _PAGE:
+                return out
+
+    def known_words(self, user_id: str) -> set[int]:
+        """As Recommender.get_known_words: declared known or learned in reviews."""
+        return {r["word_id"] for r in self._paged(
+            lambda: self.db.table("user_known_words").select("word_id")
+            .eq("user_id", user_id).order("word_id"))}
+
+    def watch_rows(self, user_id: str) -> dict[str, dict]:
+        """video_id -> {share, unmarked_at} for every video the user started."""
+        return {r["video_id"]: r for r in self._paged(
+            lambda: self.db.table("watch_events").select("video_id,share,unmarked_at")
+            .eq("user_id", user_id).order("id"))}
+
+    def watch_row(self, user_id: str, video_id: str) -> dict | None:
+        rows = (self.db.table("watch_events").select("video_id,share,unmarked_at")
+                .eq("user_id", user_id).eq("video_id", video_id).limit(1).execute().data)
+        return rows[0] if rows else None
+
+    def hides(self, user_id: str, language: str) -> tuple[set[str], set[str]]:
+        """(video ids, channel names) hidden. Nothing before video_hides.sql
+        is applied, rather than a page that won't load."""
+        try:
+            rows = self._paged(lambda: self.db.table("video_hides").select("kind,key")
+                               .eq("user_id", user_id).eq("language", language)
+                               .order("created_at"))
+        except Exception:
+            log.warning("Could not read video_hides; hiding nothing", exc_info=True)
+            return set(), set()
+        return ({r["key"] for r in rows if r["kind"] == "video"},
+                {r["key"] for r in rows if r["kind"] == "channel"})
+
+    def hide(self, user_id: str, language: str, kind: str, key: str) -> None:
+        (self.db.table("video_hides")
+         .upsert({"user_id": user_id, "language": language, "kind": kind, "key": key},
+                 on_conflict="user_id,language,kind,key", ignore_duplicates=True)
+         .execute())
+
+    def unhide(self, user_id: str, language: str, kind: str, key: str) -> None:
+        (self.db.table("video_hides").delete().eq("user_id", user_id)
+         .eq("language", language).eq("kind", kind).eq("key", key).execute())
+
+    def favourites(self, user_id: str, language: str) -> set[str]:
+        """UC ids of the channels the user made a favourite in this language."""
+        res = (self.db.table("channel_favourites").select("channel_id")
+               .eq("user_id", user_id).eq("lang", language).execute())
+        return {r["channel_id"] for r in res.data or []}
+
+    def videos_of(self, channel_ids: set[str], language: str) -> set[str]:
+        """The indexed videos of these channels."""
+        out: set[str] = set()
+        for chunk in _chunks(sorted(channel_ids), _IN_CHUNK):
+            out |= {r["video_id"] for r in self._paged(
+                lambda chunk=chunk: self.db.table("video_queue").select("video_id")
+                .in_("channel_id", chunk).eq("lang", language).eq("status", "done")
+                .order("video_id"))}
+        return out
+
+    def channel_ids(self, video_ids: list[str]) -> dict[str, str]:
+        """video_id -> UC id, for the ones video_queue has."""
+        out: dict[str, str] = {}
+        for chunk in _chunks(video_ids, _IN_CHUNK):
+            res = (self.db.table("video_queue").select("video_id,channel_id")
+                   .in_("video_id", chunk).execute())
+            out |= {r["video_id"]: r["channel_id"] for r in res.data or [] if r.get("channel_id")}
+        return out
+
+    def saved_since(self, user_id: str, video_id: str, since: datetime) -> int:
+        """Distinct words saved from this video since `since`."""
+        res = (self.db.table("word_events").select("word_id")
+               .eq("user_id", user_id).eq("kind", "saved")
+               .eq("context->>media", f"youtube:{video_id}")
+               .gte("occurred_at", since.isoformat()).execute())
+        return len({r["word_id"] for r in res.data or []})
+
+
+def get_home_store() -> HomeStore:
+    from supabase_client import supabase
+    return HomeStore(supabase)
+
+
+# ---------------------------------------------------------------------------
+# Logic
+# ---------------------------------------------------------------------------
+
+def level_of(grammar: float | None) -> int | None:
+    """Index into LEVELS of a video_scores.grammar value (A1..C1 at 1..9)."""
+    if grammar is None:
+        return None
+    return min(len(LEVELS) - 1, max(0, int(grammar // 2)))
+
+
+class _Corpus:
+    """One request's view of a language: who the videos are for this learner."""
+
+    def __init__(self, recommender, language: str, known: set[int], watch: dict[str, dict],
+                 hidden_videos: set[str], hidden_channels: set[str]):
+        recommender._ensure_language_loaded(language)
+        self.language = language
+        self.rows = recommender.rows_by_video[language]
+        self.titles = recommender.titles[language]
+        self.categories = recommender.categories[language]
+        n = len(self.titles)
+        self.creators = recommender.creators.get(language) or [""] * n
+        self.lengths = recommender.lengths.get(language) or [None] * n
+        self.grammar = recommender.grammar.get(language) or {}
+        self.spoken = recommender.total_words_per_doc[language]
+        self.watch = watch
+        self.ratios, self.new_words, _ = recommender._score_documents_by_words(
+            list(known), language)
+
+        distinct = recommender.distinct_words_per_doc[language]
+        candidates = [
+            (video_id, float(self.ratios[row])) for video_id, row in self.rows.items()
+            if video_id not in recommender.hidden_videos
+            and distinct[row] >= MIN_DISTINCT_WORDS
+            and not (video_id in watch and is_watched(watch[video_id]))
+            and video_id not in hidden_videos
+            and self.creators[row] not in hidden_channels
+        ]
+        candidates.sort(key=lambda c: -c[1])
+        signals = recommender.video_signals.get(language)
+        # video_blend drops the videos whose thumbnails it rejects.
+        self.ordered = (video_blend.rank(candidates, signals) if signals
+                        else [video_id for video_id, _ in candidates])
+
+    def level(self, video_id: str) -> int | None:
+        return level_of(self.grammar.get(video_id))
+
+    def card(self, video_id: str) -> HomeVideo:
+        row = self.rows[video_id]
+        played = self.watch.get(video_id) or {}
+        share = played.get("share") if played.get("unmarked_at") is None else None
+        return HomeVideo(
+            id=video_id,
+            title=self.titles[row] or video_id,
+            channel=self.creators[row] or None,
+            duration_s=self.lengths[row],
+            understood=round(float(self.ratios[row]) * 100, 1),
+            new_words=int(self.new_words[row]),
+            watched_share=share if share and share < WATCHED_SHARE else None,
+        )
+
+    def shelf(self, video_ids: list[str]) -> Shelf | None:
+        if not video_ids:
+            return None
+        return Shelf(count=len(video_ids), videos=[self.card(v) for v in video_ids[:SHELF]])
+
+
+def _filtered(corpus: _Corpus, topic: str, followed: set[str], length: str,
+              query: str) -> list[str]:
+    low, high = LENGTHS[length]
+    needle = query.casefold().strip()
+
+    def keep(video_id: str) -> bool:
+        row = corpus.rows[video_id]
+        if topic == FOLLOWING:
+            if video_id not in followed:
+                return False
+        elif topic != ALL and corpus.categories[row] != topic:
+            return False
+        if length != "any":
+            seconds = corpus.lengths[row]
+            if seconds is None or not low <= seconds < high:
+                return False
+        return (not needle or needle in (corpus.titles[row] or "").casefold()
+                or needle in corpus.creators[row].casefold())
+
+    return [v for v in corpus.ordered if keep(v)]
+
+
+def _up_to(corpus: _Corpus, video_ids: list[str], level: int) -> list[str]:
+    return [v for v in video_ids if (lv := corpus.level(v)) is not None and lv <= level]
+
+
+def _channels(store: HomeStore, corpus: _Corpus, favourites: set[str]) -> list[HomeChannel]:
+    by_channel: dict[str, list[str]] = defaultdict(list)
+    for video_id in corpus.ordered:
+        name = corpus.creators[corpus.rows[video_id]]
+        if name:
+            by_channel[name].append(video_id)
+    scored = []
+    for name, video_ids in by_channel.items():
+        if len(video_ids) < CHANNEL_MIN_VIDEOS:
+            continue
+        rows = [corpus.rows[v] for v in video_ids]
+        spoken = corpus.spoken[rows]
+        if not spoken.sum():
+            continue
+        understood = float((corpus.ratios[rows] * spoken).sum() / spoken.sum())
+        scored.append((understood, len(video_ids), name, video_ids))
+    scored.sort(key=lambda s: (-s[0], -s[1], s[2]))
+    chosen = scored[:CHANNELS]
+    if not chosen:
+        return []
+    best = {name: sorted(video_ids, key=lambda v: -corpus.ratios[corpus.rows[v]])[:SHELF]
+            for _, _, name, video_ids in chosen}
+    ids = store.channel_ids([v for videos in best.values() for v in videos])
+    out = []
+    for understood, count, name, _ in chosen:
+        channel_id = next((ids[v] for v in best[name] if v in ids), None)
+        out.append(HomeChannel(
+            name=name, channel_id=channel_id, following=channel_id in favourites,
+            understood=round(understood * 100, 1), videos=count,
+            best=[corpus.card(v) for v in best[name]],
+        ))
+    return out
+
+
+def home(store: HomeStore, recommender, user_id: str, language: str, topic: str = ALL,
+         grammar: Level | None = None, length: Length = "any", query: str = "") -> Home:
+    hidden_videos, hidden_channels = store.hides(user_id, language)
+    corpus = _Corpus(recommender, language, store.known_words(user_id), store.watch_rows(user_id),
+                     hidden_videos, hidden_channels)
+    favourites = store.favourites(user_id, language)
+    followed = store.videos_of(favourites, language) if topic == FOLLOWING and favourites else set()
+    pool = _filtered(corpus, topic, followed, length, query)
+
+    levels = None
+    if corpus.grammar:
+        counts = np.bincount([lv for v in pool if (lv := corpus.level(v)) is not None],
+                             minlength=len(LEVELS))
+        levels = {name: int(counts[i]) for i, name in enumerate(LEVELS)}
+
+    shown, empty = pool, None
+    if grammar is not None and levels is not None:
+        cut = LEVELS.index(grammar)
+        shown = _up_to(corpus, pool, cut)
+        if not shown:
+            above = [i for i in range(cut + 1, len(LEVELS)) if levels[LEVELS[i]]]
+            nearest = above[0] if above else None
+            other = []
+            if topic != ALL:
+                in_topic = set(pool)
+                other = [v for v in _up_to(corpus, _filtered(corpus, ALL, set(), length, query), cut)
+                         if v not in in_topic]
+            empty = Empty(
+                nearest_level=LEVELS[nearest] if nearest is not None else None,
+                nearest=corpus.shelf(_up_to(corpus, pool, nearest)) if nearest is not None else None,
+                other=corpus.shelf(other),
+            )
+
+    return Home(
+        videos=[corpus.card(v) for v in shown[:GRID]],
+        total=len(shown),
+        # As the old grid did: "Failed" is an ingest outcome, not a topic.
+        topics=[c["category"] for c in recommender.get_categories(language)
+                if c["category"].strip().lower() not in ("failed", "unknown")],
+        levels=levels,
+        empty=empty,
+        channels=(_channels(store, corpus, favourites)
+                  if topic == ALL and not query.strip() else []),
+    )
+
+
+def _channel_of(recommender, language: str, video_id: str) -> str | None:
+    recommender._ensure_language_loaded(language)
+    row = recommender.rows_by_video[language].get(video_id)
+    creators = recommender.creators.get(language) or []
+    return (creators[row] or None) if row is not None and row < len(creators) else None
+
+
+def set_hidden(store: HomeStore, recommender, user_id: str, req: HideRequest,
+               hidden: bool) -> Hidden:
+    """Hide, or show again, a video or its channel. A channel is named by one
+    of its videos, as the card that asks has only that."""
+    if req.channel:
+        name = _channel_of(recommender, req.language, req.video_id)
+        if name is None:
+            return Hidden(channel=None)
+        kind, key = "channel", name
+    else:
+        kind, key, name = "video", req.video_id, None
+    (store.hide if hidden else store.unhide)(user_id, req.language, kind, key)
+    return Hidden(channel=name)
+
+
+def came_back(store: HomeStore, user_id: str, video_id: str, since: datetime) -> Return:
+    row = store.watch_row(user_id, video_id)
+    share = row.get("share") if row and row.get("unmarked_at") is None else None
+    return Return(share=share, saved=store.saved_since(user_id, video_id, since))

@@ -51,6 +51,8 @@ class Recommender:
         self.filenames = {}
         self.categories = {}
         self.titles = {}
+        self.creators = {}             # channel name per row, '' when unknown
+        self.lengths = {}              # seconds per row, None when unknown
         self.max_word_ids = {}
         self.matrices = {}             # cell = times the word is spoken
         self.presence = {}             # same sparsity, cell = 1
@@ -63,6 +65,7 @@ class Recommender:
         self.supabase: Client = _shared_supabase
         
         self.blacklisted_files = blacklisted_files
+        self.grammar = {}              # language -> video id -> video_scores.grammar
         self.hidden_by_score = self._load_hidden_videos()
         self.hidden_videos = self.hidden_by_score
         self.video_signals = self._load_video_signals()
@@ -143,6 +146,8 @@ class Recommender:
             self.filenames[language] = filenames
             self.categories[language] = categories
             self.titles[language] = titles
+            self.creators[language], self.lengths[language] = self._cached_details(
+                language, meta, len(filenames))
             self.max_word_ids[language] = int(max_word_id or matrix.shape[1] - 1)
             self._index_matrix(language, matrix)
             self.documents[language] = None
@@ -155,6 +160,20 @@ class Recommender:
             )
             return False
 
+    def _cached_details(self, language: str, meta: dict,
+                        rows: int) -> tuple[list[str], list[int | None]]:
+        """Channel names and lengths from the manifest. A manifest from before
+        they were stored gets blanks rather than a read of every transcript at
+        boot; scripts/build_corpus_metadata.py adds them when the corpus is
+        packed, and a rebuild writes them too."""
+        creators, lengths = meta.get("creators"), meta.get("lengths")
+        if (isinstance(creators, list) and isinstance(lengths, list)
+                and len(creators) == len(lengths) == rows):
+            return creators, lengths
+        logger.warning("Matrix manifest for '%s' has no channel names or lengths; "
+                       "pack the corpus again to add them.", language)
+        return [""] * rows, [None] * rows
+
     def _ensure_language_loaded(self, language: str) -> None:
         if language not in self.languages:
             raise ValueError(f"Language '{language}' not supported")
@@ -164,20 +183,27 @@ class Recommender:
             return
 
         logger.info("Initializing data for language: %s", language)
-        docs, files, cats, titles = load_documents(os.path.join(self.base_folder, language))
-        rows = sorted(zip(files, docs, cats, titles, strict=False))
+        docs, files, cats, titles, creators, lengths = load_documents(
+            os.path.join(self.base_folder, language))
+        rows = sorted(zip(files, docs, cats, titles, creators, lengths, strict=False),
+                      key=lambda row: row[0])
         if rows:
-            files, docs, cats, titles = map(list, zip(*rows, strict=False))
+            files, docs, cats, titles, creators, lengths = map(list, zip(*rows, strict=False))
         else:
-            files, docs, cats, titles = [], [], [], []
+            files, docs, cats, titles, creators, lengths = [], [], [], [], [], []
 
-        docs, files, cats, titles = self._filter_blacklisted_files(
-            docs, files, cats, titles, self.blacklisted_files
-        )
+        kept = [i for i, filename in enumerate(files) if filename not in self.blacklisted_files]
+        if len(kept) != len(files):
+            logger.info("Filtered out %d blacklisted files (%d -> %d)",
+                        len(files) - len(kept), len(files), len(kept))
+        docs, files, cats, titles, creators, lengths = (
+            [column[i] for i in kept] for column in (docs, files, cats, titles, creators, lengths))
 
         self.filenames[language] = files
         self.categories[language] = cats
         self.titles[language] = titles
+        self.creators[language] = creators
+        self.lengths[language] = lengths
         self.max_word_ids[language] = self._determine_max_word_id(docs)
         self._index_matrix(language, self._create_document_term_matrix(language, docs))
         # Keep only the compact sparse representation after startup. Holding both
@@ -291,7 +317,7 @@ class Recommender:
         A failed read recommends everything rather than nothing."""
         import video_quality
         try:
-            hidden = video_quality.hidden_ids(self.supabase)
+            hidden, self.grammar = video_quality.hidden_and_grammar(self.supabase)
         except Exception:
             logger.warning("Could not load video scores; not filtering", exc_info=True)
             return set()
@@ -340,37 +366,6 @@ class Recommender:
         
         return blacklisted_files
     
-    def _filter_blacklisted_files(
-        self, documents, filenames, categories, titles, blacklisted_files
-    ):
-        """Filter out blacklisted files from all data structures"""
-        if not blacklisted_files:
-            return documents, filenames, categories, titles
-        
-        filtered_docs = []
-        filtered_files = []
-        filtered_cats = []
-        filtered_titles = []
-        
-        original_count = len(filenames)
-        
-        for i in range(len(filenames)):
-            if filenames[i] not in blacklisted_files:
-                filtered_docs.append(documents[i])
-                filtered_files.append(filenames[i])
-                filtered_cats.append(categories[i])
-                filtered_titles.append(titles[i])
-        
-        filtered_count = len(filtered_files)
-        blacklisted_count = original_count - filtered_count
-        
-        logger.info(
-            "Filtered out %d blacklisted files (%d -> %d)",
-            blacklisted_count, original_count, filtered_count,
-        )
-        
-        return filtered_docs, filtered_files, filtered_cats, filtered_titles
-    
     def _determine_max_word_id(self, documents: list[Document]) -> int:
         """The largest word id in any document (each document's ids are sorted)."""
         return max((int(ids[-1]) for ids, _ in documents if ids.size), default=0)
@@ -385,6 +380,8 @@ class Recommender:
                     "filenames": self.filenames[language],
                     "categories": self.categories[language],
                     "titles": self.titles[language],
+                    "creators": self.creators[language],
+                    "lengths": self.lengths[language],
                     "max_word_id": int(max_word_id),
                     "weights": MATRIX_WEIGHTS,
                 },
@@ -435,7 +432,9 @@ class Recommender:
                     logger.info("Blacklist updated - rebuilding matrix for %s", language)
 
             if not shape_mismatch:
-                if meta.get("titles") != self.titles[language]:
+                if (meta.get("titles") != self.titles[language]
+                        or meta.get("creators") != self.creators[language]
+                        or meta.get("lengths") != self.lengths[language]):
                     self._write_matrix_metadata(language, current_max_id)
                 logger.info("Document-term matrix for '%s' loaded from disk.", language)
                 return D

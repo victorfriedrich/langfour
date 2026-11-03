@@ -17,6 +17,7 @@ import {
   sendToTab,
 } from './messages';
 import { getErrorMessage } from './errors';
+import { savedContext } from './savedFrom';
 import { BACKEND_URL, debugLog } from './config';
 import { Language, toLanguage } from './languages';
 import { reviewLink } from './reviewLink';
@@ -192,9 +193,13 @@ async function refreshKnownWordsIfStale(language: string): Promise<{ success: bo
 }
 
 /**
- * Add a word to the user's known words list via Supabase RPC call.
+ * Add a word to the user's known words list via Supabase RPC call. Saved on a
+ * YouTube watch page (`tabUrl`), it also gets a 'saved' event naming the video.
  */
-async function addWordToUserwords(wordId: string | number): Promise<{ success: boolean; error?: string }> {
+async function addWordToUserwords(
+  wordId: string | number,
+  tabUrl?: string,
+): Promise<{ success: boolean; error?: string }> {
   const result = await chrome.storage.local.get('supabaseSession');
   const hasSession = await ensureSupabaseSession(result.supabaseSession);
   if (!hasSession) {
@@ -213,6 +218,14 @@ async function addWordToUserwords(wordId: string | number): Promise<{ success: b
 
     // The next article marks it as learning without waiting for a refresh.
     await markLearning(Number(wordId)).catch((err: unknown) => console.warn('Could not update word statuses:', err));
+    const context = savedContext(tabUrl);
+    if (context) {
+      // The word is saved either way; only the count on the Videos page misses it.
+      const { error: eventError } = await supabase.rpc('record_word_events', {
+        rows: [{ word_id: Number(wordId), kind: 'saved', source: 'video', context }],
+      });
+      if (eventError) console.warn('Could not record the saved event:', eventError.message);
+    }
     return { success: true };
   } catch (err: unknown) {
     console.error('Error adding words to userwords:', err);
@@ -572,7 +585,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
 
     case 'ADD_WORD_TO_USERWORDS': {
       const { wordId } = message;
-      addWordToUserwords(wordId).then(sendResponse);
+      addWordToUserwords(wordId, sender.tab?.url).then(sendResponse);
       return true; // Keeps the message channel open for async response
     }
 

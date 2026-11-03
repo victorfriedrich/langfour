@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Add row-aligned video titles to an existing matrix manifest."""
+"""Add row-aligned video titles, channel names and lengths to an existing
+matrix manifest (recommender.Recommender._cached_details reads the last two)."""
 
 import json
 import sys
@@ -25,13 +26,19 @@ def build(language_dir: Path) -> None:
         raise SystemExit(f"{manifest_path} is not a counts matrix; rebuild it before packing.")
     filenames = manifest["filenames"]
 
-    titles = []
+    titles, creators, lengths = [], [], []
     for filename in filenames:
         data = json.loads((language_dir / filename).read_text(encoding="utf-8"))
         title = data.get("title", "")
         titles.append(title if isinstance(title, str) else "")
+        # As file_manager.video_details.
+        creator, length = data.get("creator"), data.get("length")
+        creators.append(creator.strip() if isinstance(creator, str) else "")
+        lengths.append(int(length) if isinstance(length, (int, float)) and length > 0 else None)
 
     manifest["titles"] = titles
+    manifest["creators"] = creators
+    manifest["lengths"] = lengths
     temporary_path = manifest_path.with_suffix(".json.tmp")
     temporary_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
