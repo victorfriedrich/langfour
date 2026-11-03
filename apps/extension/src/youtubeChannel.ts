@@ -374,7 +374,9 @@ async function waitForChannel(doc: Document, pathname: string, expectedId: strin
  */
 export async function mountChannelPage(doc: Document, pathname: string, language: Language, api: ChannelApi, expectedId: string | null = null): Promise<void> {
   unmount(doc);
-  if (!isChannelPath(pathname)) return;
+  // A navigation to a channel says so, whatever its path: some channels keep
+  // an old custom address, such as /marcvilas, that @handle links redirect to.
+  if (!isChannelPath(pathname) && !expectedId) return;
   const mine = generation;
   const isCurrent = () => mine === generation;
   const channelId = await waitForChannel(doc, pathname, expectedId, isCurrent);
@@ -450,17 +452,26 @@ export async function mountChannelPage(doc: Document, pathname: string, language
       if (!next.signedOut) schedule(WHILE_ADDING_MS);
       return;
     }
-    const line = panel.querySelector('.lf-summary');
-    // Only the line and the videos change on a refresh: a redrawn words card
-    // would fold its words up again and forget that they were added.
-    const sameCard = line && view?.ok && next.ok && (coreWordsAdded
-      || JSON.stringify(view.value.core_words) === JSON.stringify(next.value.core_words));
-    view = next;
-    if (sameCard && next.ok) {
-      line.textContent = summary(next.value);
-      panel.querySelector('.lf-best')?.remove();
-      if (next.value.best?.length) panel.append(bestCard(doc, next.value.best));
-    } else renderOpen();
+    try {
+      const line = panel.querySelector('.lf-summary');
+      // Only the line and the videos change on a refresh: a redrawn words card
+      // would fold its words up again and forget that they were added.
+      const sameCard = line && view?.ok && next.ok && (coreWordsAdded
+        || JSON.stringify(view.value.core_words) === JSON.stringify(next.value.core_words));
+      view = next;
+      if (sameCard && next.ok) {
+        line.textContent = summary(next.value);
+        panel.querySelector('.lf-best')?.remove();
+        if (next.value.best?.length) panel.append(bestCard(doc, next.value.best));
+      } else renderOpen();
+    } catch (error) {
+      // An answer this version can't draw, as from an API mid-deploy: without
+      // this, "Loading…" would stay up for good.
+      console.error('Langfour: could not show this channel', error);
+      view = { ok: false, signedOut: false };
+      renderOpen();
+      return;
+    }
     if (!next.ok) return;
     if (Date.now() - favouritedAt < AFTER_FAVOURITE_FOR_MS) schedule(AFTER_FAVOURITE_MS);
     // A total of null means the channel stalled: nothing is arriving to show.
