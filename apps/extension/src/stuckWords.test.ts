@@ -33,8 +33,8 @@ describe('stuckWordsToShow', () => {
 
 describe('stuckWordsText', () => {
   it('reads as one line', () => {
-    expect(stuckWordsText(45)).toBe('45 common words are still marked learning');
-    expect(stuckWordsText(1)).toBe('1 common word is still marked learning');
+    expect(stuckWordsText(45)).toBe('45 words you likely know are still marked learning');
+    expect(stuckWordsText(1)).toBe('1 word you likely know is still marked learning');
   });
 });
 

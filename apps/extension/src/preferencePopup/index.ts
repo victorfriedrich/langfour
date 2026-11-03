@@ -345,7 +345,7 @@ function setReviewLanguage(language: Language) {
   drawYoutube(language);
 }
 
-// "45 common words are still marked learning · Review", until opened once.
+// "45 words you likely know are still marked learning · Review", until opened once.
 const stuckRow = document.getElementById('stuckRow') as HTMLElement;
 
 async function drawStuckRow(language: Language) {

@@ -33,10 +33,14 @@ what it reports back about texts the user read with it.
     captions) and produced it (practice answers where they came up with the
     word themselves, self-reported ones left out), with the dates of the last
     of each.
-  - stuck_words: the web app's "Common words you never reviewed": learning
-    words among the corpus's most common that were never reviewed, with the
-    videos they were seen in and their look-ups. move_words moves the ones the
-    user ticks through set_status, as set_word_status does.
+  - stuck_words: the web app's "Words you likely know": learning words among
+    the corpus's most common that were never reviewed, then learning words
+    seen in SEEN_VIDEOS videos or more and never looked up, each with the
+    videos it was seen in and its look-ups. Suggestions only: move_words
+    moves the ones the user ticks through set_status, as set_word_status does.
+  - record_lookup: a word_events 'lookup' row each time the extension's
+    popup translates a word (/api/translate-word), so "never looked up" means
+    something.
 
 The API runs these with the service role on behalf of the OAuth user, so every
 query names the user explicitly.
@@ -70,6 +74,7 @@ _IN_CHUNK = 200
 MAX_MISTAKES = 10    # words to revise listed, newest first
 _RECALL_SCAN = 1000  # practice answers read to find them
 STUCK_TOP = 500      # "common": among the corpus's most frequent words
+SEEN_VIDEOS = 10     # seen in this many videos and never looked up: likely known
 _PAGE = 1000         # PostgREST's row cap per request
 
 
@@ -172,10 +177,13 @@ class StuckWord(BaseModel):
     translation: str | None
     videos: int   # distinct videos its captions were seen in (exposure rows)
     lookups: int
+    # common: among the most common words, never reviewed. seen: in
+    # SEEN_VIDEOS videos or more, never looked up.
+    reason: Literal["common", "seen"] = "common"
 
 
 class StuckWords(BaseModel):
-    words: list[StuckWord]  # most common first
+    words: list[StuckWord]  # the common ones most common first, then the seen ones most seen first
 
 
 class MoveRequest(BaseModel):
@@ -549,16 +557,20 @@ def get_word_exposures(store: VocabularyStore, user_id: str, language: str | Non
     ])
 
 
-def stuck_words(store: VocabularyStore, user_id: str, common: list[int]) -> StuckWords:
-    """Learning words among `common` (word ids, most frequent first) that were
-    never reviewed: imported or saved long ago and left. Each with the videos
-    it was seen in and how often it was looked up, so the user can tell which
-    they know."""
+def stuck_words(store: VocabularyStore, user_id: str, common: list[int],
+                language: str) -> StuckWords:
+    """Learning words the user likely knows. First those among `common` (word
+    ids, most frequent first) that were never reviewed: imported or saved long
+    ago and left. Then any other learning word in the language seen in
+    SEEN_VIDEOS videos or more and never looked up, most seen first. Each with
+    the videos it was seen in and how often it was looked up, so the user can
+    tell which they know."""
     rank = {w: i for i, w in enumerate(common)}
     rows = [r for r in store.learning_rows(user_id, common) if not r.get("last_reviewed_at")]
     reviewed = store.reviewed(user_id, [r["word_id"] for r in rows]) if rows else set()
     rows = sorted((r for r in rows if r["word_id"] not in reviewed), key=lambda r: rank[r["word_id"]])
-    ids = [r["word_id"] for r in rows]
+    learning = {r["word_id"]: r for r in store.learning_words(user_id, language)}
+    ids = sorted({r["word_id"] for r in rows} | set(learning))
 
     videos: dict[int, set[str]] = {}
     lookups: Counter[int] = Counter()
@@ -568,12 +580,27 @@ def stuck_words(store: VocabularyStore, user_id: str, common: list[int]) -> Stuc
         elif e["source"] == "video" and (media := (e.get("context") or {}).get("media")):
             videos.setdefault(e["word_id"], set()).add(media)
 
+    listed = {r["word_id"] for r in rows}
+    seen = sorted((w for w in learning if w not in listed and not lookups[w]
+                   and len(videos.get(w, ())) >= SEEN_VIDEOS),
+                  key=lambda w: (-len(videos[w]), learning[w]["root"]))
+
     return StuckWords(words=[
         StuckWord(word_id=r["word_id"], word=r["words"]["root"],
                   translation=r["words"].get("translation"),
                   videos=len(videos.get(r["word_id"], ())), lookups=lookups[r["word_id"]])
         for r in rows
+    ] + [
+        StuckWord(word_id=w, word=learning[w]["root"], translation=learning[w].get("translation"),
+                  videos=len(videos[w]), lookups=0, reason="seen")
+        for w in seen
     ])
+
+
+def record_lookup(store: VocabularyStore, user_id: str, word_id: int, word: str) -> None:
+    """The popup translated `word` (as written on the page) to `word_id`."""
+    store.insert_events([{"user_id": user_id, "word_id": word_id, "kind": "lookup",
+                          "source": "extension", "context": {"word": word[:MAX_MEDIA]}}])
 
 
 def move_words(store: VocabularyStore, user_id: str, word_ids: list[int],

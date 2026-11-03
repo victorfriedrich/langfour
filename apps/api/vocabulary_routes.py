@@ -1,6 +1,7 @@
-"""The Vocabulary page's "Common words you never reviewed": learning words
-among the corpus's most common that the user never reviewed (most were
-imported long ago), and the move of the ones they tick to known.
+"""The Vocabulary page's "Words you likely know": learning words among the
+corpus's most common that the user never reviewed (most were imported long
+ago), then ones seen in many videos and never looked up, and the move of the
+ones they tick to known.
 
 "Common" is the recommender's ranking of words by the number of videos they
 appear in, the same list it suggests words to learn from.
@@ -43,7 +44,7 @@ async def stuck_words(
     store: VocabularyStore = Depends(get_vocabulary_store),
 ):
     common = await asyncio.to_thread(_common_words, request.app.state.recommender, language)
-    return await asyncio.to_thread(vocabulary.stuck_words, store, str(current_user.id), common)
+    return await asyncio.to_thread(vocabulary.stuck_words, store, str(current_user.id), common, language)
 
 
 @router.post("/api/vocabulary/status", response_model=WordsMoved)

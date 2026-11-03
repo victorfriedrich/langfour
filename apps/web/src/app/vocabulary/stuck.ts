@@ -1,11 +1,13 @@
-/** A learning word among the most common ones that was never reviewed
- *  (GET /api/vocabulary/stuck). */
+/** A learning word the user likely knows (GET /api/vocabulary/stuck): among
+ *  the most common ones and never reviewed, or seen in 10+ videos and never
+ *  looked up. */
 export interface StuckWord {
   word_id: number;
   word: string;
   translation: string | null;
   videos: number; // videos its captions were seen in
   lookups: number;
+  reason: 'common' | 'seen';
 }
 
 /** The tab's link, from the extension popup too. */

@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, confloat, conint
 
+import vocabulary
 from auth import AuthMiddleware, get_current_user
 from channel_routes import router as channel_router
 from database import cached_word_id, initialize_cache
@@ -49,6 +50,7 @@ from tts import router as tts_router
 from utils import get_video_words, is_special_character
 from video_fit_routes import router as video_fit_router
 from videoparsing import main as process_video
+from vocabulary import VocabularyStore, get_vocabulary_store
 from vocabulary_routes import router as vocabulary_router
 from watch_routes import router as watch_router
 from word_importance import media_ranks, video_ranks, with_importance
@@ -546,9 +548,19 @@ async def get_video_info(video_id: str):
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 @app.post("/api/translate-word")
-async def translate_word(word: str = Body(...), language: str = Body(...)):
+async def translate_word(
+    request: Request,
+    background: BackgroundTasks,
+    word: str = Body(...),
+    language: str = Body(...),
+    store: VocabularyStore = Depends(get_vocabulary_store),
+):
     try:
         result = parse_and_translate_word(word, language)
+        # The extension's popup is the only caller, so each translation is a
+        # look-up. Logged after the answer is sent, so the popup never waits.
+        if (user := getattr(request.state, "user", None)) and result.get("id"):
+            background.add_task(vocabulary.record_lookup, store, str(user.id), int(result["id"]), word)
         return result
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve)) from ve

@@ -176,7 +176,7 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-  /* "Common words you never reviewed": a second tab, opened by its link */
+  /* "Words you likely know": a second tab, opened by its link */
   const { words: stuckWords, moveToKnown } = useStuckWords();
   const [view, setView] = useState<'all' | 'stuck'>('all');
   // Until the user changes it, the selection is every word not looked up.
@@ -399,7 +399,7 @@ const LearningWordsTable: React.FC<LearningWordsTableProps> = ({
               onClick={() => setView('stuck')}
               className={showStuck ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'}
             >
-              Common words you never reviewed
+              Words you likely know
               <span className="ml-2 font-normal tabular-nums text-gray-400">{stuckWords.length.toLocaleString()}</span>
             </button>
           )}

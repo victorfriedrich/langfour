@@ -265,7 +265,13 @@ class StuckStore(FakeStore):
         self.calls.append(("reviewed", user_id, word_ids))
         return {22} & set(word_ids)
 
+    def learning_words(self, user_id, language):
+        self.calls.append(("learning_words", user_id, language))
+        return [{"word_id": w, "root": root, "translation": t}
+                for w, (root, t, _) in self.LEARNING.items()]
+
     def events(self, user_id, word_ids, kinds):
+        self.calls.append(("events", user_id, word_ids, kinds))
         return [e for e in self.logged if e["word_id"] in word_ids and e["kind"] in kinds]
 
 
@@ -276,9 +282,9 @@ def seen(word_id, media, source="video", kind="exposure"):
 
 def test_stuck_words_are_learning_never_reviewed_and_most_common_first():
     store = StuckStore()
-    stuck = vocabulary.stuck_words(store, USER, [24, 23, 22, 21, 99])
-    assert [(w.word_id, w.word, w.translation) for w in stuck.words] == [
-        (24, "quedar", "to stay"), (23, "que", "that, which")]
+    stuck = vocabulary.stuck_words(store, USER, [24, 23, 22, 21, 99], "es")
+    assert [(w.word_id, w.word, w.translation, w.reason) for w in stuck.words] == [
+        (24, "quedar", "to stay", "common"), (23, "que", "that, which", "common")]
     assert ("reviewed", USER, [22, 23, 24]) in store.calls
 
 
@@ -288,14 +294,50 @@ def test_stuck_words_count_distinct_videos_and_lookups():
         seen(23, "https://example.com/page", source="reader"),
         seen(24, "youtube:a"), seen(24, None, kind="lookup"), seen(24, None, kind="lookup"),
     ])
-    stuck = {w.word: (w.videos, w.lookups) for w in vocabulary.stuck_words(store, USER, [23, 24]).words}
+    stuck = {w.word: (w.videos, w.lookups) for w in vocabulary.stuck_words(store, USER, [23, 24], "es").words}
     assert stuck == {"que": (2, 0), "quedar": (1, 2)}
+
+
+def in_videos(word_id, n):
+    return [seen(word_id, f"youtube:{i}") for i in range(n)]
+
+
+def test_stuck_words_add_words_seen_in_many_videos_and_never_looked_up():
+    # 21 and 22 were reviewed, so only the seen rule can list them; 24 is
+    # common, so it is listed once, as common.
+    store = StuckStore(events=[
+        *in_videos(21, vocabulary.SEEN_VIDEOS),
+        *in_videos(22, vocabulary.SEEN_VIDEOS + 2),
+        *in_videos(24, vocabulary.SEEN_VIDEOS),
+    ])
+    stuck = vocabulary.stuck_words(store, USER, [24], "es")
+    assert [(w.word, w.videos, w.reason) for w in stuck.words] == [
+        ("quedar", 10, "common"), ("según", 12, "seen"), ("ya", 10, "seen")]
+    assert ("learning_words", USER, "es") in store.calls
+
+
+def test_stuck_words_leave_out_seen_words_looked_up_or_in_too_few_videos():
+    store = StuckStore(events=[
+        *in_videos(21, vocabulary.SEEN_VIDEOS), seen(21, None, kind="lookup"),
+        *in_videos(22, vocabulary.SEEN_VIDEOS - 1),
+        # The reader isn't a video, however often.
+        *[seen(23, f"https://example.com/{i}", source="reader") for i in range(20)],
+    ])
+    assert vocabulary.stuck_words(store, USER, [], "es").words == []
 
 
 def test_stuck_words_with_none_learning_reads_nothing_else():
     store = StuckStore()
-    assert vocabulary.stuck_words(store, USER, [1, 2]).words == []
-    assert [c[0] for c in store.calls] == ["learning_rows"]
+    store.LEARNING = {}
+    assert vocabulary.stuck_words(store, USER, [1, 2], "es").words == []
+    assert [c[0] for c in store.calls] == ["learning_rows", "learning_words"]
+
+
+def test_record_lookup_logs_one_lookup_from_the_extension():
+    store = FakeStore()
+    vocabulary.record_lookup(store, USER, 24, "quedó")
+    assert store.events == [{"user_id": USER, "word_id": 24, "kind": "lookup",
+                             "source": "extension", "context": {"word": "quedó"}}]
 
 
 def test_move_words_moves_only_words_in_the_users_list():
