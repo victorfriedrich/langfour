@@ -1,89 +1,89 @@
 #!/usr/bin/env python3
 """Assign each transcript the high-level category the app browses by.
 
-    python3 scripts/highleveltags.py <language> [--redo]
+    python3 scripts/highleveltags.py <language> [--redo | --all]
 
 This is the only writer of the `category` field. videoparsing.py stores raw
 `tags` at ingest but no category, and file_manager.py reads `category` to build
 the category list, falling back to "Unknown" -- so a freshly ingested video has
 no category until this runs. It is a pipeline stage that was never automated,
-not a one-time backfill.
+not a one-time backfill. The category itself comes from Jev (video_category.py).
 
 By default it only fills in files that have no category, so it is cheap to re-run
-after an ingest. Pass --redo to also revisit the verdicts worth a second attempt.
+after an ingest. Pass --redo to also revisit the verdicts worth a second attempt,
+or --all to classify every file again after a change to video_category.py.
 """
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from nlp_processing import get_high_level_tag
+from dotenv import load_dotenv
+
+import video_category
 from paths import processed_dir
 
 # Verdicts worth a second attempt when --redo is passed.
 #
-#   "Failed"        a legacy value too: get_high_level_tag used to return it
-#                   when the model refused or its reply did not parse, and it
-#                   sits in roughly 7% of the Spanish corpus. It now returns
-#                   None instead and this script leaves the file uncategorised,
-#                   so new failures are retried by an ordinary run.
-#   "Entertainment" a legacy value: it is not in nlp_processing.VALID_CATEGORIES
-#                   any more, so the classifier can no longer produce it.
-#   "Other"         the classifier's own catch-all, worth re-asking after a
-#                   prompt change.
-#
-# Reaching any of them needed a fix. The skip condition was `current_cat is not
-# None`, which stepped over every file that had a category at all -- including
-# the failures -- while the docstring claimed Entertainment and Other were
-# revisited. So the (b) half of that promise had never once run.
+#   "Failed"        a legacy value: the old LLM classifier returned it when the
+#                   model refused or its reply did not parse.
+#   "Entertainment" a legacy value: it is not in video_category.CATEGORIES, so
+#                   Jev can no longer produce it.
+#   "Other"         the catch-all, worth re-asking after a prompt change.
 REDO_CATEGORIES = {"Entertainment", "Other", "Failed"}
 
+PARALLEL = 16   # Jev requests in flight
 
-def update_files_with_high_level_tag(base_folder: str, redo: bool = False):
+
+def wanted(file_path: str, redo: bool, redo_all: bool) -> bool:
+    with open(file_path, encoding="utf-8") as f:
+        current_cat = json.load(f).get("category")
+    return redo_all or current_cat is None or (redo and current_cat in REDO_CATEGORIES)
+
+
+def update_files_with_high_level_tag(base_folder: str, redo: bool = False,
+                                     redo_all: bool = False):
     """Assign a category to files that have none, or to weak ones when redo."""
-    for root, _, files in os.walk(base_folder):
-        for file in files:
-            if not file.endswith("_processed.json"):
-                continue
+    paths = [os.path.join(root, file)
+             for root, _, files in os.walk(base_folder)
+             for file in files if file.endswith("_processed.json")]
+    paths = [p for p in paths if wanted(p, redo, redo_all)]
+    print(f"{len(paths)} files to classify")
+    http = video_category.client()
 
-            file_path = os.path.join(root, file)
+    def update(file_path: str) -> None:
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                data = json.load(f)
+            current_cat = data.get("category")
+            category = video_category.classify(http, data)
+            if category == current_cat:
+                return
+            data["category"] = category
+            # Written aside and renamed, so an interrupted run never leaves a
+            # half-written transcript.
+            tmp = file_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, file_path)
+            print(f"Updated {file_path}: {current_cat!r} → {category!r}")
+        except Exception as e:
+            # Left as it was; an uncategorised file is picked up by the next run.
+            print(f"Error processing {file_path}: {e}")
 
-            try:
-                with open(file_path, encoding="utf-8") as f:
-                    data = json.load(f)
+    with ThreadPoolExecutor(PARALLEL) as pool:
+        list(pool.map(update, paths))
 
-                current_cat = data.get("category")
-                if current_cat is not None and not (redo and current_cat in REDO_CATEGORIES):
-                    continue
-
-                title = data.get("title", "")
-                tags = data.get("tags", [])
-
-                high_level_tag = get_high_level_tag(title, tags)
-                if high_level_tag is None:
-                    # Leave the file uncategorised rather than recording the
-                    # failure: the skip above treats any category as done, so
-                    # writing one here would need --redo to ever look again.
-                    print(f"Skipped {file_path}: could not classify")
-                    continue
-
-                # Overwrite or insert the category
-                data["category"] = high_level_tag
-
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-
-                print(f"Updated {file_path}: {current_cat!r} → {high_level_tag!r}")
-
-            except Exception as e:
-                print(f"Error processing {file_path}: {e}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 scripts/highleveltags.py <language> [--redo]")
+        print("Usage: python3 scripts/highleveltags.py <language> [--redo | --all]")
         sys.exit(1)
 
+    load_dotenv()
     update_files_with_high_level_tag(
-        str(processed_dir(sys.argv[1])), redo="--redo" in sys.argv[2:]
+        str(processed_dir(sys.argv[1])), redo="--redo" in sys.argv[2:],
+        redo_all="--all" in sys.argv[2:],
     )

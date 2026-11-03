@@ -3,7 +3,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from itertools import groupby
-from typing import Literal, get_args
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import HTTPException
@@ -39,18 +39,6 @@ from llm_client import client, parse_structured
 from models import MODEL_FAST, MODEL_SMART
 from utils import SPECIAL_CHARACTERS, is_special_character, parse_chatgpt_output
 from word_matching import CandidateIndex, jev_client, match
-
-# A Literal rather than a plain list so the same definition can be both the
-# validation rule and the JSON-schema enum sent to the model -- previously the
-# enum was hand-written into a schema dict and then re-checked in Python.
-Category = Literal[
-    "Beauty & Fashion", "Health & Fitness", "Products & Tech", "Gaming", "Anime",
-    "Movies", "Reactions & Commentary", "Challenges & Experiments", "Comedy",
-    "Travel", "Documentaries", "Cooking", "Science",
-    "Politics", "Finance", "Cars", "History", "Other"
-]
-
-VALID_CATEGORIES: list[str] = list(get_args(Category))
 
 load_dotenv()
 
@@ -88,38 +76,6 @@ def filter_entities(text: str, language: str) -> str:
     except Exception as e:
         raise Exception(f"Error filtering non-Spanish words: {e}") from e
     
-class HighLevelTag(BaseModel):
-    category: Category
-
-
-def get_high_level_tag(title: str, tags: list[str]) -> str | None:
-    """The video's single high-level category, or None if the model could not
-    be reached. None rather than a "Failed" sentinel because the only caller
-    writes the result into *_processed.json and then skips any file that
-    already has a category -- a sentinel would be written once and never
-    retried."""
-    prompt = (
-        "Choose exactly one high-level category for this video.\n"
-        f"Allowed categories: {json.dumps(VALID_CATEGORIES)}\n"
-        'Return only a JSON object with a "category" field containing one of these values.\n\n'
-        f"Title: {title}\n"
-        f"Tags: {', '.join(tags)}"
-    )
-    try:
-        verdict = parse_structured(
-            model=MODEL_FAST,
-            messages=[{"role": "user", "content": prompt}],
-            schema_model=HighLevelTag,
-            reasoning={"enabled": False},
-            max_tokens=200,
-            temperature=0.2,
-        )
-    except Exception:
-        logger.exception("Could not classify %r", title)
-        return None
-    return verdict.category
-
-
 class WordRoot(BaseModel):
     """`key` becomes a dictionary headword and `type` selects which
     generate_alternatives() prompt runs, so both are load-bearing. They used
