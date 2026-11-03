@@ -18,7 +18,7 @@ with the `service_role` key, i.e. only by the API.
 | `words` | `id`, `root`, `language`, `translation`, `source`, `flagged`, `cognate` | PK `id`; unique `(root, language)`; `language` in `es, de, it, fr`; index on `root` |
 | `wordforms` | `id`, `word_id`, `form`, `flagged` | PK `id`; FK `word_id → words`; unique `(word_id, form)`; index on `form` |
 | `lexicon_pages` | `language`, `last_word_id`, `entries`, `built_at` | PK `(language, last_word_id)`; the valid dictionary as text pages, built by `rebuild_lexicon_pages` (lexicon.sql); authenticated read |
-| `languagelevels` | `id`, `word_id`, `language`, `language_level` | PK `id`; FK `word_id → words`; unique `(word_id, language_level, language)`; level in `A1..C1` |
+| `languagelevels` | `id`, `word_id`, `language`, `language_level` | PK `id`; FK `word_id → words`; unique `(word_id, language_level, language)`; level in `A1..C1`; `id` follows frequency order only for the original entries (words added later, as by `clean_es_levels_2026_11_01.sql`, sort last) |
 
 Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 `*_update_admin`, `*_delete_admin`. Admin is decided by `is_admin()`.

@@ -13,9 +13,20 @@ the thumbnail link, the thumbnail box and the duration label.
 | `search.html` | Search | video, live stream, Short |
 | `watch-sidebar.html` | Watch page sidebar | two video lockups |
 
+## Checking against youtube.com
+
+`npm run test:youtube` in `apps/extension` runs the same selectors, and the
+channel page's (`youtubeChannel.ts`), against youtube.com itself, signed out,
+in Google Chrome (`src/youtubeSelectors.live.test.ts`). CI runs it daily
+(`.github/workflows/youtube-selectors.yml`), so a markup change shows up as a
+failed run, usually before anyone notices missing badges. GitHub turns a
+schedule off after 60 days without a commit to the repository, and says so
+only by email and on the Actions tab; turn it back on there ("Enable
+workflow"), or start a run by hand with "Run workflow".
+
 ## Recapturing
 
-When badges stop appearing, open the page on www.youtube.com, paste this into
+When badges stop appearing or the daily check fails, open the page on www.youtube.com, paste this into
 the DevTools console, and replace the cards in the matching file with what it
 copies (it copies the first three cards on the page):
 
