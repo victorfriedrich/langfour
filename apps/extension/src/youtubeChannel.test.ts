@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 import {
   channelIdOf,
+  isChannelPath,
   mountChannelPage,
   navigatedChannelId,
   renderPanel,
@@ -103,6 +104,20 @@ describe('summaryText', () => {
   });
 });
 
+describe('isChannelPath', () => {
+  it('knows a channel by its handle, id, or old custom URL', () => {
+    for (const path of ['/@marcvilas', '/@marcvilas/videos', `/channel/${CHANNEL}`, '/c/marcvilas', '/user/marcvilas', '/marcvilas', '/marcvilas/videos', '/marcvilas/']) {
+      expect(isChannelPath(path)).toBe(true);
+    }
+  });
+
+  it('leaves YouTube\'s own pages alone', () => {
+    for (const path of ['/', '/watch', '/results', '/feed/subscriptions', '/playlist', '/shorts/abc123', '/gaming', '/premium', '/account']) {
+      expect(isChannelPath(path)).toBe(false);
+    }
+  });
+});
+
 describe('channelIdOf', () => {
   it('reads a @handle page\'s id from YouTube\'s data', () => {
     channelPage();
@@ -197,6 +212,14 @@ describe('mountChannelPage', () => {
     fireEvent.click(button);
     await screen.findByRole('button', { name: 'Favourite' });
     expect(calls).toContainEqual(['favourite', CHANNEL, 'es', false]);
+  });
+
+  it('mounts on a channel loaded at its old custom URL', async () => {
+    channelPage();
+    const { api } = fakeApi({ ok: true, value: view() });
+    await mountChannelPage(document, '/marcvilas', 'es', api);
+    expect(screen.getByRole('tab', { name: 'Langfour' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Favourite' })).toBeInTheDocument();
   });
 
   it('reads only the favourite until the tab opens', async () => {
