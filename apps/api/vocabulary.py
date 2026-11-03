@@ -20,7 +20,9 @@ what it reports back about texts the user read with it.
     word an AI wrote).
   - record_seen: the same rows for words the extension saw the user read in
     the reader or in a video's captions, once per word per page or video
-    (context.media), however often the client sends them.
+    (context.media), however often the client sends them. With kind
+    'lookup', the words whose popup the user opened and read, once per word
+    per page, video or chat in the same way.
   - set_word_status: move words of the user's list between learning and
     known, as the web app's "Move to known" does. Back to learning, the
     userwords trigger gives the word a Langfour card again.
@@ -38,9 +40,6 @@ what it reports back about texts the user read with it.
     seen in SEEN_VIDEOS videos or more and never looked up, each with the
     videos it was seen in and its look-ups. Suggestions only: move_words
     moves the ones the user ticks through set_status, as set_word_status does.
-  - record_lookup: a word_events 'lookup' row each time the extension's
-    popup translates a word (/api/translate-word), so "never looked up" means
-    something.
 
 The API runs these with the service role on behalf of the OAuth user, so every
 query names the user explicitly.
@@ -135,11 +134,15 @@ class ExposureSummary(BaseModel):
 
 
 class SeenRequest(BaseModel):
-    source: Literal["reader", "video"]
+    # exposure: read or heard. lookup: its popup opened and read; the
+    # extension leaves out a caption word the pointer only crossed.
+    kind: Literal["exposure", "lookup"] = "exposure"
+    source: Literal["reader", "video", "chatgpt"]
     # Where it was read: "youtube:<id>" or the page's URL. Words are logged
-    # once per media.
+    # once per kind per media.
     media: str = Field(min_length=1, max_length=MAX_MEDIA)
-    # Learning and new words, as the extension classified them.
+    # Learning and new words, as the extension classified them; for a
+    # look-up, the word the popup translated.
     word_ids: list[int] = Field(min_length=1, max_length=MAX_SEEN)
 
 
@@ -239,12 +242,13 @@ class VocabularyStore:
                 out[r["id"]] = r
         return out
 
-    def exposed(self, user_id: str, media: str, word_ids: list[int]) -> set[int]:
-        """Which of these words already have an exposure logged for this media."""
+    def exposed(self, user_id: str, media: str, word_ids: list[int],
+                kind: str = "exposure") -> set[int]:
+        """Which of these words already have an event of this kind logged for this media."""
         out: set[int] = set()
         for chunk in _chunks(word_ids, _IN_CHUNK):
             res = (self.db.table("word_events").select("word_id")
-                   .eq("user_id", user_id).eq("kind", "exposure")
+                   .eq("user_id", user_id).eq("kind", kind)
                    .eq("context->>media", media).in_("word_id", chunk).execute())
             out |= {r["word_id"] for r in res.data or []}
         return out
@@ -361,6 +365,24 @@ class VocabularyStore:
                 start += _PAGE
         return out
 
+    def video_evidence(self, user_id: str, word_ids: list[int]) -> list[dict]:
+        """What stuck_words weighs for these words: their look-ups and their
+        exposures in videos, [{word_id, kind, context}], every page of them."""
+        out: list[dict] = []
+        for chunk in _chunks(word_ids, _IN_CHUNK):
+            start = 0
+            while True:
+                res = (self.db.table("word_events").select("word_id, kind, context")
+                       .eq("user_id", user_id).in_("word_id", chunk)
+                       .or_("kind.eq.lookup,and(kind.eq.exposure,source.eq.video)")
+                       .order("id").range(start, start + _PAGE - 1).execute())
+                rows = res.data or []
+                out.extend(rows)
+                if len(rows) < _PAGE:
+                    break
+                start += _PAGE
+        return out
+
     def touch(self, user_id: str) -> None:
         (self.db.table("userdata").update({"known_words_updated_at": datetime.now(UTC).isoformat()})
          .eq("user_id", user_id).execute())
@@ -450,9 +472,9 @@ def record_seen(store: VocabularyStore, user_id: str, req: SeenRequest) -> Expos
     # dropped rather than failing the whole batch on the foreign key.
     known_ids = set(store.words(asked))
     fresh = [w for w in asked if w in known_ids]
-    logged = store.exposed(user_id, req.media, fresh) if fresh else set()
+    logged = store.exposed(user_id, req.media, fresh, req.kind) if fresh else set()
     recorded = store.insert_events([
-        {"user_id": user_id, "word_id": w, "kind": "exposure", "source": req.source,
+        {"user_id": user_id, "word_id": w, "kind": req.kind, "source": req.source,
          "context": {"media": req.media}}
         for w in fresh if w not in logged
     ])
@@ -574,10 +596,10 @@ def stuck_words(store: VocabularyStore, user_id: str, common: list[int],
 
     videos: dict[int, set[str]] = {}
     lookups: Counter[int] = Counter()
-    for e in store.events(user_id, ids, ["exposure", "lookup"]) if ids else []:
+    for e in store.video_evidence(user_id, ids) if ids else []:
         if e["kind"] == "lookup":
             lookups[e["word_id"]] += 1
-        elif e["source"] == "video" and (media := (e.get("context") or {}).get("media")):
+        elif media := (e.get("context") or {}).get("media"):
             videos.setdefault(e["word_id"], set()).add(media)
 
     listed = {r["word_id"] for r in rows}
@@ -595,12 +617,6 @@ def stuck_words(store: VocabularyStore, user_id: str, common: list[int],
                   videos=len(videos[w]), lookups=0, reason="seen")
         for w in seen
     ])
-
-
-def record_lookup(store: VocabularyStore, user_id: str, word_id: int, word: str) -> None:
-    """The popup translated `word` (as written on the page) to `word_id`."""
-    store.insert_events([{"user_id": user_id, "word_id": word_id, "kind": "lookup",
-                          "source": "extension", "context": {"word": word[:MAX_MEDIA]}}])
 
 
 def move_words(store: VocabularyStore, user_id: str, word_ids: list[int],

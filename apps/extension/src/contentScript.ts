@@ -5,7 +5,7 @@ import { Language, toLanguage } from './languages';
 import { extractArticle, layoutJudge } from './articleExtraction';
 import { getStoredWords } from './wordstorage';
 import { BackendRequest, BackendResponse, ContentScriptMessage, mayRelay, sendToBackground } from './messages';
-import { BackendRequestEvent, BackendResponseEvent, CaptionExposureEvent, KnownWordsEvent } from './types';
+import { BackendRequestEvent, BackendResponseEvent, CaptionExposureEvent, KnownWordsEvent, WordLookupEvent } from './types';
 import { isAllowedHost } from './siteApi';
 import { getErrorMessage } from './errors';
 import { FitBadges, startFitBadges } from './youtubeFit';
@@ -181,6 +181,14 @@ function relayCaptionExposure(): void {
     const words = tokens.filter((t): t is string => typeof t === 'string' && t.length <= 64).slice(0, MAX_EXPOSURE_TOKENS);
     if (!words.length) return;
     sendToBackground({ type: 'RECORD_EXPOSURE', language, tokens: words, source: 'video', media });
+  }) as EventListener);
+  // Caption words whose popup the user stayed on (index.ts). Page-controlled
+  // like the above: at worst the page marks a word as looked up.
+  document.addEventListener('word-lookup', ((event: CustomEvent<WordLookupEvent>) => {
+    const { media, wordId } = event.detail ?? {};
+    if (typeof media !== 'string' || !media || media.length > 500) return;
+    if (!Number.isInteger(wordId) || wordId <= 0) return;
+    sendToBackground({ type: 'RECORD_LOOKUP', wordId, source: 'video', media });
   }) as EventListener);
 }
 

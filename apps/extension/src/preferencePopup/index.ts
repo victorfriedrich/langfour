@@ -8,7 +8,7 @@ import { WEB_URL } from '../config';
 import { reviewLink } from '../reviewLink';
 import { SIGN_IN_WITH_CODE, normalizeEmailCode, signInWithEmailCode } from '../emailCode';
 import { requestBackend } from '../api-service';
-import { STUCK_OPENED_KEY, stuckWordsText, stuckWordsToShow, stuckWordsUrl } from '../stuckWords';
+import { STUCK_OPENED_KEY, openedNow, stuckWordsText, stuckWordsToShow, stuckWordsUrl } from '../stuckWords';
 import { drawYoutube } from './youtube';
 
 // --- DOM Elements for Logged In View ---
@@ -345,22 +345,22 @@ function setReviewLanguage(language: Language) {
   drawYoutube(language);
 }
 
-// "45 words you likely know are still marked learning · Review", until opened once.
+// "45 words you likely know are still marked learning · Review", while the
+// list holds words not listed when the link was last opened.
 const stuckRow = document.getElementById('stuckRow') as HTMLElement;
+const openedStuck = async () => (await chrome.storage.local.get(STUCK_OPENED_KEY))[STUCK_OPENED_KEY];
+let stuckListed: number[] = [];
 
 async function drawStuckRow(language: Language) {
-  const count = await stuckWordsToShow(
-    language,
-    async () => !!(await chrome.storage.local.get(STUCK_OPENED_KEY))[STUCK_OPENED_KEY],
-    requestBackend,
-  );
+  const { listed, fresh } = await stuckWordsToShow(language, openedStuck, requestBackend);
   if (language !== reviewLanguage) return; // switched while it loaded
-  (document.getElementById('stuckText') as HTMLElement).textContent = stuckWordsText(count);
-  stuckRow.classList.toggle('hidden', count === 0);
+  stuckListed = listed;
+  (document.getElementById('stuckText') as HTMLElement).textContent = stuckWordsText(fresh);
+  stuckRow.classList.toggle('hidden', fresh === 0);
 }
 
 document.getElementById('stuckBtn')?.addEventListener('click', async () => {
-  await chrome.storage.local.set({ [STUCK_OPENED_KEY]: true });
+  await chrome.storage.local.set({ [STUCK_OPENED_KEY]: openedNow(await openedStuck(), stuckListed) });
   chrome.tabs.create({ url: stuckWordsUrl(WEB_URL) });
 });
 

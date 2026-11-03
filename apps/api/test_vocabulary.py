@@ -49,9 +49,9 @@ class FakeStore:
         self.events.extend(rows)
         return len(rows)
 
-    def exposed(self, user_id, media, word_ids):
+    def exposed(self, user_id, media, word_ids, kind="exposure"):
         return {e["word_id"] for e in self.events
-                if e["user_id"] == user_id and e["kind"] == "exposure"
+                if e["user_id"] == user_id and e["kind"] == kind
                 and (e.get("context") or {}).get("media") == media and e["word_id"] in word_ids}
 
     # The user's list: word_id -> root. 7 and 8 are homographs.
@@ -162,6 +162,19 @@ def test_record_seen_logs_each_word_once_per_media():
     assert vocabulary.record_seen(store, USER, other).recorded == 2
 
 
+def test_record_seen_logs_lookups_once_per_media_apart_from_exposures():
+    store = FakeStore()
+    seen_req = vocabulary.SeenRequest(source="video", media="youtube:abc", word_ids=[2])
+    lookup = vocabulary.SeenRequest(kind="lookup", source="video", media="youtube:abc", word_ids=[2])
+    assert vocabulary.record_seen(store, USER, seen_req).recorded == 1
+    # The exposure doesn't stand in for the look-up, nor a repeat hover for another.
+    assert vocabulary.record_seen(store, USER, lookup).recorded == 1
+    assert vocabulary.record_seen(store, USER, lookup).recorded == 0
+    assert [e["kind"] for e in store.events] == ["exposure", "lookup"]
+    chat = vocabulary.SeenRequest(kind="lookup", source="chatgpt", media="https://chatgpt.com/c/1", word_ids=[2])
+    assert vocabulary.record_seen(store, USER, chat).recorded == 1
+
+
 def test_record_seen_drops_words_no_longer_in_the_dictionary():
     store = FakeStore()
     req = vocabulary.SeenRequest(source="reader", media="https://example.com/a", word_ids=[2, 999])
@@ -270,9 +283,10 @@ class StuckStore(FakeStore):
         return [{"word_id": w, "root": root, "translation": t}
                 for w, (root, t, _) in self.LEARNING.items()]
 
-    def events(self, user_id, word_ids, kinds):
-        self.calls.append(("events", user_id, word_ids, kinds))
-        return [e for e in self.logged if e["word_id"] in word_ids and e["kind"] in kinds]
+    def video_evidence(self, user_id, word_ids):
+        self.calls.append(("video_evidence", user_id, word_ids))
+        return [e for e in self.logged if e["word_id"] in word_ids
+                and (e["kind"] == "lookup" or (e["kind"] == "exposure" and e["source"] == "video"))]
 
 
 def seen(word_id, media, source="video", kind="exposure"):
@@ -331,13 +345,6 @@ def test_stuck_words_with_none_learning_reads_nothing_else():
     store.LEARNING = {}
     assert vocabulary.stuck_words(store, USER, [1, 2], "es").words == []
     assert [c[0] for c in store.calls] == ["learning_rows", "learning_words"]
-
-
-def test_record_lookup_logs_one_lookup_from_the_extension():
-    store = FakeStore()
-    vocabulary.record_lookup(store, USER, 24, "quedó")
-    assert store.events == [{"user_id": USER, "word_id": 24, "kind": "lookup",
-                             "source": "extension", "context": {"word": "quedó"}}]
 
 
 def test_move_words_moves_only_words_in_the_users_list():

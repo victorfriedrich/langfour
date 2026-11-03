@@ -76,15 +76,3 @@ def test_requires_a_session(store):
     assert client.get("/api/vocabulary/stuck?language=es").status_code == 401
     assert client.post("/api/vocabulary/status", json={"word_ids": [10]}).status_code == 401
 
-
-def test_translating_a_word_logs_a_lookup(store, monkeypatch):
-    import app as app_module
-    monkeypatch.setattr(app_module, "parse_and_translate_word",
-                        lambda word, language: {"id": 24, "root": "quedar", "translation": "to stay"})
-    store.inserted = []
-    monkeypatch.setattr(store, "insert_events", lambda rows: store.inserted.extend(rows) or len(rows),
-                        raising=False)
-    response = client.post("/api/translate-word", json={"word": "quedó", "language": "es"}, headers=AUTH)
-    assert response.json() == {"id": 24, "root": "quedar", "translation": "to stay"}
-    assert store.inserted == [{"user_id": USER, "word_id": 24, "kind": "lookup",
-                               "source": "extension", "context": {"word": "quedó"}}]

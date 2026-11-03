@@ -1,33 +1,55 @@
 import { describe, expect, it } from 'vitest';
 import type { BackendResponse } from './messages';
-import { stuckWordsText, stuckWordsToShow, stuckWordsUrl } from './stuckWords';
+import { openedNow, stuckWordsText, stuckWordsToShow, stuckWordsUrl } from './stuckWords';
 
 const answer = (body: unknown, ok = true): BackendResponse => ({
   ok, status: ok ? 200 : 500, statusText: '', body: JSON.stringify(body),
 });
 
+const LISTED = {
+  words: [
+    { word_id: 1, reason: 'common' },
+    { word_id: 2, reason: 'common' },
+    { word_id: 3, reason: 'seen' },
+  ],
+};
+
 describe('stuckWordsToShow', () => {
-  it('counts the stuck words in the language', async () => {
+  it('counts every listed word before the link was ever opened', async () => {
     const asked: string[] = [];
-    const count = await stuckWordsToShow('es', async () => false, async (path) => {
+    const row = await stuckWordsToShow('es', async () => undefined, async (path) => {
       asked.push(path);
-      return answer({ words: [{}, {}, {}] });
+      return answer(LISTED);
     });
-    expect(count).toBe(3);
+    expect(row).toEqual({ listed: [1, 2, 3], fresh: 3 });
     expect(asked).toEqual(['/api/vocabulary/stuck?language=es']);
   });
 
-  it('shows nothing once the link was opened, without asking the API', async () => {
-    let asked = false;
-    const count = await stuckWordsToShow('es', async () => true, async () => {
-      asked = true;
-      return answer({ words: [{}] });
-    });
-    expect([count, asked]).toEqual([0, false]);
+  it('counts only words listed since the link was last opened', async () => {
+    const row = await stuckWordsToShow('es', async () => [1, 2], async () => answer(LISTED));
+    expect(row.fresh).toBe(1);
+  });
+
+  it('counts nothing when every listed word was already shown', async () => {
+    const row = await stuckWordsToShow('es', async () => [1, 2, 3, 9], async () => answer(LISTED));
+    expect(row.fresh).toBe(0);
+  });
+
+  it('reads the old "opened" flag as the common words', async () => {
+    const row = await stuckWordsToShow('es', async () => true, async () => answer(LISTED));
+    expect(row.fresh).toBe(1);
   });
 
   it('shows nothing when the API fails', async () => {
-    expect(await stuckWordsToShow('es', async () => false, async () => answer({}, false))).toBe(0);
+    expect(await stuckWordsToShow('es', async () => undefined, async () => answer({}, false)))
+      .toEqual({ listed: [], fresh: 0 });
+  });
+});
+
+describe('openedNow', () => {
+  it('remembers what was listed now and before', () => {
+    expect(openedNow([1, 4], [1, 2])).toEqual([1, 4, 2]);
+    expect(openedNow(true, [3])).toEqual([3]);
   });
 });
 
