@@ -43,9 +43,10 @@ const AFTER_FAVOURITE_MS = 5_000;
 const AFTER_FAVOURITE_FOR_MS = 20_000;
 const WHILE_ADDING_MS = 60_000;
 
-const BROWSE = 'ytd-browse[page-subtype="channels"]';
-// YouTube renames these now and then; they are kept here, in one place.
-const SELECTORS = {
+export const BROWSE = 'ytd-browse[page-subtype="channels"]';
+// YouTube renames these now and then; they are kept here, in one place, and
+// youtubeSelectors.live.test.ts checks them against youtube.com daily.
+export const SELECTORS = {
   actions: `${BROWSE} yt-flexible-actions-view-model`,
   tabs: `${BROWSE} yt-tab-group-shape .tabGroupShapeTabs`,
   // The full width of the tab bar, the same edges as the channel's header.
