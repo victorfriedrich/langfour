@@ -384,9 +384,7 @@ async function waitForChannel(doc: Document, pathname: string, expectedId: strin
  */
 export async function mountChannelPage(doc: Document, pathname: string, language: Language, api: ChannelApi, expectedId: string | null = null): Promise<void> {
   unmount(doc);
-  // A navigation to a channel says so, whatever its path: some channels keep
-  // an old custom address, such as /marcvilas, that @handle links redirect to.
-  if (!isChannelPath(pathname) && !expectedId) return;
+  if (!isChannelPath(pathname)) return;
   const mine = generation;
   const isCurrent = () => mine === generation;
   const channelId = await waitForChannel(doc, pathname, expectedId, isCurrent);
