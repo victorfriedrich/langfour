@@ -19,7 +19,7 @@ vi.mock('../hooks/useSetUserwordsStatus', () => ({ useSetUserwordsStatus: () => 
 vi.mock('../hooks/useStuckWords', () => ({ useStuckWords: () => ({ words: stuck, error: null, moveToKnown }) }));
 
 const word = (word_id: number, word: string, videos = 0, lookups = 0): StuckWord => ({
-  word_id, word, translation: null, videos, lookups,
+  word_id, word, translation: null, videos, lookups, reason: 'common',
 });
 
 beforeEach(() => {
@@ -30,7 +30,7 @@ beforeEach(() => {
 it('has no tab when no common word is stuck', () => {
   stuck = [];
   render(<LearningWordsTable total={10} />);
-  expect(screen.queryByText('Common words you never reviewed')).toBeNull();
+  expect(screen.queryByText('Words you likely know')).toBeNull();
 });
 
 it('opens from its link with every word ticked except the looked-up ones', async () => {

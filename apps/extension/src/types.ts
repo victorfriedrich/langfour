@@ -23,6 +23,12 @@ export type CaptionExposureEvent = {
   tokens: string[];
 };
 
+// A caption word whose popup stayed open long enough to be read (index.ts).
+export type WordLookupEvent = {
+  media: string;
+  wordId: number;
+};
+
 // Relays a backend call from a MAIN-world script (which has no
 // chrome.runtime) to the content script, which forwards it to the
 // background as a BACKEND_FETCH message and answers with the response event.

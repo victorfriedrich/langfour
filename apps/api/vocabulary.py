@@ -20,7 +20,9 @@ what it reports back about texts the user read with it.
     word an AI wrote).
   - record_seen: the same rows for words the extension saw the user read in
     the reader or in a video's captions, once per word per page or video
-    (context.media), however often the client sends them.
+    (context.media), however often the client sends them. With kind
+    'lookup', the words whose popup the user opened and read, once per word
+    per page, video or chat in the same way.
   - set_word_status: move words of the user's list between learning and
     known, as the web app's "Move to known" does. Back to learning, the
     userwords trigger gives the word a Langfour card again.
@@ -33,10 +35,11 @@ what it reports back about texts the user read with it.
     captions) and produced it (practice answers where they came up with the
     word themselves, self-reported ones left out), with the dates of the last
     of each.
-  - stuck_words: the web app's "Common words you never reviewed": learning
-    words among the corpus's most common that were never reviewed, with the
-    videos they were seen in and their look-ups. move_words moves the ones the
-    user ticks through set_status, as set_word_status does.
+  - stuck_words: the web app's "Words you likely know": learning words among
+    the corpus's most common that were never reviewed, then learning words
+    seen in SEEN_VIDEOS videos or more and never looked up, each with the
+    videos it was seen in and its look-ups. Suggestions only: move_words
+    moves the ones the user ticks through set_status, as set_word_status does.
 
 The API runs these with the service role on behalf of the OAuth user, so every
 query names the user explicitly.
@@ -70,6 +73,7 @@ _IN_CHUNK = 200
 MAX_MISTAKES = 10    # words to revise listed, newest first
 _RECALL_SCAN = 1000  # practice answers read to find them
 STUCK_TOP = 500      # "common": among the corpus's most frequent words
+SEEN_VIDEOS = 10     # seen in this many videos and never looked up: likely known
 _PAGE = 1000         # PostgREST's row cap per request
 
 
@@ -130,11 +134,15 @@ class ExposureSummary(BaseModel):
 
 
 class SeenRequest(BaseModel):
-    source: Literal["reader", "video"]
+    # exposure: read or heard. lookup: its popup opened and read; the
+    # extension leaves out a caption word the pointer only crossed.
+    kind: Literal["exposure", "lookup"] = "exposure"
+    source: Literal["reader", "video", "chatgpt"]
     # Where it was read: "youtube:<id>" or the page's URL. Words are logged
-    # once per media.
+    # once per kind per media.
     media: str = Field(min_length=1, max_length=MAX_MEDIA)
-    # Learning and new words, as the extension classified them.
+    # Learning and new words, as the extension classified them; for a
+    # look-up, the word the popup translated.
     word_ids: list[int] = Field(min_length=1, max_length=MAX_SEEN)
 
 
@@ -172,10 +180,13 @@ class StuckWord(BaseModel):
     translation: str | None
     videos: int   # distinct videos its captions were seen in (exposure rows)
     lookups: int
+    # common: among the most common words, never reviewed. seen: in
+    # SEEN_VIDEOS videos or more, never looked up.
+    reason: Literal["common", "seen"] = "common"
 
 
 class StuckWords(BaseModel):
-    words: list[StuckWord]  # most common first
+    words: list[StuckWord]  # the common ones most common first, then the seen ones most seen first
 
 
 class MoveRequest(BaseModel):
@@ -231,12 +242,13 @@ class VocabularyStore:
                 out[r["id"]] = r
         return out
 
-    def exposed(self, user_id: str, media: str, word_ids: list[int]) -> set[int]:
-        """Which of these words already have an exposure logged for this media."""
+    def exposed(self, user_id: str, media: str, word_ids: list[int],
+                kind: str = "exposure") -> set[int]:
+        """Which of these words already have an event of this kind logged for this media."""
         out: set[int] = set()
         for chunk in _chunks(word_ids, _IN_CHUNK):
             res = (self.db.table("word_events").select("word_id")
-                   .eq("user_id", user_id).eq("kind", "exposure")
+                   .eq("user_id", user_id).eq("kind", kind)
                    .eq("context->>media", media).in_("word_id", chunk).execute())
             out |= {r["word_id"] for r in res.data or []}
         return out
@@ -353,6 +365,24 @@ class VocabularyStore:
                 start += _PAGE
         return out
 
+    def video_evidence(self, user_id: str, word_ids: list[int]) -> list[dict]:
+        """What stuck_words weighs for these words: their look-ups and their
+        exposures in videos, [{word_id, kind, context}], every page of them."""
+        out: list[dict] = []
+        for chunk in _chunks(word_ids, _IN_CHUNK):
+            start = 0
+            while True:
+                res = (self.db.table("word_events").select("word_id, kind, context")
+                       .eq("user_id", user_id).in_("word_id", chunk)
+                       .or_("kind.eq.lookup,and(kind.eq.exposure,source.eq.video)")
+                       .order("id").range(start, start + _PAGE - 1).execute())
+                rows = res.data or []
+                out.extend(rows)
+                if len(rows) < _PAGE:
+                    break
+                start += _PAGE
+        return out
+
     def touch(self, user_id: str) -> None:
         (self.db.table("userdata").update({"known_words_updated_at": datetime.now(UTC).isoformat()})
          .eq("user_id", user_id).execute())
@@ -442,9 +472,9 @@ def record_seen(store: VocabularyStore, user_id: str, req: SeenRequest) -> Expos
     # dropped rather than failing the whole batch on the foreign key.
     known_ids = set(store.words(asked))
     fresh = [w for w in asked if w in known_ids]
-    logged = store.exposed(user_id, req.media, fresh) if fresh else set()
+    logged = store.exposed(user_id, req.media, fresh, req.kind) if fresh else set()
     recorded = store.insert_events([
-        {"user_id": user_id, "word_id": w, "kind": "exposure", "source": req.source,
+        {"user_id": user_id, "word_id": w, "kind": req.kind, "source": req.source,
          "context": {"media": req.media}}
         for w in fresh if w not in logged
     ])
@@ -549,30 +579,43 @@ def get_word_exposures(store: VocabularyStore, user_id: str, language: str | Non
     ])
 
 
-def stuck_words(store: VocabularyStore, user_id: str, common: list[int]) -> StuckWords:
-    """Learning words among `common` (word ids, most frequent first) that were
-    never reviewed: imported or saved long ago and left. Each with the videos
-    it was seen in and how often it was looked up, so the user can tell which
-    they know."""
+def stuck_words(store: VocabularyStore, user_id: str, common: list[int],
+                language: str) -> StuckWords:
+    """Learning words the user likely knows. First those among `common` (word
+    ids, most frequent first) that were never reviewed: imported or saved long
+    ago and left. Then any other learning word in the language seen in
+    SEEN_VIDEOS videos or more and never looked up, most seen first. Each with
+    the videos it was seen in and how often it was looked up, so the user can
+    tell which they know."""
     rank = {w: i for i, w in enumerate(common)}
     rows = [r for r in store.learning_rows(user_id, common) if not r.get("last_reviewed_at")]
     reviewed = store.reviewed(user_id, [r["word_id"] for r in rows]) if rows else set()
     rows = sorted((r for r in rows if r["word_id"] not in reviewed), key=lambda r: rank[r["word_id"]])
-    ids = [r["word_id"] for r in rows]
+    learning = {r["word_id"]: r for r in store.learning_words(user_id, language)}
+    ids = sorted({r["word_id"] for r in rows} | set(learning))
 
     videos: dict[int, set[str]] = {}
     lookups: Counter[int] = Counter()
-    for e in store.events(user_id, ids, ["exposure", "lookup"]) if ids else []:
+    for e in store.video_evidence(user_id, ids) if ids else []:
         if e["kind"] == "lookup":
             lookups[e["word_id"]] += 1
-        elif e["source"] == "video" and (media := (e.get("context") or {}).get("media")):
+        elif media := (e.get("context") or {}).get("media"):
             videos.setdefault(e["word_id"], set()).add(media)
+
+    listed = {r["word_id"] for r in rows}
+    seen = sorted((w for w in learning if w not in listed and not lookups[w]
+                   and len(videos.get(w, ())) >= SEEN_VIDEOS),
+                  key=lambda w: (-len(videos[w]), learning[w]["root"]))
 
     return StuckWords(words=[
         StuckWord(word_id=r["word_id"], word=r["words"]["root"],
                   translation=r["words"].get("translation"),
                   videos=len(videos.get(r["word_id"], ())), lookups=lookups[r["word_id"]])
         for r in rows
+    ] + [
+        StuckWord(word_id=w, word=learning[w]["root"], translation=learning[w].get("translation"),
+                  videos=len(videos[w]), lookups=0, reason="seen")
+        for w in seen
     ])
 
 

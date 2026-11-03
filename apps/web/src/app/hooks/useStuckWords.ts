@@ -3,8 +3,9 @@ import { UserContext } from '@/context/UserContext';
 import type { StuckWord } from '../vocabulary/stuck';
 
 /**
- * Common words still in learning that were never reviewed, in the sidebar's
- * language (apps/api/vocabulary_routes.py). Moving them to known goes through
+ * Learning words the user likely knows, in the sidebar's language: common
+ * ones never reviewed, then ones seen in 10+ videos and never looked up
+ * (apps/api/vocabulary_routes.py). Moving them to known goes through
  * the API, the same path as the MCP's set_word_status.
  */
 export const useStuckWords = () => {

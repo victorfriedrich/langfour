@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { evidence, preselected, type StuckWord } from './stuck';
 
 const word = (word_id: number, videos = 0, lookups = 0): StuckWord => ({
-  word_id, word: `w${word_id}`, translation: null, videos, lookups,
+  word_id, word: `w${word_id}`, translation: null, videos, lookups, reason: 'common',
 });
 
 describe('preselected', () => {

@@ -52,8 +52,10 @@ def test_lists_stuck_words_in_corpus_order(store):
     response = client.get("/api/vocabulary/stuck?language=es", headers=AUTH)
     assert response.status_code == 200
     assert response.json() == {"words": [
-        {"word_id": 23, "word": "que", "translation": "that, which", "videos": 1, "lookups": 0},
-        {"word_id": 24, "word": "quedar", "translation": "to stay", "videos": 0, "lookups": 0},
+        {"word_id": 23, "word": "que", "translation": "that, which", "videos": 1, "lookups": 0,
+         "reason": "common"},
+        {"word_id": 24, "word": "quedar", "translation": "to stay", "videos": 0, "lookups": 0,
+         "reason": "common"},
     ]}
     # Every common word, known ones included: "common" doesn't depend on the user.
     assert app.state.recommender.asked == [("es", [], STUCK_TOP)]
@@ -73,3 +75,4 @@ def test_refuses_unknown_languages_and_empty_moves(store):
 def test_requires_a_session(store):
     assert client.get("/api/vocabulary/stuck?language=es").status_code == 401
     assert client.post("/api/vocabulary/status", json={"word_ids": [10]}).status_code == 401
+

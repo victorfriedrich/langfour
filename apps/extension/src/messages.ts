@@ -59,6 +59,8 @@ export type ClassifyWordsResponse =
 
 // Where words were read, as word_events.source has it.
 export type ExposureSource = 'reader' | 'video';
+// Where a word's popup was opened.
+export type LookupSource = ExposureSource | 'chatgpt';
 
 // The user's history with one word, from word_progress
 // (apps/api/sql/word_progress.sql). Timestamps are ISO strings.
@@ -102,6 +104,9 @@ export type BackgroundMessage =
   // Words the user read (exposure.ts); the background keeps the learning
   // and new ones and logs them.
   | { type: 'RECORD_EXPOSURE'; language: string; tokens: string[]; source: ExposureSource; media: string }
+  // A word whose popup the user opened and read: tapped in the reader or a
+  // ChatGPT reply, or hovered long enough in captions (index.ts).
+  | { type: 'RECORD_LOOKUP'; wordId: number; source: LookupSource; media: string }
   | { type: 'WORD_PROGRESS'; wordId: number }
   | { type: 'GET_ACCOUNT' }
   | { type: 'SET_LANGUAGE'; language: Language }

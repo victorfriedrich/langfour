@@ -54,9 +54,9 @@ class FakeVocab:
     def words(self, word_ids):
         return {w: {"id": w, "root": WORDS[w][0]} for w in word_ids if w in WORDS}
 
-    def exposed(self, user_id, media, word_ids):
+    def exposed(self, user_id, media, word_ids, kind="exposure"):
         return {e["word_id"] for e in self.events
-                if e["kind"] == "exposure" and e["context"]["media"] == media}
+                if e["kind"] == kind and e["context"]["media"] == media}
 
     def insert_events(self, rows):
         self.events.extend(rows)

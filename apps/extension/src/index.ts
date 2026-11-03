@@ -29,12 +29,13 @@ import startTextMutationObserver from './startTextMutationObserver';
 import { getSiteSpecificApi } from './siteApi';
 import { replaceNativeFullscreen } from './iosFullscreen';
 import { watchCaptions } from './captionExposure';
+import { mediaKey } from './exposure';
 import addMouseEnterLeaveEventListeners, {
   createElementFromHTML,
   logPrefix,
   positionElement,
 } from './utils';
-import { ViewPopupEvent, KnownWordsEvent } from './types'
+import { ViewPopupEvent, KnownWordsEvent, WordLookupEvent } from './types'
 
 const siteApi = getSiteSpecificApi(location.host);
 let preferredLanguage = defaultPrefs.preferredLanguage;
@@ -43,6 +44,11 @@ const subtitleMasks = new Map<Text, HTMLElement[]>();
 let lastHoveredElement: HTMLElement | null = null;
 let lastTranslationPopup: HTMLElement | null = null;
 let videoPlayTimer: null | ReturnType<typeof setTimeout> = null;
+// A look-up is a translation the user stayed on, not a word the pointer
+// crossed on its way somewhere: logged once the popup has shown its
+// translation this long, and the server keeps one per word per video.
+const LOOKUP_DWELL_MS = 800;
+let lookupTimer: ReturnType<typeof setTimeout> | undefined;
 
 let isVideoPaused = false;
 
@@ -159,6 +165,7 @@ function translateWord(el: HTMLElement, popupEl: HTMLElement) {
         // Saving closes the popup the same way tapping away does, which
         // also resumes the video.
         insertTranslationResult(popupEl, translation, word, isNewWord(el), () => onWordLeaveHandler(el));
+        if (translation.id) logLookupAfterDwell(el, translation.id);
       } else {
         insertTranslationResult(popupEl, {
           id: 0,
@@ -234,7 +241,19 @@ if (siteApi.subtitleSelector) {
 // Caption words watched during playback count as seen (exposure.ts).
 watchCaptions(siteApi);
 
+function logLookupAfterDwell(el: HTMLElement, wordId: number) {
+  clearTimeout(lookupTimer);
+  lookupTimer = setTimeout(() => {
+    if (lastHoveredElement !== el) return;
+    // To the content script, which has chrome.runtime (contentScript.ts).
+    document.dispatchEvent(new CustomEvent<WordLookupEvent>('word-lookup', {
+      detail: { media: mediaKey(location.href), wordId },
+    }));
+  }, LOOKUP_DWELL_MS);
+}
+
 function onWordLeaveHandler(el: HTMLElement) {
+  clearTimeout(lookupTimer);
   hideTranslationPopup();
   el.classList.remove(subWordReveal);
   lastHoveredElement = null;

@@ -528,6 +528,17 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
       return true; // Keeps the message channel open for async response
     }
 
+    case 'RECORD_LOOKUP': {
+      const { wordId, source, media } = message;
+      backendFetch({ path: '/api/exposure', method: 'POST', body: { kind: 'lookup', source, media, word_ids: [wordId] } })
+        .then((response) => {
+          if (!response.ok) console.warn('Could not log a look-up:', response.status, response.statusText);
+        })
+        .catch((error: unknown) => console.warn('Could not log a look-up:', error))
+        .then(() => sendResponse({ ok: true }));
+      return true; // Keeps the message channel open for async response
+    }
+
     case 'GET_ACCOUNT': {
       getAccount()
         .catch((error): AccountResponse => ({ account: null, error: getErrorMessage(error, 'Could not load the account') }))

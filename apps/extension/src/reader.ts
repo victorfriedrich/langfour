@@ -13,6 +13,8 @@ import { appendWordProgress, createLoadingPopup, createMessagePopup, createWordP
 import { ExposureQueue, FLUSH_MS, mediaKey, msToRead, tokensOf } from './exposure';
 
 let readerLanguage: Language | null = null;
+// Where this text is read, as exposures and look-ups are grouped (exposure.ts).
+let readerMedia = '';
 let signedIn = false;
 // Where "Review flashcards" goes: RemNote for users who review there.
 let reviewUrl = `${WEB_URL}/vocabulary`;
@@ -198,7 +200,8 @@ function renderArticle(container: HTMLElement, article: StoredArticle): void {
     }
     setupSectionTranslation(readerLanguage);
     header.appendChild(createLibraryButton(article, contentDiv, readerLanguage));
-    trackReading(contentDiv, readerLanguage, article.url ? mediaKey(article.url) : `reader:${article.title ?? ''}`);
+    readerMedia = article.url ? mediaKey(article.url) : `reader:${article.title ?? ''}`;
+    trackReading(contentDiv, readerLanguage, readerMedia);
 
     // The text shows right away; marks follow once the dictionary has said
     // which tokens are words and where the user stands with them.
@@ -578,6 +581,10 @@ function handleWordClick(wordElement: HTMLElement): void {
     );
     appendProgress(popup, wordElement);
     showPopup(popup, wordElement);
+    // A tap, not a hover: opening the popup is the look-up.
+    if (translation.id && readerMedia) {
+      sendToBackground({ type: 'RECORD_LOOKUP', wordId: translation.id, source: 'reader', media: readerMedia });
+    }
   });
 }
 

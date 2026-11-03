@@ -12,6 +12,7 @@ import { getPrefs } from './preferencePopup/prefs';
 import { Language, LANGUAGES, toLanguage } from './languages';
 import { readFileSync } from 'fs';
 import { askBackground, ClassifiedWord, ClassifyWordsResponse, sendToBackground } from './messages';
+import { mediaKey } from './exposure';
 import { SIGNED_OUT, translate } from './translate';
 import { appendWordProgress, createLoadingPopup, createMessagePopup, createWordPopup } from './wordPopup';
 
@@ -494,6 +495,10 @@ function openPopup(range: Range, token: string, word: ClassifiedWord, lang: Lang
         ? popupButton('Add to flashcards', () => saveWord(word, translation.id))
         : undefined;
       showInPopup(withProgress(createWordPopup(token, translation, lang, save)));
+      // Opened by a click, so this is the look-up; one per word per chat.
+      if (translation.id) {
+        sendToBackground({ type: 'RECORD_LOOKUP', wordId: translation.id, source: 'chatgpt', media: mediaKey(location.href) });
+      }
     }
   });
 }
