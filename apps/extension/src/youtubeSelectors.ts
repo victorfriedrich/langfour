@@ -1,4 +1,5 @@
-// Every YouTube selector the fit badges (youtubeFit.ts) rely on. YouTube's
+// Every YouTube selector the fit badges (youtubeFit.ts) and the full-title
+// box (youtubeTitles.ts) rely on. YouTube's
 // markup changes often, so they live here and nowhere else, and
 // youtubeSelectors.test.ts runs them against pages saved in test/youtube/,
 // and youtubeSelectors.live.test.ts against youtube.com itself, daily in CI.
@@ -84,6 +85,15 @@ export function cardAt(target: Element): VideoCard | null {
   const card = target.closest<HTMLElement>(VIDEO_CARD);
   if (!card) return null;
   return findVideoCards(card).find((found) => found.card === card) ?? null;
+}
+
+// A card's title link: lockups, then the older cards.
+const VIDEO_TITLE = 'a.ytLockupMetadataViewModelTitle, #video-title';
+
+/** The title of a video card under the pointer. */
+export function titleAt(target: Element): HTMLElement | null {
+  const title = target.closest<HTMLElement>(VIDEO_TITLE);
+  return title?.closest(VIDEO_CARD) ? title : null;
 }
 
 // The inline preview that starts playing over a hovered thumbnail. It is
