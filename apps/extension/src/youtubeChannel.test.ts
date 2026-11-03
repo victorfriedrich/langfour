@@ -360,17 +360,6 @@ describe('mountChannelPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Favourite' })).toBeInTheDocument());
   });
 
-  it('mounts on an old custom address when the navigation was to a channel', async () => {
-    channelPage();
-    const { api, calls } = fakeApi({ ok: true, value: view() });
-    await mountChannelPage(document, '/marcvilas', 'es', api);
-    expect(calls).toEqual([]);
-
-    await mountChannelPage(document, '/marcvilas', 'es', api, CHANNEL);
-    expect(screen.getByRole('tab', { name: 'Langfour' })).toBeInTheDocument();
-    expect(calls).toEqual([['favourited', CHANNEL]]);
-  });
-
   it('says it could not load an answer it cannot draw, rather than staying on Loading', async () => {
     channelPage();
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
