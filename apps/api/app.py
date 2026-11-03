@@ -17,6 +17,7 @@ from database import cached_word_id, initialize_cache
 from exposure_routes import router as exposure_router
 from flashcards import router as flashcards_router
 from grammar_routes import router as grammar_router
+from home_routes import router as home_router
 from language_check import router as language_check_router
 from languages import require_code
 from mcp_auth import router as mcp_auth_router
@@ -149,6 +150,7 @@ app.include_router(vocabulary_router, tags=["vocabulary"])
 app.include_router(channel_router, tags=["channels"])
 app.include_router(video_fit_router, tags=["videos"])
 app.include_router(watch_router, tags=["watch"])
+app.include_router(home_router, tags=["home"])
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 

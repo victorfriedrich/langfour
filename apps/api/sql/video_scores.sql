@@ -11,7 +11,7 @@
 --   p_garbled,
 --   p_foreign_lesson,
 --   p_sung             probability of the rejecting answer
---   grammar            A: CEFR grammar level, A1..C1 as 1..9   (not used yet)
+--   grammar            A: CEFR grammar level, A1..C1 as 1..9   (the Videos page's filter, home.py)
 --   content            C: content in the words, 1..10
 --   developed          D: developed thought, 1..10              (not used yet)
 --   transferable       E: transferable language, 1..10

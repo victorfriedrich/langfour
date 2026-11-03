@@ -84,13 +84,16 @@ def test_other_languages_are_not_scored():
     http.post.assert_not_called() and sb.table.assert_not_called()
 
 
-def test_hidden_ids_pages_through_the_table():
-    rows = [{"video_id": f"v{i}", "p_garbled": 0.9 if i % 2 else 0.0, "p_foreign_lesson": 0.0,
-             "p_sung": 0.0, "content": 7, "transferable": 7} for i in range(1500)]
+def test_hidden_and_grammar_pages_through_the_table():
+    rows = [{"video_id": f"v{i}", "language": "es", "p_garbled": 0.9 if i % 2 else 0.0,
+             "p_foreign_lesson": 0.0, "p_sung": 0.0, "content": 7, "transferable": 7,
+             "grammar": 3 + i % 3} for i in range(1500)]
     pages = [rows[:1000], rows[1000:]]
     query = Mock()
     query.select.return_value = query.order.return_value = query.eq.return_value = query
     query.range.return_value.execute.side_effect = [Mock(data=p) for p in pages]
     sb = Mock()
     sb.table.return_value = query
-    assert vq.hidden_ids(sb) == {f"v{i}" for i in range(1500) if i % 2}
+    hidden, grammar = vq.hidden_and_grammar(sb)
+    assert hidden == {f"v{i}" for i in range(1500) if i % 2}
+    assert grammar == {"es": {f"v{i}": 3 + i % 3 for i in range(1500)}}
