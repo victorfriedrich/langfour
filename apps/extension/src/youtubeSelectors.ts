@@ -1,8 +1,9 @@
 // Every YouTube selector the fit badges (youtubeFit.ts) rely on. YouTube's
 // markup changes often, so they live here and nowhere else, and
-// youtubeSelectors.test.ts runs them against pages saved in test/youtube/.
+// youtubeSelectors.test.ts runs them against pages saved in test/youtube/,
+// and youtubeSelectors.live.test.ts against youtube.com itself, daily in CI.
 // When a badge stops showing, recapture those pages (test/youtube/README.md)
-// and fix what the test then reports.
+// and fix what the tests then report.
 
 // Video cards on Home, channel pages (ytd-rich-item-renderer holding a
 // yt-lockup-view-model), Search (ytd-video-renderer) and the watch page's
