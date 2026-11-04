@@ -3,7 +3,9 @@ What an AI app connected over MCP can learn about the user's vocabulary, and
 what it reports back about texts the user read with it.
 
   - get_vocabulary: counts and a list of known, learning or due words
-    (mcp_vocabulary in sql/mcp_vocabulary.sql), plus the words whose last
+    (mcp_vocabulary in sql/mcp_vocabulary.sql), each with the date it was
+    added and how often and when last the user saw it, newest first or least
+    recently seen first so an AI app rotates through them; plus the words whose last
     practice answer was wrong, with the AI app's note: the mistakes to revise,
     known words included, since those have no card to bring back.
   - score_text: how much of a text the user would understand, and which of its
@@ -57,6 +59,10 @@ from practice import PracticeStore
 from supabase_client import supabase
 
 Language = Literal["es", "de", "it", "fr"]
+# How get_vocabulary lists words: None for the status's own order (due: most
+# overdue first, else newest first); least_recently_seen puts words never seen
+# first, newest of them first, then the ones seen longest ago.
+VocabularyOrder = Literal["newest", "least_recently_seen"]
 SOURCE = "chatgpt"
 MAX_TEXT = 20_000
 MAX_MEDIA = 500
@@ -97,6 +103,9 @@ class VocabularyWord(BaseModel):
     translation: str | None
     status: Literal["known", "learning"]
     due: bool
+    added: str | None = None      # put in the user's list, YYYY-MM-DD
+    seen: int = 0                 # exposure rows, every source
+    last_seen: str | None = None  # YYYY-MM-DD
 
 
 class WordMistake(BaseModel):
@@ -207,11 +216,13 @@ class VocabularyStore:
     def __init__(self, client):
         self.db = client
 
-    def vocabulary(self, user_id: str, language: str | None, status: str, limit: int) -> dict:
-        return self.db.rpc("mcp_vocabulary", {
-            "p_user_id": user_id, "p_language": language,
-            "p_status": status, "p_limit": limit,
-        }).execute().data
+    def vocabulary(self, user_id: str, language: str | None, status: str, limit: int,
+                   order: str | None = None) -> dict:
+        params = {"p_user_id": user_id, "p_language": language,
+                  "p_status": status, "p_limit": limit}
+        if order:
+            params["p_order"] = order
+        return self.db.rpc("mcp_vocabulary", params).execute().data
 
     def recall_events(self, user_id: str, language: str) -> list[dict]:
         """The user's latest practice answers in a language, newest first."""
@@ -397,8 +408,9 @@ def get_vocabulary_store() -> VocabularyStore:
 # ---------------------------------------------------------------------------
 
 def get_vocabulary(store: VocabularyStore, user_id: str, language: str | None,
-                   status: Literal["due", "learning", "known"], limit: int) -> Vocabulary:
-    vocab = Vocabulary.model_validate(store.vocabulary(user_id, language, status, limit))
+                   status: Literal["due", "learning", "known"], limit: int,
+                   order: VocabularyOrder | None = None) -> Vocabulary:
+    vocab = Vocabulary.model_validate(store.vocabulary(user_id, language, status, limit, order))
     if vocab.language:
         vocab.mistakes = _mistakes(store.recall_events(user_id, vocab.language))
     return vocab

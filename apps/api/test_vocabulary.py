@@ -27,11 +27,12 @@ class FakeStore:
         self.events = []
         self.recalls = list(recalls)
 
-    def vocabulary(self, user_id, language, status, limit):
-        self.calls.append(("vocabulary", user_id, language, status, limit))
+    def vocabulary(self, user_id, language, status, limit, order=None):
+        self.calls.append(("vocabulary", user_id, language, status, limit, order))
         return {"language": "es", "counts": {"known": 2, "learning": 1, "due": 1},
                 "words": [{"word": "el perro", "translation": "dog",
-                           "status": "learning", "due": True}]}
+                           "status": "learning", "due": True,
+                           "added": "2026-10-01", "seen": 3, "last_seen": "2026-11-02"}]}
 
     def recall_events(self, user_id, language):
         self.calls.append(("recall_events", user_id, language))
@@ -98,9 +99,45 @@ class FakeStore:
 def test_get_vocabulary_passes_the_user_and_parses_the_answer():
     store = FakeStore()
     vocab = vocabulary.get_vocabulary(store, USER, None, "due", 20)
-    assert store.calls == [("vocabulary", USER, None, "due", 20), ("recall_events", USER, "es")]
+    assert store.calls == [("vocabulary", USER, None, "due", 20, None),
+                           ("recall_events", USER, "es")]
     assert vocab.counts.due == 1
     assert vocab.words[0].word == "el perro"
+    assert (vocab.words[0].added, vocab.words[0].seen, vocab.words[0].last_seen) == \
+        ("2026-10-01", 3, "2026-11-02")
+
+
+def test_get_vocabulary_passes_the_order():
+    store = FakeStore()
+    vocabulary.get_vocabulary(store, USER, "es", "learning", 5000, "least_recently_seen")
+    assert store.calls[0] == ("vocabulary", USER, "es", "learning", 5000, "least_recently_seen")
+
+
+def test_vocabulary_words_from_before_dates_were_listed_still_parse():
+    word = vocabulary.VocabularyWord.model_validate(
+        {"word": "el perro", "translation": "dog", "status": "learning", "due": False})
+    assert (word.added, word.seen, word.last_seen) == (None, 0, None)
+
+
+class _Rpc:
+    def __init__(self):
+        self.params = None
+
+    def rpc(self, name, params):
+        self.params = params
+        return self
+
+    def execute(self):
+        return type("Res", (), {"data": {}})()
+
+
+def test_store_leaves_the_order_out_unless_given():
+    # So the API still works against the four-argument mcp_vocabulary.
+    db = _Rpc()
+    vocabulary.VocabularyStore(db).vocabulary(USER, None, "due", 50)
+    assert "p_order" not in db.params
+    vocabulary.VocabularyStore(db).vocabulary(USER, None, "learning", 50, "least_recently_seen")
+    assert db.params["p_order"] == "least_recently_seen"
 
 
 def test_score_text_counts_running_words_and_skips_non_vocabulary():

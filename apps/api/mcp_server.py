@@ -53,6 +53,7 @@ from vocabulary import (
     StatusChange,
     TextScore,
     Vocabulary,
+    VocabularyOrder,
     WordExposures,
     WordsAdded,
     add_words,
@@ -71,15 +72,27 @@ mcp = FastMCP(
         "flashcard reviews, itself or in a connected app such as RemNote. Before practising "
         "vocabulary with the user, pick words with get_vocabulary (due words first); at the end "
         "of the session, report the results with record_practice. When you write a text for "
-        "the user to read in the language, check its level with score_text. In a "
-        "conversation in the language, fetch the words the user is learning once with "
-        "get_vocabulary (status 'learning', limit 5000) and keep the list. In every turn, "
-        "judge from the user's answer whether they took in the whole of your previous reply "
-        "or a text they asked for (they respond to its end or what it asked, or heard it out "
-        "in a voice conversation), and if they did, log the learning words that appeared in "
-        "it with record_exposure. When you write examples or texts in the language, build them "
-        "around the words the user is learning, fill the rest with words they know, and now "
-        "and then bring in one common word they haven't met, glossed in parentheses. "
+        "the user to read in the language, check its level with score_text. "
+        "In a conversation in the language, fetch the words the user is learning once, with "
+        "get_vocabulary (status 'learning', order 'least_recently_seen', limit 5000), and keep "
+        "the list: words the user hasn't seen lately come first, and each shows when it was "
+        "added and last seen. Every reply or text you write in the language works in learning "
+        "words: choose them before you write (two to four in a short reply, more in a longer "
+        "text) and fill the rest with words the user knows; now and then bring in one common "
+        "word they haven't met, glossed in parentheses. Vary them: draw from the whole list, "
+        "favour words not seen lately, mix recently added words with older ones, and don't use "
+        "a learning word again in the conversation while others are still unused, unless "
+        "you're practising it. "
+        "Log what the user read with record_exposure, and do it first: at the start of every "
+        "turn that follows a reply of yours in the language, before you write anything, decide "
+        "whether the user took that reply in whole (they answer its end or what it asked, or "
+        "heard it out in a voice conversation) and, if they did, call record_exposure with the "
+        "learning words it used. Do the same for a text they asked for once they've read it. "
+        "This is the one write that doesn't wait for the end of the turn: the reply is already "
+        "written, and left for the end the call is easily forgotten. When in doubt whether a "
+        "word is on the list, include it; words that aren't come back under not_learning and "
+        "change nothing. A turn after such a reply isn't complete until you've decided and, "
+        "if so, logged. "
         "Take the user at their word about what they "
         "know: words they know outright go to known with set_word_status, and words they say "
         "they can read but not produce get a correct 'recognize' answer, self_reported, with "
@@ -102,10 +115,11 @@ mcp = FastMCP(
         "other results unless the user asks; let what you read shape your reply instead. This "
         "matters most in voice conversations, where every aside is a pause. Make the reads a "
         "session needs together in one turn (get_grammar_overview and get_vocabulary side by "
-        "side) and reuse what they returned rather than calling again. Make writes at the end "
-        "of your turn, after your reply to the user, so they never wait on one, and add "
-        "nothing after a write unless its result changes what the user should hear (a concept "
-        "newly learned, a chapter refused as not done)."
+        "side) and reuse what they returned rather than calling again. Apart from "
+        "record_exposure, which goes first, make writes at the end of your turn, after your "
+        "reply to the user, so they never wait on one, and add nothing after a write unless "
+        "its result changes what the user should hear (a concept newly learned, a chapter "
+        "refused as not done)."
     ),
     stateless_http=True,
     json_response=True,
@@ -157,22 +171,28 @@ async def get_vocabulary_tool(
     status: Literal["due", "learning", "known"] = "due",
     language: Language | None = None,
     limit: Annotated[int, Field(ge=1)] = 50,
+    order: VocabularyOrder | None = None,
 ) -> Vocabulary:
     """The user's vocabulary in a language: how many words they know, are learning and
-    have due for review, and a list of words with translations.
+    have due for review, and a list of words with translations, each with the date it
+    was added to their list (added), how often they've seen it (seen: read in your
+    replies, a text, Langfour's reader or a video's captions) and when last (last_seen).
 
     status picks the list: 'due' are learning words whose review is due now, most overdue
     first, and the best words to practise; 'learning' are all words being learned, newest
-    first; 'known' are words the user knows, newest first. language is an ISO code (es, de,
-    it or fr); leave it out for the language the user is studying. Pass words to
+    first; 'known' are words the user knows, newest first. order changes that:
+    'least_recently_seen' lists words never seen first (newest of them first), then the
+    ones seen longest ago, the order to work through when writing in the language, so you
+    don't keep using the same words; 'newest' lists newest first. language is an ISO code
+    (es, de, it or fr); leave it out for the language the user is studying. Pass words to
     record_practice exactly as listed here (with the article, e.g. 'la casa'). limit has
-    no maximum; counts says how many words there are, at about 90 bytes per word listed.
+    no maximum; counts says how many words there are, at about 140 bytes per word listed.
 
     mistakes lists words the user last got wrong in practice, newest first, with a note:
     work one to three of them into the session and record the result.
     """
     return await asyncio.to_thread(get_vocabulary, get_vocabulary_store(), _user_id(ctx),
-                                   language, status, limit)
+                                   language, status, limit, order)
 
 
 @mcp.tool(name="get_word_exposures", annotations=ToolAnnotations(
@@ -235,16 +255,19 @@ async def record_exposure_tool(
 ) -> ExposureSummary:
     """Log that the user read words they're learning: the learning words in a reply of
     yours they took in, or in a text they asked for (a story, an article) once they've
-    read it. Langfour notes each as seen; it doesn't change their flashcard schedule.
+    read it. Langfour notes each as seen, which moves it down get_vocabulary's
+    'least_recently_seen' list; it doesn't change their flashcard schedule.
 
-    Know the learning words before you write: fetch them once per conversation with
-    get_vocabulary (status 'learning', limit 5000) and keep the list. In every turn, judge
-    from the user's answer whether they engaged with the whole of your previous reply:
-    they respond to its end or to what it asked, or heard it out in a voice conversation.
-    If they did, log the learning words that appeared in it, in any form, each once and
-    written as get_vocabulary lists them (with the article, e.g. 'la casa'). If they
-    skimmed it, cut you off or answered only its first lines, don't, and never log a
-    reply twice. not_learning lists words that aren't in their learning list.
+    Call it first thing in the turn, before you write your reply: the user's message
+    shows whether they took in your previous reply (they respond to its end or to what it
+    asked, or heard it out in a voice conversation), and the words are already known.
+    Don't leave it for the end of the turn, where it gets forgotten. If they took it in,
+    log the learning words that appeared in it, in any form, each once: as get_vocabulary
+    lists them (with the article, e.g. 'la casa') or as they appeared ('encontré' finds
+    encontrar). When unsure whether a word is a learning word, include it: not_learning
+    lists the ones that aren't, and nothing is logged for them. If the user skimmed the
+    reply, cut you off or answered only its first lines, don't log it, and never log a
+    reply twice.
     """
     return await asyncio.to_thread(record_exposure, get_vocabulary_store(), _user_id(ctx),
                                    language, words)
