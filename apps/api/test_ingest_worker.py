@@ -131,3 +131,16 @@ def test_uploading_needs_its_own_write_token(monkeypatch):
     monkeypatch.delenv("LANGFIVE_CORPUS_WRITE_ACCESS_KEY_ID", raising=False)
     with pytest.raises(RuntimeError, match="WRITE_ACCESS_KEY_ID"):
         corpus_sync._s3(write=True)
+
+
+def test_the_worker_skips_discovery_by_default(monkeypatch):
+    seen = []
+
+    def run_mix(sb, lang, mix, hours, **k):
+        seen.append(k["min_priority"])
+        return {"proxy": {"done": 0, "failed": 0}}
+
+    worker(monkeypatch, run_mix, StopAfter())
+    monkeypatch.setenv("INGEST_WORKER_MIN_PRIORITY", "0")
+    worker(monkeypatch, run_mix, StopAfter())
+    assert seen == [1, 0]
