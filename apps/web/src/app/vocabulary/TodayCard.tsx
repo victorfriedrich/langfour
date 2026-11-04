@@ -7,6 +7,8 @@ interface TodayCardProps {
   provider: ReviewProvider;
   remnoteUrl: string | null;
   due: number;
+  /** What the count is made of, on hover: RemNote's reviews and new cards. */
+  dueDetail?: string;
   onStartReview: () => void;
   onContextReview: () => void;
 }
@@ -19,12 +21,12 @@ const secondary =
 /** Today's reviews, as the buttons beside the page title. The same whoever
  *  schedules: only the action changes, from a review here to a hand-off to
  *  RemNote. The due count lives on the primary button. */
-export default function TodayCard({ provider, remnoteUrl, due, onStartReview, onContextReview }: TodayCardProps) {
+export default function TodayCard({ provider, remnoteUrl, due, dueDetail, onStartReview, onContextReview }: TodayCardProps) {
   const reviewLabel = due > 0 ? `Review ${due.toLocaleString()} due` : 'All caught up';
 
   if (provider === 'remnote') {
     return (
-      <a className={primary} href={remnoteUrl ?? 'https://www.remnote.com/'} target="_blank" rel="noreferrer" title="Your notes in RemNote">
+      <a className={primary} href={remnoteUrl ?? 'https://www.remnote.com/'} target="_blank" rel="noreferrer" title={dueDetail ?? 'Your notes in RemNote'}>
         {due > 0 ? reviewLabel : 'Open RemNote'} <ArrowUpRight size={16} />
       </a>
     );

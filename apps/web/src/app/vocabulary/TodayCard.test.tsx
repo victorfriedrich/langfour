@@ -54,3 +54,10 @@ it('uses Langfour reviews without loading separate document settings', async () 
   expect(screen.queryByRole('link')).not.toBeInTheDocument();
   expect(db.from).toHaveBeenCalledTimes(1);
 });
+
+it("says on hover what RemNote's count is made of", async () => {
+  db.maybeSingle.mockResolvedValue({ data: { review_provider: 'remnote', remnote_root_rem_id: null, remnote_language_rem_ids: {} } });
+  render(<TodayCard provider="remnote" remnoteUrl={null} due={945} dueDetail="179 reviews and 766 new cards"
+    onStartReview={() => {}} onContextReview={() => {}} />);
+  expect(screen.getByRole('link', { name: /Review 945 due/ })).toHaveAttribute('title', '179 reviews and 766 new cards');
+});

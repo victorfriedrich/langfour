@@ -14,7 +14,7 @@ import { useRemnoteConnection } from '../hooks/useRemnoteConnection';
 import { usePracticeProgress } from '../hooks/usePracticeProgress';
 import { wordStageAt } from '../../../../remnote-plugin/src/stats';
 import TodayCard from './TodayCard';
-import { wordsDueToday } from './due';
+import { cardsDueToday, dueBreakdown } from './due';
 import ProgressOverview from './ProgressOverview';
 import RemnoteSection from './RemnoteSection';
 import SchedulerLabel from './SchedulerLabel';
@@ -108,7 +108,7 @@ const PracticePage = () => {
     () => new Map((progressWords ?? []).map((w) => [w.wordId, wordStageAt(w.cards, now)] as const)),
     [progressWords, now],
   );
-  const dueInRemnote = useMemo(() => wordsDueToday(progressWords ?? [], now), [progressWords, now]);
+  const dueInRemnote = useMemo(() => cardsDueToday(progressWords ?? [], now), [progressWords, now]);
 
   if (showSession) {
     return (
@@ -156,7 +156,8 @@ const PracticePage = () => {
                 <TodayCard
                   provider={provider}
                   remnoteUrl={remnoteUrl}
-                  due={provider === 'remnote' ? dueInRemnote : learningSet.length}
+                  due={provider === 'remnote' ? dueInRemnote.reviews + dueInRemnote.new : learningSet.length}
+                  dueDetail={provider === 'remnote' ? dueBreakdown(dueInRemnote) : undefined}
                   onStartReview={() => setShowSession(true)}
                   onContextReview={() => setShowContextReview(true)}
                 />
