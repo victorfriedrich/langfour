@@ -14,6 +14,11 @@ describe('practiceVerdict', () => {
     expect(practiceVerdict({ outcome: 'good' }, { nextRepetitionTime: NOW + DAY }, true, NOW)).toBe('not_due');
   });
 
+  it("applies the user's own thumbs-up even before the card is due", () => {
+    expect(practiceVerdict({ outcome: 'good', rated: true }, { nextRepetitionTime: NOW + DAY }, true, NOW)).toBe('apply');
+    expect(practiceVerdict({ outcome: 'good', rated: true }, { nextRepetitionTime: NOW + DAY }, false, NOW)).toBe('practice_off');
+  });
+
   it('treats an unscheduled card as due', () => {
     expect(practiceVerdict({ outcome: 'good' }, {}, true, NOW)).toBe('apply');
   });

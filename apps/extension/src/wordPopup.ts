@@ -5,7 +5,7 @@
 // Built here so other pages (chatgptHighlight.ts) show the same popup; each
 // page places it and styles it (reader.css, chatgptPopup.css).
 
-import { askBackground, WordProgressResponse } from './messages';
+import { askBackground, RateWordResponse, WordProgress, WordProgressResponse, WordRating } from './messages';
 import { attachSpeakButton, SPEAKER_ICON } from './speak';
 import type { Translation } from './translate';
 
@@ -117,9 +117,34 @@ function nextReviewText(iso: string): string {
   return Date.now() - due < DAY_MS ? 'due now' : `due since ${formatDate(iso)}`;
 }
 
+// Thumbs, drawn like the speaker icon.
+const THUMB_UP_ICON =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
+const THUMB_DOWN_ICON =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>';
+
+/** The status's hover text: "No reviews", "3 reviews · next review in 2 weeks". */
+export function progressTooltip(progress: WordProgress): string {
+  const count = progress.review_count;
+  const parts = [count === 0 ? 'No reviews' : `${count} ${count === 1 ? 'review' : 'reviews'}`];
+  if (count > 0 && progress.status === 'learning' && progress.next_review_at) {
+    parts.push(nextReviewText(progress.next_review_at));
+  }
+  return parts.join(' · ');
+}
+
+function showProgress(mark: HTMLElement, progress: WordProgress): void {
+  // The status carries the word's own mark from the text, so the sheet
+  // reads as being about the highlight that was tapped.
+  mark.className = `progress-mark progress-${progress.status}`;
+  mark.textContent = progress.status === 'known' ? 'Known' : 'Learning';
+  mark.title = progressTooltip(progress);
+}
+
 /**
- * For a word the user is learning or knows: one line on when it was added
- * and how its reviews went, filled in once word_progress answers.
+ * For a word the user is learning or knows: its status, with how its reviews
+ * went on hover, and two thumbs that move its card up or down the schedule
+ * (rate_word in apps/api/practice.py). Filled in once word_progress answers.
  */
 export function appendWordProgress(popup: HTMLElement, wordId: number): void {
   // Under the word, like the byline under an article's title.
@@ -134,21 +159,58 @@ export function appendWordProgress(popup: HTMLElement, wordId: number): void {
       section.remove();
       return;
     }
-    const progress = response.progress;
-    // The status carries the word's own mark from the text, so the sheet
-    // reads as being about the highlight that was tapped.
     const mark = document.createElement('span');
-    mark.className = `progress-mark progress-${progress.status}`;
-    mark.textContent = progress.status === 'known' ? 'Known' : 'Learning';
-
-    const parts: string[] = [];
-    if (progress.added_at) parts.push(`added ${formatDate(progress.added_at)}`);
-    if (progress.review_count === 0) {
-      if (progress.status === 'learning') parts.push('not reviewed yet');
-    } else {
-      parts.push(`${progress.review_count} ${progress.review_count === 1 ? 'review' : 'reviews'}`);
-      if (progress.status === 'learning' && progress.next_review_at) parts.push(nextReviewText(progress.next_review_at));
-    }
-    section.append(mark, ...parts.map((part) => ` · ${part}`));
+    showProgress(mark, response.progress);
+    section.append(mark, ratingButtons(wordId, mark));
   });
+}
+
+function ratingButtons(wordId: number, mark: HTMLElement): HTMLElement {
+  const group = document.createElement('span');
+  group.className = 'rating';
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', 'Rate this word');
+  const buttons = ([
+    ['up', THUMB_UP_ICON, 'Knew it: review it later'],
+    ['down', THUMB_DOWN_ICON, 'Didn’t know it: review it sooner'],
+  ] as const).map(([rating, icon, label]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `rate-btn rate-${rating}`;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.setAttribute('aria-pressed', 'false');
+    button.innerHTML = icon;
+    button.addEventListener('click', (event) => {
+      // The popup closes on a click elsewhere; this one stays inside it.
+      event.stopPropagation();
+      rate(rating, button);
+    });
+    return button;
+  });
+
+  const rate = (rating: WordRating, pressed: HTMLButtonElement) => {
+    for (const b of buttons) b.disabled = true;
+    pressed.setAttribute('aria-pressed', 'true');
+    void askBackground<RateWordResponse>({ type: 'RATE_WORD', wordId, rating }).then((response) => {
+      if (!response?.ok) {
+        // Nothing changed: let them try again.
+        pressed.setAttribute('aria-pressed', 'false');
+        for (const b of buttons) b.disabled = false;
+        return;
+      }
+      if (response.status === 'rated_today') {
+        pressed.setAttribute('aria-pressed', 'false');
+        for (const b of buttons) b.title = 'Already rated today';
+        return;
+      }
+      // The review count and next review moved; a known word may be learning again.
+      void askBackground<WordProgressResponse>({ type: 'WORD_PROGRESS', wordId }).then((progress) => {
+        if (progress?.ok && progress.progress) showProgress(mark, progress.progress);
+      });
+    });
+  };
+
+  group.append(...buttons);
+  return group;
 }

@@ -21,7 +21,9 @@ for lang in de es fr it; do
   echo "packing $lang ..."
   # -C $DATA_DIR so archive members are 'processed/<lang>/...' and extracting
   # into DATA_DIR restores the tree in place.
-  tar --exclude='.DS_Store' \
+  # COPYFILE_DISABLE stops macOS tar adding a ._<name> AppleDouble file per
+  # member; the exclude catches any already sitting on disk.
+  COPYFILE_DISABLE=1 tar --exclude='.DS_Store' --exclude='._*' \
       -czf "$OUT_DIR/$lang.tar.gz.tmp" \
       -C "$DATA_DIR" "$SRC/$lang"
   mv "$OUT_DIR/$lang.tar.gz.tmp" "$OUT_DIR/$lang.tar.gz"

@@ -62,7 +62,7 @@ object storage at boot. Locally nothing needs to be set: an existing
 the recommender simply starts with whatever is on disk.
 
 The store is Cloudflare R2, chosen because it is S3-compatible and never bills
-egress, so redeploys that re-download 137 MB cost nothing. The `LANGFIVE_`
+egress, so redeploys that re-download about 490 MB cost nothing. The `LANGFIVE_`
 prefix on these names predates the Langfour rename and stays because changing
 it means changing the deployed environment, the bucket and its token together.
 
@@ -73,11 +73,20 @@ Layout inside the bucket, written by `npm run corpus:pack` and
 langfive-corpus/
 └── corpus/v1/
     ├── de.tar.gz          4 MB     each unpacks to processed/<lang>/
-    ├── es.tar.gz          121 MB
+    ├── es.tar.gz          474 MB
     ├── fr.tar.gz          7 MB
     ├── it.tar.gz          5 MB
-    └── MANIFEST.txt       sizes and SHA-256 per archive
+    ├── MANIFEST.txt       sizes and SHA-256 per archive
+    ├── incoming/<lang>/   transcripts the ingest worker made since the last pack
+    └── backup-<date>/     the archives and manifest a repack replaced
 ```
+
+Boot pulls `incoming/` one object at a time after the tarball, so it gets
+slower as the ingest worker adds transcripts (about 64 objects a second). When
+it grows into the thousands, boot the API once so it pulls everything and
+rebuilds the counts matrix, then copy the live archives to a `backup-<date>/`
+prefix and run `corpus:pack` and `corpus:upload`. Already-folded objects can
+stay in `incoming/`; boot skips any that are already on disk.
 
 To set it up: create a bucket in the Cloudflare dashboard under R2, then under
 *Manage R2 API Tokens* create two tokens, one **Object Read only** for the API
