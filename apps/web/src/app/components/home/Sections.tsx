@@ -6,6 +6,7 @@ import {
   ALL,
   LEVELS,
   percent,
+  type ChannelBasis,
   type HomeChannel,
   type HomeEmpty,
   type HomeVideo,
@@ -155,6 +156,7 @@ function ChannelRow({ channel, language, onOpen, onHide, onShowWords, onFollow }
           <span className="truncate text-sm font-semibold text-gray-900">{channel.name}</span>
           <span className="text-xs text-gray-500">
             {percent(channel.understood)} known · {channel.videos} videos
+            {channel.because && ` · like ${channel.because}`}
           </span>
         </div>
         {channelId && (
@@ -186,8 +188,30 @@ function ChannelRow({ channel, language, onOpen, onHide, onShowWords, onFollow }
   );
 }
 
-export function ChannelsYouMightLike({ channels, language, onOpen, onHide, onShowWords, onFollow }: {
+const list = (items: string[]) => new Intl.ListFormat('en', { type: 'conjunction' }).format(items);
+
+/** What the picks rest on, or, with nothing yet, how to give them something. */
+export function basisText(basis: ChannelBasis | null): string {
+  const following = basis?.following ?? [];
+  const watched = basis?.watched ?? 0;
+  if (!following.length && !watched) {
+    return 'Picked by how much you’d understand. To match them to what you like, follow a '
+      + 'channel here or with the star on its YouTube page, or turn on YouTube history in '
+      + 'the Langfour extension’s menu on YouTube.';
+  }
+  const shown = following.length > 3
+    ? [...following.slice(0, 2), `${following.length - 2} more`]
+    : following;
+  const parts = [];
+  if (shown.length) parts.push(`${list(shown)}, which you follow`);
+  if (watched) parts.push(`${watched} ${watched === 1 ? 'video' : 'videos'} you watched`);
+  return `Based on ${parts.join(', and ')}.`;
+}
+
+export function ChannelsYouMightLike({ channels, basis, topic, language, onOpen, onHide, onShowWords, onFollow }: {
   channels: HomeChannel[];
+  basis: ChannelBasis | null;
+  topic: string;
   language: string;
   onOpen: Open;
   onHide: Act;
@@ -196,9 +220,10 @@ export function ChannelsYouMightLike({ channels, language, onOpen, onHide, onSho
 }) {
   return (
     <section aria-labelledby="home-channels" className="mt-10 border-t border-gray-100 pt-8">
-      <h2 id="home-channels" className="mb-5 text-lg font-semibold text-gray-900">
-        Channels you might like
+      <h2 id="home-channels" className="text-lg font-semibold text-gray-900">
+        {topic === ALL ? 'Channels you might like' : `${topic} channels you might like`}
       </h2>
+      <p className="mb-5 mt-1 text-sm text-gray-500">{basisText(basis)}</p>
       <ul className="flex flex-col gap-8">
         {channels.map((c) => (
           <ChannelRow

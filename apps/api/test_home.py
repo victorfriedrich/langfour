@@ -32,21 +32,28 @@ KNOWN_WORD, NEW_WORD = 0, 1
 FOLLOWED = "UC" + "f" * 22
 
 
-def video(vid, known, category="Travel", creator="", length=600, grammar=None):
+def video(vid, known, category="Travel", creator="", length=600, grammar=None, words=()):
     """`known` of every 100 words spoken are word 0, which the learner knows;
     the rest are words 2.. they don't, one each, so each video has its own
-    new words."""
+    new words. `words` are spoken too, once each: what the video is about."""
     return {"id": vid, "known": known, "category": category, "creator": creator,
-            "length": length, "grammar": grammar}
+            "length": length, "grammar": grammar, "words": words}
+
+
+# What a video can be about, for Channels you might like: words past the
+# 2..101 every video has, four per subject.
+SUBJECTS = {subject: range(102 + 4 * i, 106 + 4 * i)
+            for i, subject in enumerate(("ghosts", "trips", "food", "games"))}
 
 
 def build(videos):
-    width = 2 + 100
+    width = 2 + 100 + 4 * len(SUBJECTS)
     rows = []
     for v in videos:
         row = np.zeros(width, dtype=np.int16)
         row[KNOWN_WORD] = v["known"]
         row[2:2 + 100 - v["known"]] = 1
+        row[list(v["words"])] = 1
         rows.append(row)
     recommender = blank_recommender()
     recommender.filenames = {"es": [f"{v['id']}_processed.json" for v in videos]}
@@ -223,8 +230,14 @@ def test_channels_without_signals_are_the_best_understood_with_enough_videos():
     assert page.channels[1].channel_id == "UC" + "m" * 22 and not page.channels[1].following
     assert page.channels[2].channel_id is None
 
-    assert home.home(store, build(videos), USER, "es", topic="Travel").channels == []
+    # Every video here is Travel: the topic has the same channels; another has none.
+    assert ([c.name for c in home.home(store, build(videos), USER, "es", topic="Travel").channels]
+            == ["Easy", "Mid", "Extra"])
+    assert home.home(store, build(videos), USER, "es", topic="Food").channels == []
     assert home.home(store, build(videos), USER, "es", query="e").channels == []
+    assert home.home(store, build(videos), USER, "es", query="e").basis is None
+    assert home.home(store, build(videos), USER, "es").basis == home.ChannelBasis(
+        following=[], watched=0)
 
 
 def look(channel, interest=5, trash=3):
@@ -248,13 +261,102 @@ def test_channels_you_might_like_weigh_what_the_judge_thinks_of_them():
     }}
     page = home.home(Store(), recommender, USER, "es")
     assert [c.name for c in page.channels] == ["Good", "Dull", "Taste"]
+    # The channel's videos come in the grid's order.
+    assert [v.id for v in page.channels[2].best] == ["t0", "t1", "t2", "t3"]
 
-    # The learner watches food videos: the Food channel moves up.
-    store = Store(watch={"t0": {"video_id": "t0", "share": 0.95, "unmarked_at": None}})
+
+def subject_channel(name, subject, known, n=5, category="Travel"):
+    return [video(f"{name}{i}", known, creator=name, category=category,
+                  words=SUBJECTS[subject] if subject else ()) for i in range(n)]
+
+
+def watched(*video_ids):
+    return {v: {"video_id": v, "share": 0.95, "unmarked_at": None} for v in video_ids}
+
+
+# Channels about nothing in particular, so a seed's lift has something to
+# stand out from, as among the ~1,800 channels of es.
+FILLER = [v for i in range(8) for v in subject_channel(f"filler{i}", None, 93)]
+
+
+def test_channels_you_might_like_follow_your_favourites_and_history(monkeypatch):
+    videos = (
+        subject_channel("Marc", "ghosts", 90)       # a favourite
+        + subject_channel("Trips", "trips", 90)     # watched once
+        + subject_channel("Ghosts", "ghosts", 91)
+        + subject_channel("Travels", "trips", 91)
+        + subject_channel("Plain", None, 99)
+        + FILLER
+    )
+    recommender = build(videos)
+    marc = {f"Marc{i}" for i in range(5)}
+
+    # Nothing to go on: the best understood, and the page is told so.
+    page = home.home(Store(), recommender, USER, "es")
+    assert page.channels[0].name == "Plain"
+    assert all(c.because is None for c in page.channels)
+    assert page.basis == home.ChannelBasis(following=[], watched=0)
+
+    # A favourite about ghosts: the other ghost channel, said why. The
+    # favourite itself isn't suggested.
+    store = Store(favourites=[FOLLOWED], followed=marc)
     page = home.home(store, recommender, USER, "es")
-    assert [c.name for c in page.channels] == ["Good", "Taste", "Dull"]
-    # The channel's videos come in the grid's order, without the watched one.
-    assert [v.id for v in page.channels[1].best] == ["t1", "t2", "t3", "t4"]
+    assert page.channels[0].name == "Ghosts" and page.channels[0].because == "Marc"
+    assert "Marc" not in [c.name for c in page.channels]
+    assert page.basis == home.ChannelBasis(following=["Marc"], watched=0)
+
+    # A video watched from a travel channel: a watched channel weighs less
+    # than a favourite, but the other travel channel comes in, and the
+    # watched one stays out. Few channels here, so lifts are small.
+    monkeypatch.setattr(home, "BECAUSE_LIFT", 1.5)
+    store = Store(favourites=[FOLLOWED], followed=marc, watch=watched("Trips0"))
+    page = home.home(store, recommender, USER, "es")
+    names = [c.name for c in page.channels]
+    assert {"Ghosts", "Travels"} <= set(names) and "Trips" not in names
+    assert {c.name: c.because for c in page.channels}["Travels"] == "Trips"
+    assert page.basis == home.ChannelBasis(following=["Marc"], watched=1)
+
+    # Unmarked, it no longer counts.
+    store = Store(watch={"Trips0": {"video_id": "Trips0", "share": 0.95,
+                                    "unmarked_at": "2026-11-04T10:00:00Z"}})
+    assert home.home(store, recommender, USER, "es").basis.watched == 0
+
+
+def test_two_favourites_each_get_a_place(monkeypatch):
+    monkeypatch.setattr(home, "CHANNELS", 2)
+    videos = (
+        subject_channel("Marc", "ghosts", 90) + subject_channel("Enrique", "trips", 90)
+        + subject_channel("Ghosts", "ghosts", 97) + subject_channel("Haunted", "ghosts", 96)
+        + subject_channel("Travels", "trips", 91) + FILLER
+    )
+    store = Store(favourites=[FOLLOWED],
+                  followed={f"{name}{i}" for name in ("Marc", "Enrique") for i in range(5)})
+    page = home.home(store, build(videos), USER, "es")
+    # Haunted is better understood than Travels, but Ghosts already took Marc's place.
+    assert [(c.name, c.because) for c in page.channels] == [
+        ("Ghosts", "Marc"), ("Travels", "Enrique")]
+
+
+def test_a_topic_suggests_its_own_channels_with_its_videos_first():
+    videos = (
+        subject_channel("Marc", "ghosts", 90)
+        + subject_channel("Cook", "food", 95, category="Food")
+        + [video("Cook9", 99, creator="Cook", category="Travel", words=SUBJECTS["food"])]
+        + subject_channel("Chef", "food", 92, category="Food")
+        + subject_channel("Ghosts", "ghosts", 91)
+        + FILLER
+    )
+    store = Store(favourites=[FOLLOWED], followed={f"Marc{i}" for i in range(5)})
+    page = home.home(store, build(videos), USER, "es", topic="Food")
+    channels = {c.name: c for c in page.channels}
+    assert set(channels) == {"Cook", "Chef"}
+    # Cook9 is understood best but isn't Food: it comes after the Food ones.
+    assert [v.id for v in channels["Cook"].best] == ["Cook0", "Cook1", "Cook2", "Cook3"]
+    assert channels["Cook"].videos == 6
+    assert page.basis.following == ["Marc"]
+    # Following has no suggestions and no basis.
+    following = home.home(store, build(videos), USER, "es", topic="Following")
+    assert following.channels == [] and following.basis is None
 
 
 def test_not_interested_hides_a_video_or_its_channel_and_undo_brings_it_back():

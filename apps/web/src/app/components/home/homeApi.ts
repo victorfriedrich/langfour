@@ -45,6 +45,13 @@ export interface HomeChannel {
   understood: number;
   videos: number;
   best: HomeVideo[];
+  because: string | null;      // the followed or watched channel it is most like
+}
+
+/** What Channels you might like rests on. */
+export interface ChannelBasis {
+  following: string[];         // the favourite channels' names
+  watched: number;             // videos watched from the library
 }
 
 export interface HomePage {
@@ -54,6 +61,7 @@ export interface HomePage {
   levels: Record<Level, number> | null;
   empty: HomeEmpty | null;
   channels: HomeChannel[];
+  basis: ChannelBasis | null;  // null where the section isn't shown
 }
 
 export interface HomeFilters {

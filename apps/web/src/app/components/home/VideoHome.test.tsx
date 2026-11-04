@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { UserContext } from '@/context/UserContext';
 import VideoHome from './VideoHome';
+import { basisText } from './Sections';
 import type { HomePage, HomeVideo } from './homeApi';
 
 const extension = vi.hoisted(() => ({ state: 'installed' as 'installed' | 'missing' }));
@@ -31,7 +32,9 @@ const PAGE: HomePage = {
   channels: [{
     name: 'Ary Tenorio', channel_id: 'UC' + 'a'.repeat(22), following: false, understood: 96, videos: 8,
     best: [card('ddddddddddd', 'Cazando ofertas en Tepito', 'Ary Tenorio', { duration_s: 900 })],
+    because: 'Marc Vilas',
   }],
+  basis: { following: ['Marc Vilas'], watched: 10 },
 };
 
 const EMPTY: HomePage = {
@@ -43,6 +46,7 @@ const EMPTY: HomePage = {
     other: { count: 339, videos: [card('fffffffffff', 'Ser vs Estar', 'Hoy Hablamos')] },
   },
   channels: [],
+  basis: null,
 };
 
 let fetchWithAuth = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>();
@@ -90,7 +94,8 @@ it('shows each video with its channel, length and how much is known', async () =
   expect(night.textContent).toContain('96% · 14 new words');
   expect(screen.getByText('Ary Tenorio · watched 7 of 17 min')).toBeTruthy();
   expect(screen.getByRole('heading', { name: 'Channels you might like' })).toBeTruthy();
-  expect(screen.getByText('96% known · 8 videos')).toBeTruthy();
+  expect(screen.getByText('96% known · 8 videos · like Marc Vilas')).toBeTruthy();
+  expect(screen.getByText('Based on Marc Vilas, which you follow, and 10 videos you watched.')).toBeTruthy();
   const topics = screen.getByRole('group', { name: 'Topics' });
   expect(within(topics).getAllByRole('button').map((b) => b.textContent)).toEqual([
     'All', 'Following', 'Gaming', 'Travel', 'Watched',
@@ -275,4 +280,21 @@ it('opens the side panel with a video’s words from Show words, and Escape clos
     String(url).endsWith(`/api/videos/${BUTLER.id}/missing-words`))).toBe(true));
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(screen.queryByRole('heading', { name: BUTLER.title })).toBeNull();
+});
+
+it('says what Channels you might like rests on, or how to steer it', () => {
+  expect(basisText({ following: [], watched: 0 })).toMatch(/^Picked by how much you’d understand\. To match them/);
+  expect(basisText(null)).toMatch(/turn on YouTube history/);
+  expect(basisText({ following: [], watched: 1 })).toBe('Based on 1 video you watched.');
+  expect(basisText({ following: ['A', 'B'], watched: 0 })).toBe('Based on A and B, which you follow.');
+  expect(basisText({ following: ['A', 'B', 'C', 'D', 'E'], watched: 3 }))
+    .toBe('Based on A, B, and 3 more, which you follow, and 3 videos you watched.');
+});
+
+it('suggests channels on a topic too, under its name', async () => {
+  respond(() => PAGE);
+  renderHome();
+  await screen.findByText(NIGHT.title);
+  fireEvent.click(within(screen.getByRole('group', { name: 'Topics' })).getByRole('button', { name: 'Travel' }));
+  expect(await screen.findByRole('heading', { name: 'Travel channels you might like' })).toBeTruthy();
 });

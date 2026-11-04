@@ -342,7 +342,7 @@ function VideoHomeContent() {
       return (
         <div className="flex flex-col items-center gap-3 py-16 text-center text-gray-500">
           {filters.topic === FOLLOWING && !query ? (
-            <p>Videos from the channels you follow show up here. Follow one under Channels you might like in All, or with Favourite on its YouTube page.</p>
+            <p>Videos from the channels you follow show up here. Follow one under Channels you might like, or with Favourite on its YouTube page.</p>
           ) : query ? (
             <p>No videos match “{query}”.</p>
           ) : (
@@ -383,9 +383,11 @@ function VideoHomeContent() {
             </button>
           </div>
         )}
-        {filters.topic === ALL && !query && channels.length > 0 && (
+        {filters.topic !== FOLLOWING && !query && channels.length > 0 && (
           <ChannelsYouMightLike
             channels={channels}
+            basis={page.basis}
+            topic={filters.topic}
             language={code}
             onOpen={onOpen}
             onHide={hide}
