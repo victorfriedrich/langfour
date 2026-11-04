@@ -17,7 +17,7 @@ let readerLanguage: Language | null = null;
 let readerMedia = '';
 let signedIn = false;
 // Where "Review flashcards" goes: RemNote for users who review there.
-let reviewUrl = `${WEB_URL}/vocabulary`;
+let reviewUrl = `${WEB_URL}/practice`;
 
 /**
  * Phones get bottom sheets instead of popups anchored to the word: a

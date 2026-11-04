@@ -478,7 +478,7 @@ function VideoHomeContent() {
             </span>
           </PillText>
           <Link
-            href="/vocabulary"
+            href="/practice"
             className="inline-flex h-8 flex-none items-center rounded-full bg-white/15 px-3.5 text-sm font-medium text-white hover:bg-white/25"
           >
             See them
@@ -491,7 +491,7 @@ function VideoHomeContent() {
             Added {pill.count} {pill.count === 1 ? 'word' : 'words'} to your learning set
           </PillText>
           <Link
-            href="/vocabulary"
+            href="/practice"
             className="inline-flex h-8 flex-none items-center rounded-full bg-white/15 px-3.5 text-sm font-medium text-white hover:bg-white/25"
           >
             See them

@@ -25,7 +25,7 @@ export default function ImportPage() {
   // Send the user to the collection that received the imported flashcards.
   const handleImportComplete = (selectedWords: number[], status: 'learning' | 'known') => {
     console.log('Imported words:', selectedWords, status);
-    router.push(status === 'known' ? '/progress' : '/vocabulary');
+    router.push(status === 'known' ? '/vocabulary' : '/practice');
   };
   
   // Determine which view to show
@@ -43,7 +43,7 @@ export default function ImportPage() {
       ) : (
         // Show the importer if we don't have data yet
         <VocabularyImporter 
-          onBack={() => router.push('/progress')}
+          onBack={() => router.push('/vocabulary')}
           onComplete={handleUploadComplete}
         />
       )}

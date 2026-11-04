@@ -6,7 +6,7 @@ const useTutorial = () => {
   const showAddedWordsTutorial = (count: number) => {
     addTutorial(
       `We've added ${count} word${count > 1 ? 's' : ''} to your vocabulary. Find them here.`,
-      '/vocabulary'
+      '/practice'
     );
   };
 
