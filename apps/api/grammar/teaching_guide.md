@@ -87,8 +87,13 @@ and `to_learn` on each concept says what's left.
 ## Example sentences
 
 - **Words they're learning first.** Build examples around the words on their learning list
-  (`get_vocabulary`, status `learning`): each one used is a review for free. Fill the rest with
-  words they know, and check your examples with `score_text`.
+  (`get_vocabulary`, status `learning`, order `least_recently_seen`): each one used is a review
+  for free. Choose them before you write: two to four in a short reply, more in a longer text.
+  Fill the rest with words they know, and check your examples with `score_text`.
+- **Vary the learning words.** The list puts words the learner hasn't seen lately first, and
+  shows when each was added and last seen. Draw from all of it, mix recently added words with
+  older ones, and don't come back to a word you already used in the conversation while others
+  are unused, unless you're practising it.
 - **No new words while the concept is new.** Until a concept is fresh, examples use only words
   the learner knows or is learning, so all their attention goes to the grammar.
 - **Now and then a new word once the grammar is solid.** When a concept is fresh, about one
@@ -195,12 +200,18 @@ want it, go over the chapter's concepts as a short review rather than a first le
 
 Words the learner is learning count as seen when they read them, in your replies as much as in a
 story they asked for. Fetch their learning words once per conversation with `get_vocabulary`
-(status `learning`) and keep the list. In every turn, judge from their answer whether they took
-in the whole of your previous reply: they respond to its end or to what it asked, or heard it out
-in a voice conversation. If they did, log the learning words that appeared in it with
-`record_exposure` at the end of the turn, next to `record_grammar`.
+(status `learning`, order `least_recently_seen`) and keep the list.
 
-- Pass the words as `get_vocabulary` lists them, each once, whatever form it took in the reply.
+Log first, not last. At the start of every turn that follows a reply of yours in the language,
+before you write anything, judge from the learner's answer whether they took in the whole of
+that reply: they respond to its end or to what it asked, or heard it out in a voice conversation.
+If they did, call `record_exposure` with the learning words it used, together with any reads the
+turn needs. It is the one write that doesn't wait for the end of the turn: the reply is already
+written, and a call left for after your answer is the one that gets forgotten.
+
+- Pass each word once, as `get_vocabulary` lists them or in the form it took in the reply.
+- If you're unsure whether a word is on the list, include it: words that aren't come back under
+  `not_learning` and nothing is logged for them.
 - Don't log a reply they skimmed, cut off or answered only the first lines of, and don't log a
   reply twice.
 

@@ -14,15 +14,28 @@
 --   p_language  ISO code; null means the user's default_language
 --   p_status    which words to list: 'due' (most overdue first), 'learning'
 --               or 'known' (both newest first). The counts always cover all.
+--   p_order     null for the order above; 'newest' lists newest first, whatever
+--               the status; 'least_recently_seen' lists words never seen first
+--               (newest of them first), then the ones seen longest ago, so an
+--               AI app that logs what it used gets a list that rotates.
+--
+-- Each word comes with the date it went into the user's list (added) and how
+-- often and when last the user saw it (exposure rows in word_events: read in
+-- an AI app's reply, the reader or a video's captions).
 --
 -- Returns {language, counts: {known, learning, due}, words: [{word,
--- translation, status, due}]}.
+-- translation, status, due, added, seen, last_seen}]}.
 --
 -- HOW THIS GETS APPLIED: through the Supabase connector, like the other
 -- files here. Idempotent.
 
+-- The four-argument version, replaced by this one; callers that leave p_order
+-- out still match it, without an overload to choose between.
+drop function if exists public.mcp_vocabulary(uuid, text, text, integer);
+
 create or replace function public.mcp_vocabulary(p_user_id uuid, p_language text,
-                                                 p_status text, p_limit integer)
+                                                 p_status text, p_limit integer,
+                                                 p_order text default null)
 returns jsonb
 language sql
 stable
@@ -58,12 +71,22 @@ as $$
           and n.word_id in (select word_id from mine where not known)
         group by n.word_id
     ),
+    seen as (
+        select e.word_id, count(*) as times, max(e.occurred_at) as last_at
+        from public.word_events e
+        where e.user_id = p_user_id
+          and e.kind = 'exposure'
+          and e.word_id in (select word_id from mine)
+        group by e.word_id
+    ),
     rated as (
         select m.root, m.translation, m.created_at, d.due_at,
                case when m.known then 'known' else 'learning' end as status,
-               coalesce(d.due_at <= now(), false) as is_due
+               coalesce(d.due_at <= now(), false) as is_due,
+               coalesce(s.times, 0) as seen, s.last_at as last_seen
         from mine m
         left join due d on d.word_id = m.word_id
+        left join seen s on s.word_id = m.word_id
     ),
     listed as (
         select r.*
@@ -73,7 +96,8 @@ as $$
                   when 'learning' then r.status = 'learning'
                   when 'known' then r.status = 'known'
               end
-        order by case when p_status = 'due' then r.due_at end,
+        order by case when p_order = 'least_recently_seen' then r.last_seen end asc nulls first,
+                 case when p_order is null and p_status = 'due' then r.due_at end,
                  r.created_at desc, r.root
         limit greatest(p_limit, 1)
     )
@@ -86,13 +110,18 @@ as $$
                    from rated),
         'words', coalesce((select jsonb_agg(jsonb_build_object(
                                'word', l.root, 'translation', l.translation,
-                               'status', l.status, 'due', l.is_due)
-                           order by case when p_status = 'due' then l.due_at end,
+                               'status', l.status, 'due', l.is_due,
+                               'added', to_char(l.created_at, 'YYYY-MM-DD'),
+                               'seen', l.seen,
+                               'last_seen', to_char(l.last_seen, 'YYYY-MM-DD'))
+                           order by case when p_order = 'least_recently_seen' then l.last_seen end
+                                        asc nulls first,
+                                    case when p_order is null and p_status = 'due' then l.due_at end,
                                     l.created_at desc, l.root)
                            from listed l), '[]'::jsonb)
     );
 $$;
 
-revoke execute on function public.mcp_vocabulary(uuid, text, text, integer)
+revoke execute on function public.mcp_vocabulary(uuid, text, text, integer, text)
     from public, anon, authenticated;
-grant execute on function public.mcp_vocabulary(uuid, text, text, integer) to service_role;
+grant execute on function public.mcp_vocabulary(uuid, text, text, integer, text) to service_role;
