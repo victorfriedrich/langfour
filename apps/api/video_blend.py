@@ -39,7 +39,7 @@ def rejected(look: dict[str, Any] | None) -> str | None:
     return None
 
 
-def _percentiles(values: list[float | None]) -> list[float]:
+def percentiles(values: list[float | None]) -> list[float]:
     """Each value's mid-rank share among the values that exist."""
     known = sorted(v for v in values if v is not None)
     if not known:
@@ -65,7 +65,7 @@ def _blended(pool: list[tuple[str, float]], signals: dict[str, dict[str, Any]]) 
     }
     scores = [1.0] * len(pool)
     for name, weight in WEIGHTS.items():
-        for i, p in enumerate(_percentiles(columns[name])):
+        for i, p in enumerate(percentiles(columns[name])):
             scores[i] *= max(p, MIN_PERCENTILE) ** weight
     # Stable: ties keep known-words order.
     order = sorted(range(len(pool)), key=lambda i: -scores[i])

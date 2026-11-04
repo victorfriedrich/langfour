@@ -1,6 +1,6 @@
 """
 The web Videos page (docs/plans/home-redesign.md): the grid, its filters, what
-to show when they leave nothing, Channels at your level, Not interested, and
+to show when they leave nothing, Channels you might like, Not interested, and
 what happened on YouTube since a card was opened.
 
   - grid: the recommendation order (video_blend.rank over the videos the
@@ -17,10 +17,17 @@ what happened on YouTube since a card was opened.
   - empty: when the grammar filter leaves nothing in a topic, the nearest
     level above it that has videos, the topic's videos up to that level, and
     the other topics' videos up to the filter's level.
-  - channels: on All without a search, the CHANNELS channels whose unwatched
-    videos the learner understands most of, by share of all their speech, as
-    channels.py computes "understood". A channel is its transcripts' creator
-    name; its UC id, for Follow, comes from video_queue.
+  - channels: on All without a search, CHANNELS channels worth following, as
+    video_blend ranks videos: the CHANNEL_POOL best understood (by share of
+    all their unwatched speech, as channels.py computes "understood"), then
+    reordered by a weighted geometric mean of percentiles of understood, the
+    judge's interest, clean (-trash) and text scores averaged over each
+    channel's judged videos, and taste: the share of the videos the learner
+    started that are in the channel's topic. A channel more than
+    CHANNEL_MAX_REJECTED of whose judged videos the judge rejects is left
+    out: clickbait channels get most videos through one at a time. Its
+    videos are its first SHELF in the grid's order. A channel is its
+    transcripts' creator name; its UC id, for Follow, comes from video_queue.
   - hides: Not interested and "Hide all from <channel>" (sql/video_hides.sql).
     Only this grid leaves them out.
   - return: when the learner comes back from YouTube, how far into the video
@@ -34,7 +41,7 @@ Coverage counts every word spoken, as the recommender's percentages do.
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable
 from datetime import datetime
 from typing import Literal
@@ -65,6 +72,11 @@ GRID = 48             # cards sent; the page shows 12 at a time
 SHELF = 4             # cards in a row of the empty state or a channel
 CHANNELS = 3
 CHANNEL_MIN_VIDEOS = 4
+CHANNEL_POOL = 0.3            # share of the eligible channels, best understood first
+CHANNEL_POOL_MIN = 12
+CHANNEL_MAX_REJECTED = 0.2
+CHANNEL_WEIGHTS = {"understood": 0.25, "interest": 0.25, "clean": 0.15, "text": 0.15,
+                   "taste": 0.20}
 
 _PAGE = 1000          # PostgREST's row cap per request
 _IN_CHUNK = 200
@@ -255,6 +267,7 @@ class _Corpus:
         self.lengths = recommender.lengths.get(language) or [None] * n
         self.grammar = recommender.grammar.get(language) or {}
         self.spoken = recommender.total_words_per_doc[language]
+        self.signals = recommender.video_signals.get(language) or {}
         self.watch = watch
         self.ratios, self.new_words, _ = recommender._score_documents_by_words(
             list(known), language)
@@ -269,9 +282,8 @@ class _Corpus:
             and self.creators[row] not in hidden_channels
         ]
         candidates.sort(key=lambda c: -c[1])
-        signals = recommender.video_signals.get(language)
         # video_blend drops the videos whose thumbnails it rejects.
-        self.ordered = (video_blend.rank(candidates, signals) if signals
+        self.ordered = (video_blend.rank(candidates, self.signals) if self.signals
                         else [video_id for video_id, _ in candidates])
 
     def level(self, video_id: str) -> int | None:
@@ -323,28 +335,80 @@ def _up_to(corpus: _Corpus, video_ids: list[str], level: int) -> list[str]:
     return [v for v in video_ids if (lv := corpus.level(v)) is not None and lv <= level]
 
 
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _channel_signals(corpus: _Corpus) -> dict[str, dict[str, float | None]]:
+    """Per channel name, over every judged video of it, watched and rejected
+    ones too: the share rejected and the mean interest, clean and text."""
+    looks: dict[str, list[dict]] = defaultdict(list)
+    texts: dict[str, list[float]] = defaultdict(list)
+    for video_id, row in corpus.rows.items():
+        name = corpus.creators[row]
+        signal = corpus.signals.get(video_id)
+        if not name or not signal:
+            continue
+        if signal.get("look"):
+            looks[name].append(signal["look"])
+        if signal.get("text") is not None:
+            texts[name].append(signal["text"])
+    return {name: {
+        "rejected": (sum(1 for look in looks[name] if video_blend.rejected(look)) / len(looks[name])
+                     if looks[name] else None),
+        "interest": _mean([look["interest"] for look in looks[name]]),
+        "clean": _mean([-look["trash"] for look in looks[name]]),
+        "text": _mean(texts[name]),
+    } for name in looks.keys() | texts.keys()}
+
+
+def _taste(corpus: _Corpus) -> dict[str, float]:
+    """Topic -> share of the videos the learner started that are in it."""
+    topics = [corpus.categories[corpus.rows[v]] for v in corpus.watch if v in corpus.rows]
+    return {topic: n / len(topics) for topic, n in Counter(topics).items()}
+
+
 def _channels(store: HomeStore, corpus: _Corpus, favourites: set[str]) -> list[HomeChannel]:
     by_channel: dict[str, list[str]] = defaultdict(list)
     for video_id in corpus.ordered:
         name = corpus.creators[corpus.rows[video_id]]
         if name:
             by_channel[name].append(video_id)
-    scored = []
+    signals = _channel_signals(corpus)
+    eligible = []
     for name, video_ids in by_channel.items():
         if len(video_ids) < CHANNEL_MIN_VIDEOS:
+            continue
+        if (signals.get(name, {}).get("rejected") or 0) > CHANNEL_MAX_REJECTED:
             continue
         rows = [corpus.rows[v] for v in video_ids]
         spoken = corpus.spoken[rows]
         if not spoken.sum():
             continue
         understood = float((corpus.ratios[rows] * spoken).sum() / spoken.sum())
-        scored.append((understood, len(video_ids), name, video_ids))
-    scored.sort(key=lambda s: (-s[0], -s[1], s[2]))
-    chosen = scored[:CHANNELS]
-    if not chosen:
+        eligible.append((understood, len(video_ids), name, video_ids))
+    eligible.sort(key=lambda s: (-s[0], -s[1], s[2]))
+    pool = eligible[:max(CHANNEL_POOL_MIN, int(len(eligible) * CHANNEL_POOL))]
+    if not pool:
         return []
-    best = {name: sorted(video_ids, key=lambda v: -corpus.ratios[corpus.rows[v]])[:SHELF]
-            for _, _, name, video_ids in chosen}
+
+    taste = _taste(corpus)
+    def topic(video_ids: list[str]) -> str:
+        return Counter(corpus.categories[corpus.rows[v]] for v in video_ids).most_common(1)[0][0]
+    columns = {
+        "understood": [understood for understood, *_ in pool],
+        "taste": [taste.get(topic(video_ids), 0.0) for *_, video_ids in pool],
+        **{key: [signals.get(name, {}).get(key) for _, _, name, _ in pool]
+           for key in ("interest", "clean", "text")},
+    }
+    scores = [1.0] * len(pool)
+    for key, weight in CHANNEL_WEIGHTS.items():
+        for i, p in enumerate(video_blend.percentiles(columns[key])):
+            scores[i] *= max(p, video_blend.MIN_PERCENTILE) ** weight
+    # Stable: ties keep the understood order.
+    chosen = [pool[i] for i in sorted(range(len(pool)), key=lambda i: -scores[i])[:CHANNELS]]
+
+    best = {name: video_ids[:SHELF] for _, _, name, video_ids in chosen}
     ids = store.channel_ids([v for videos in best.values() for v in videos])
     out = []
     for understood, count, name, _ in chosen:
