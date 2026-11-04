@@ -1,7 +1,7 @@
 import type { BackendResponse } from './messages';
 
 // The popup's row pointing at the Vocabulary page's "Words you likely know"
-// (apps/web/src/app/vocabulary/stuck.ts). Shown while the list holds words
+// (apps/web/src/app/practice/stuck.ts). Shown while the list holds words
 // the user hasn't been told about: all of them at first, then only words
 // that joined since they last opened the link, such as ones that reached 10
 // videos.
@@ -10,7 +10,7 @@ import type { BackendResponse } from './messages';
 // seen-in-videos words, stands for the common ones that were listed then.
 export const STUCK_OPENED_KEY = 'stuckWordsOpened';
 
-export const stuckWordsUrl = (webUrl: string) => `${webUrl}/vocabulary?words=stuck`;
+export const stuckWordsUrl = (webUrl: string) => `${webUrl}/practice?words=stuck`;
 
 export function stuckWordsText(count: number): string {
   return count === 1

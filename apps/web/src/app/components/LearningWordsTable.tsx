@@ -16,7 +16,7 @@ import { useSetUserwordsStatus } from '../hooks/useSetUserwordsStatus';
 import { useOverdueWords } from '../hooks/useOverdueWords';
 import { useStuckWords } from '../hooks/useStuckWords';
 import { getDaysUntilReview } from '../utils/dateUtils';
-import { STUCK_PARAM, STUCK_VALUE, evidence, preselected } from '../vocabulary/stuck';
+import { STUCK_PARAM, STUCK_VALUE, evidence, preselected } from '../practice/stuck';
 
 /* coloured “days‑due” pill */
 function getDuePill(due: string) {

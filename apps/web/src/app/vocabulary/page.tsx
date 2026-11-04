@@ -1,227 +1,146 @@
-'use client';
+"use client";
 
-import React, { useState, useMemo, useCallback, useContext, useEffect } from 'react';
-import { UserContext } from '@/context/UserContext';
-import { FlashcardSession } from '../session/FlashcardSession';
-import ContextReviewSession from './ContextReviewSession';
-import { useOverdueWords } from '../hooks/useOverdueWords';
-import { getWordsDueToday } from '../utils/dateUtils';
-import LearningWordsTable from '../components/LearningWordsTable';
-import ErrorState from '../components/ErrorState';
-import ProtectedRoute from '../components/ProtectedRoute';
-import { useReviewProvider, type ReviewProvider } from '../hooks/useReviewProvider';
-import { useRemnoteConnection } from '../hooks/useRemnoteConnection';
-import { usePracticeProgress } from '../hooks/usePracticeProgress';
-import { wordStageAt } from '../../../../remnote-plugin/src/stats';
-import TodayCard from './TodayCard';
-import { cardsDueToday, dueBreakdown } from './due';
-import ProgressOverview from './ProgressOverview';
-import RemnoteSection from './RemnoteSection';
-import SchedulerLabel from './SchedulerLabel';
-import YoutubeRecap from './YoutubeRecap';
-import { useYoutubeRecap } from '../hooks/useYoutubeRecap';
+import React, { useContext, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { KNEW_HINT, LEARNED_HINT } from "@/lib/knownWords";
+import { ArrowUpRight, Search } from "lucide-react";
 
-/** The page's shape in grey, shown until everything above the fold can
- *  appear at once. */
-function PracticeSkeleton() {
-  const bar = 'animate-pulse rounded bg-gray-100';
-  return (
-    <div aria-label="Loading">
-      <div className={`h-5 w-32 ${bar}`} />
-      <div className={`mt-4 h-28 w-full ${bar}`} />
-      <div className={`mt-6 h-1.5 w-full ${bar}`} />
-      <div className={`mt-3 h-4 w-72 ${bar}`} />
-      <div className="mt-10 border-t border-gray-100 pt-8">
-        <div className={`h-5 w-32 ${bar}`} />
-        <div className="mt-4 divide-y divide-gray-100">
-          {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} className="flex items-center gap-6 py-3 pl-11">
-              <span className={`h-3 w-28 ${bar}`} />
-              <span className={`h-3 w-40 ${bar}`} />
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+import { supabase } from "@/lib/supabaseclient";
+import { UserContext } from "@/context/UserContext";
+import { useCategories } from "../hooks/useCategories";
+import ProtectedRoute from "../components/ProtectedRoute";
+import KnownWords from "../components/KnownWords";
+import WordCategories from "../components/WordCategories";
+
+type View = "known" | "add";
+
+/** How many words Langfour counts as known (sql/known_words.sql): the ones
+ *  you marked known, plus the ones your reviews show you have learned. */
+function useKnownSummary(languageCode: string | undefined) {
+  const [summary, setSummary] = useState<{ declared: number; from_reviews: number } | null>(null);
+  useEffect(() => {
+    if (!languageCode) return;
+    let cancelled = false;
+    supabase.rpc("known_words_summary", { language_filter: languageCode }).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) console.error("Could not load known words:", error);
+      setSummary(data?.[0] ?? { declared: 0, from_reviews: 0 });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [languageCode]);
+  return summary;
 }
 
-// Show whatever has arrived after this long rather than a skeleton forever.
-const MAX_SKELETON_MS = 6000;
+const VocabularyPage = () => {
+  const languageCode = useContext(UserContext).language?.code;
+  const summary = useKnownSummary(languageCode);
+  const [view, setView] = useState<View>("known");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-const PracticePage = () => {
-  const [showSession, setShowSession] = useState(false);
-  const [showContextReview, setShowContextReview] = useState(false);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
-
-  const { provider, remnoteUrl } = useReviewProvider();
-  const { status: remnote, error: remnoteError, disconnect } = useRemnoteConnection();
-  const { user, language } = useContext(UserContext);
-  const languageCode = language?.code;
-  const { words: allProgressWords, saved: allSavedWords, error: progressError } = usePracticeProgress(provider, refreshTrigger);
-  // The language chosen in the sidebar, like everything else in the app.
-  const progressWords = useMemo(
-    () => allProgressWords && (languageCode ? allProgressWords.filter((w) => w.language === languageCode) : allProgressWords),
-    [allProgressWords, languageCode],
+  const { categories, isLoading: categoriesLoading } = useCategories("es");
+  const filteredCategories = useMemo(
+    () => categories.filter((c) => c.category !== "Unknown" && c.category !== "Failed"),
+    [categories],
   );
-  const savedWords = useMemo(
-    () => allSavedWords && (languageCode ? allSavedWords.filter((w) => w.language === languageCode) : allSavedWords),
-    [allSavedWords, languageCode],
-  );
-  const { words: overdueWords, isLoading: overdueLoading, error: overdueError } = useOverdueWords(refreshTrigger, { source: sourceFilter ?? undefined });
 
-  const refresh = useCallback(() => setRefreshTrigger((n) => n + 1), []);
-  const { recap, add: addRecapWords, close: closeRecap } = useYoutubeRecap();
-
-  // Everything appears together, once: a skeleton until the first answers
-  // are in, then no more placeholders when filters or reviews refresh.
-  const [tableReady, setTableReady] = useState(false);
-  const onTableReady = useCallback(() => setTableReady(true), []);
-  const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setTimedOut(true), MAX_SKELETON_MS);
-    return () => clearTimeout(t);
-  }, []);
-  const anonymous = !!user?.is_anonymous;
-  const loaded =
-    provider !== null &&
-    !overdueLoading &&
-    tableReady &&
-    (anonymous || progressWords !== null || progressError !== null) &&
-    // RemNote's last sync and word count, when it schedules. Otherwise its
-    // section is the invitation, which needs nothing from the API.
-    (provider !== 'remnote' || remnote !== null || remnoteError !== null);
-  const [revealed, setRevealed] = useState(false);
-  if ((loaded || timedOut) && !revealed) setRevealed(true);
+    const handler = setTimeout(() => setDebouncedSearch(searchTerm), 320);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
 
-  // Langfour's own review set; RemNote reviews are counted from its due dates.
-  const learningSet = useMemo(
-    () =>
-      getWordsDueToday(overdueWords ?? [])
-        .filter((w) => w?.word_id && (w.word_root || w.root))
-        .map((w) => ({ id: w.word_id, word: w.word_root || w.root, translation: w.translation || 'No translation available' })),
-    [overdueWords],
-  );
-  const [now] = useState(() => Date.now());
-  const stages = useMemo(
-    () => new Map((progressWords ?? []).map((w) => [w.wordId, wordStageAt(w.cards, now)] as const)),
-    [progressWords, now],
-  );
-  const dueInRemnote = useMemo(() => cardsDueToday(progressWords ?? [], now), [progressWords, now]);
+  const switchView = (next: View) => {
+    setView(next);
+    setSelectedCategory(null);
+    setSearchTerm("");
+  };
 
-  if (showSession) {
-    return (
-      <FlashcardSession
-        mode="flashcard"
-        frontSide="english"
-        learningSet={learningSet}
-        onExit={() => {
-          setShowSession(false);
-          refresh();
-        }}
-      />
-    );
-  }
-  if (showContextReview) {
-    return (
-      <ContextReviewSession
-        learningSet={learningSet}
-        onExit={() => {
-          setShowContextReview(false);
-          refresh();
-        }}
-      />
-    );
-  }
-  if (overdueError && overdueError !== 'No language selected') return <ErrorState message={overdueError} />;
+  const tab = (active: boolean) =>
+    `-mb-px border-b-2 px-1 pb-3 text-sm font-medium ${
+      active ? "border-indigo-600 text-gray-900" : "border-transparent text-gray-500 hover:text-gray-800"
+    }`;
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-white">
-        {/* Flat: no cards. Sections are separated by space and a hairline. */}
         <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
-          <header className="mb-10 flex min-h-9 flex-wrap items-center justify-between gap-3">
-            <h1 className="text-2xl font-semibold text-gray-900">Practice</h1>
-            {revealed && provider && (
-              <div className="flex flex-wrap items-center gap-3">
-                <SchedulerLabel
-                  provider={provider}
-                  remnote={remnote}
-                  onDisconnect={async () => {
-                    await disconnect();
-                    window.location.reload(); // the scheduler changed; reload every view
-                  }}
-                />
-                <TodayCard
-                  provider={provider}
-                  remnoteUrl={remnoteUrl}
-                  due={provider === 'remnote' ? dueInRemnote.reviews + dueInRemnote.new : learningSet.length}
-                  dueDetail={provider === 'remnote' ? dueBreakdown(dueInRemnote) : undefined}
-                  onStartReview={() => setShowSession(true)}
-                  onContextReview={() => setShowContextReview(true)}
-                />
+          <h1 className="mb-8 text-2xl font-semibold text-gray-900">Vocabulary</h1>
+
+          <section className="mb-8">
+            {summary ? (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-semibold tracking-tight tabular-nums text-gray-900">
+                    {(summary.declared + summary.from_reviews).toLocaleString()}
+                  </span>
+                  <span className="text-gray-500">words you know</span>
+                </div>
+                {/* The same marks as the rows below, so the list reads as the breakdown of this number. */}
+                <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
+                  <span className="inline-flex items-center gap-1.5" title={KNEW_HINT}>
+                    <i className="h-1.5 w-1.5 rounded-full bg-gray-300" />
+                    <span className="tabular-nums text-gray-600">{summary.declared.toLocaleString()}</span> you already knew
+                  </span>
+                  <span className="inline-flex cursor-help items-center gap-1.5" title={LEARNED_HINT}>
+                    <i className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
+                    <span className="tabular-nums text-gray-600">{summary.from_reviews.toLocaleString()}</span> learned with flashcards
+                  </span>
+                </p>
+              </>
+            ) : (
+              // Same height as the summary, so nothing below moves when it arrives.
+              <div aria-label="Loading">
+                <div className="h-10 w-56 animate-pulse rounded bg-gray-100" />
+                <div className="mt-2 h-4 w-64 animate-pulse rounded bg-gray-100" />
               </div>
             )}
-          </header>
+          </section>
 
-          {!revealed && <PracticeSkeleton />}
-
-          {/* Mounted while hidden, so every part loads at the same time. */}
-          <div
-            className={
-              revealed
-                ? 'animate-in fade-in duration-300'
-                : 'hidden'
-            }
-          >
-            {recap && (
-              <div className="mb-10">
-                <YoutubeRecap
-                  recap={recap}
-                  onAdd={async (words) => {
-                    const added = await addRecapWords(words);
-                    refresh();
-                    return added;
-                  }}
-                  onClose={closeRecap}
-                />
-              </div>
-            )}
-
-            {(progressError || progressWords) && (
-              <section>
-                {progressError ? (
-                  <p className="text-sm text-red-600">{progressError}</p>
-                ) : (
-                  progressWords && savedWords && <ProgressOverview words={progressWords} saved={savedWords} />
-                )}
-              </section>
-            )}
-
-            {provider === 'langfour' && !anonymous && (
-              <div className="mt-10">
-                <RemnoteSection />
-              </div>
-            )}
-
-            {/* The one hairline: what you know above, the words below. */}
-            <div className="mt-10 border-t border-gray-100 pt-8">
-              <LearningWordsTable
-                onMovedToKnown={refresh}
-                onSourceChange={setSourceFilter}
-                source={sourceFilter}
-                showDue={provider !== 'remnote'}
-                stages={stages}
-                total={progressWords?.length}
-                onReady={onTableReady}
-              />
+          <section>
+            <div className="mb-4 flex flex-wrap items-end gap-6 border-b border-gray-100">
+              <button className={tab(view === "known")} onClick={() => switchView("known")}>
+                Known words
+              </button>
+              <button className={tab(view === "add")} onClick={() => switchView("add")}>
+                Add common words
+              </button>
+              <Link href="/import" className={`${tab(false)} inline-flex items-center gap-1`}>
+                Import <ArrowUpRight size={14} />
+              </Link>
+              {view === "known" && (
+                <label className="relative mb-2 ml-auto">
+                  <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search"
+                    className="w-48 rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </label>
+              )}
             </div>
-          </div>
+
+            {view === "known" ? (
+              <KnownWords searchTerm={debouncedSearch} />
+            ) : (
+              <WordCategories
+                key={selectedCategory ?? ""} // a fresh selection per topic
+                language="es"
+                selectedCategory={selectedCategory}
+                categories={filteredCategories}
+                onSelectCategory={setSelectedCategory}
+                categoriesLoading={categoriesLoading}
+              />
+            )}
+          </section>
         </div>
       </div>
     </ProtectedRoute>
   );
 };
 
-export default PracticePage;
+export default VocabularyPage;

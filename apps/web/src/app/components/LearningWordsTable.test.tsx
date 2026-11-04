@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import type { StuckWord } from '../vocabulary/stuck';
+import type { StuckWord } from '../practice/stuck';
 import LearningWordsTable from './LearningWordsTable';
 
 const { moveToKnown, none } = vi.hoisted(() => ({
@@ -24,7 +24,7 @@ const word = (word_id: number, word: string, videos = 0, lookups = 0): StuckWord
 
 beforeEach(() => {
   moveToKnown.mockClear();
-  window.history.replaceState(null, '', '/vocabulary');
+  window.history.replaceState(null, '', '/practice');
 });
 
 it('has no tab when no common word is stuck', () => {
@@ -35,7 +35,7 @@ it('has no tab when no common word is stuck', () => {
 
 it('opens from its link with every word ticked except the looked-up ones', async () => {
   stuck = [word(1, 'que', 40), word(2, 'quedar', 41, 3), word(3, 'y')];
-  window.history.replaceState(null, '', '/vocabulary?words=stuck');
+  window.history.replaceState(null, '', '/practice?words=stuck');
   render(<LearningWordsTable total={10} />);
 
   expect(screen.getByText('3')).toBeTruthy(); // the tab's count

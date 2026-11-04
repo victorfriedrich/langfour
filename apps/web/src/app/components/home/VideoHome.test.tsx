@@ -152,7 +152,7 @@ it('says how many words were saved on YouTube on the way back', async () => {
 
   const pill = await screen.findByRole('status');
   expect(pill.textContent).toBe('You saved 6 words from En este lugar no existe la nocheSee them');
-  expect(within(pill).getByRole('link', { name: 'See them' }).getAttribute('href')).toBe('/vocabulary');
+  expect(within(pill).getByRole('link', { name: 'See them' }).getAttribute('href')).toBe('/practice');
   const back = fetchWithAuth.mock.calls.find(([url]) => String(url).includes('/api/home/return'))!;
   expect(new URL(back[0]).searchParams.get('video_id')).toBe(NIGHT.id);
   expect(sessionStorage.getItem('langfour-home-away')).toBeNull();

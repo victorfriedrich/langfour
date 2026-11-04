@@ -23,5 +23,5 @@ export function reviewLink(
 } {
   return userdata?.review_provider === 'remnote'
     ? { label: 'Review in RemNote', url: remnoteUrl(userdata.remnote_root_rem_id, userdata.remnote_language_rem_ids, language) }
-    : { label: 'Review flashcards', url: `${WEB_URL}/vocabulary` };
+    : { label: 'Review flashcards', url: `${WEB_URL}/practice` };
 }

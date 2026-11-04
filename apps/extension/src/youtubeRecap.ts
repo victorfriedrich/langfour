@@ -1,6 +1,6 @@
 // "Yesterday on YouTube": the recap of the videos watched yesterday, on any
 // device, in the extension popup and on the web Practice page
-// (apps/web/src/app/vocabulary/YoutubeRecap.tsx imports this file). One
+// (apps/web/src/app/practice/YoutubeRecap.tsx imports this file). One
 // line on what was watched, the new words in one comma-separated row, and
 // one button that adds them all; tapping a word leaves it out. The API
 // decides which words qualify (apps/api/watch.py).
