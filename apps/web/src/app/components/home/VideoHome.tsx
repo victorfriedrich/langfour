@@ -9,7 +9,7 @@ import { useExtensionStatus } from '../../hooks/useExtensionStatus';
 import { useWatchedVideos } from '../../hooks/useWatchedVideos';
 import Wordpanel from '../Wordpanel';
 import VideoCard, { GRID, Thumbnail } from './VideoCard';
-import { ChannelsYouMightLike, EmptyFilters } from './Sections';
+import { ChannelsAtYourLevel, EmptyFilters } from './Sections';
 import { ExtensionPrompt, Pill, PillButton, PillText } from './Overlays';
 import {
   ALL,
@@ -141,7 +141,7 @@ function VideoHomeContent() {
   const [filters, setFilters] = useState<HomeFilters>(DEFAULT_FILTERS);
   const [view, setView] = useState<string>(ALL); // a topic, or WATCHED
   const [search, setSearch] = useState('');
-  const { page: loadedPage, loading, error, reload, setHidden, setFollowing, cameBack, language } = useHome(filters);
+  const { page: loadedPage, loading, error, reload, prefetch, setHidden, setFollowing, cameBack, language } = useHome(filters);
   const [shown, setShown] = useState(PAGE);
   const [grammarFor, setGrammarFor] = useState<string | null>(null);
   const [hiddenVideos, setHiddenVideos] = useState<Set<string>>(new Set());
@@ -342,7 +342,7 @@ function VideoHomeContent() {
       return (
         <div className="flex flex-col items-center gap-3 py-16 text-center text-gray-500">
           {filters.topic === FOLLOWING && !query ? (
-            <p>Videos from the channels you follow show up here. Follow one under Channels you might like, or with Favourite on its YouTube page.</p>
+            <p>Videos from the channels you follow show up here. Follow one under Channels at your level, or with Favourite on its YouTube page.</p>
           ) : query ? (
             <p>No videos match “{query}”.</p>
           ) : (
@@ -384,7 +384,7 @@ function VideoHomeContent() {
           </div>
         )}
         {filters.topic !== FOLLOWING && !query && channels.length > 0 && (
-          <ChannelsYouMightLike
+          <ChannelsAtYourLevel
             channels={channels}
             basis={page.basis}
             topic={filters.topic}
@@ -440,6 +440,8 @@ function VideoHomeContent() {
             type="button"
             aria-pressed={view === t}
             onClick={() => setTopic(t)}
+            onPointerEnter={() => t !== WATCHED && prefetch({ topic: t })}
+            onFocus={() => t !== WATCHED && prefetch({ topic: t })}
             className={`h-8 rounded-full px-3 text-sm font-medium ${
               view === t ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
             }`}

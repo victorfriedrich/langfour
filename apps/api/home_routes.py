@@ -1,6 +1,6 @@
 """The web Videos page (home.py).
 
-    GET  /api/home?language=es&topic=All&grammar=B1&length=any&q=   the page
+    GET  /api/home?language=es&topic=All&grammar=B1&length=any&q=&reuse=1   the page
     POST /api/home/hide      {language, video_id, channel}           Not interested
     POST /api/home/unhide    {language, video_id, channel}           Undo
     GET  /api/home/return?video_id=…&since=…                         back from YouTube
@@ -37,12 +37,13 @@ async def home_page(
     grammar: Level | None = None,
     length: Length = "any",
     q: str = Query("", max_length=100),
+    reuse: bool = False,
     current_user: dict = Depends(get_current_user),
     store: HomeStore = Depends(get_home_store),
 ):
     recommender = _recommender(request, language)
     return await asyncio.to_thread(home.home, store, recommender, str(current_user.id), language,
-                                   topic, grammar, length, q)
+                                   topic, grammar, length, q, reuse)
 
 
 @router.post("/api/home/hide", response_model=Hidden)

@@ -1,5 +1,5 @@
-"""How alike two sets of videos are in what they talk about, for Channels you
-might like (home.py).
+"""How alike two sets of videos are in what they talk about, for Channels at
+your level (home.py).
 
 Each video is its binary TF-IDF vector over the recommender's presence matrix
 (a word counts once per video, weighted by log(N / videos with the word)),
