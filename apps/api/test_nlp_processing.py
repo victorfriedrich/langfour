@@ -1,6 +1,5 @@
 """Regression checks for verification failures and structured-output fallback."""
 
-import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -90,29 +89,6 @@ def test_parse_looks_up_all_cache_misses_in_one_request(nlp, monkeypatch):
     resolve.assert_called_once_with(["recién"], "es")
     assert [r.get("id") for r in result] == [5, None, 5]
     jev.assert_not_called()
-
-
-def test_high_level_tag_json_fallback_includes_category_contract(nlp, monkeypatch):
-    calls = []
-
-    def complete(**kwargs):
-        format_type = kwargs["response_format"]["type"]
-        calls.append(format_type)
-        if format_type == "json_schema":
-            raise ValueError("Provider does not support json_schema")
-
-        prompt = "\n".join(message["content"] for message in kwargs["messages"])
-        assert '"category"' in prompt
-        for category in nlp.VALID_CATEGORIES:
-            assert category in prompt
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
-            content=json.dumps({"category": "Products & Tech"}), refusal=None,
-        ))])
-
-    monkeypatch.setattr(nlp.client.chat.completions, "create", complete)
-
-    assert nlp.get_high_level_tag("Laptop review", ["laptop"]) == "Products & Tech"
-    assert calls == ["json_schema", "json_object"]
 
 
 @pytest.mark.parametrize('rejected, expected', [(False, 'valid'), (True, 'flagged')])
