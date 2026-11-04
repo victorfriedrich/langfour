@@ -17,17 +17,36 @@ what happened on YouTube since a card was opened.
   - empty: when the grammar filter leaves nothing in a topic, the nearest
     level above it that has videos, the topic's videos up to that level, and
     the other topics' videos up to the filter's level.
-  - channels: on All without a search, CHANNELS channels worth following, as
-    video_blend ranks videos: the CHANNEL_POOL best understood (by share of
-    all their unwatched speech, as channels.py computes "understood"), then
-    reordered by a weighted geometric mean of percentiles of understood, the
-    judge's interest, clean (-trash) and text scores averaged over each
-    channel's judged videos, and taste: the share of the videos the learner
-    started that are in the channel's topic. A channel more than
-    CHANNEL_MAX_REJECTED of whose judged videos the judge rejects is left
-    out: clickbait channels get most videos through one at a time. Its
-    videos are its first SHELF in the grid's order. A channel is its
-    transcripts' creator name; its UC id, for Follow, comes from video_queue.
+  - channels: on All or a topic, without a search, CHANNELS channels worth
+    following, as video_blend ranks videos: the CHANNEL_POOL best understood
+    (by share of all their unwatched speech, as channels.py computes
+    "understood"), then reordered by a weighted geometric mean of
+    percentiles of understood, the judge's interest, clean (-trash) and text
+    scores averaged over each channel's judged videos, and, when the learner
+    has seeds, similar: how alike the channel is to them in what it talks
+    about (channel_similarity.py).
+    Seeds are the channels they made a favourite (all their videos) and the
+    channels of the videos they watched (those videos; watch_events, which
+    the extension also fills from their YouTube history). A channel's
+    similar is its best lift over the seeds: how many standard deviations
+    its cosine with the seed sits above that seed's mean over every
+    eligible channel, times the seed's strength (a favourite 1, a channel
+    watched once WATCHED_SEED). Raw cosines would make a big, broad channel
+    every channel's nearest seed, and lifts within one topic would make the
+    closest gaming channel to a self-help video look like a match. From
+    BECAUSE_LIFT that seed is the channel's `because`. With seeds the pool
+    is CHANNEL_POOL_SEEDED, so channels like them get in. The first pass
+    takes at most one channel per nearest seed, so two favourites both get
+    a place. Channels they follow or watched are not suggested: the section
+    is for finding new ones. On a topic, only the channels whose videos are
+    mostly in it compete, and their videos in it come first. `basis` says
+    what the picks rest on, so the page can say so or, with nothing, say how
+    to give it something.
+    A channel more than CHANNEL_MAX_REJECTED of whose judged videos the
+    judge rejects is left out: clickbait channels get most videos through
+    one at a time. Its videos are its first SHELF in the grid's order. A
+    channel is its transcripts' creator name; its UC id, for Follow, comes
+    from video_queue.
   - hides: Not interested and "Hide all from <channel>" (sql/video_hides.sql).
     Only this grid leaves them out.
   - return: when the learner comes back from YouTube, how far into the video
@@ -49,6 +68,7 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel
 
+import channel_similarity
 import video_blend
 from recommender import MIN_DISTINCT_WORDS
 from vocabulary import Language
@@ -73,10 +93,15 @@ SHELF = 4             # cards in a row of the empty state or a channel
 CHANNELS = 3
 CHANNEL_MIN_VIDEOS = 4
 CHANNEL_POOL = 0.3            # share of the eligible channels, best understood first
+CHANNEL_POOL_SEEDED = 0.6     # the same with seeds, so channels like them get in
 CHANNEL_POOL_MIN = 12
 CHANNEL_MAX_REJECTED = 0.2
-CHANNEL_WEIGHTS = {"understood": 0.25, "interest": 0.25, "clean": 0.15, "text": 0.15,
-                   "taste": 0.20}
+CHANNEL_WEIGHTS = {"understood": 0.3, "interest": 0.3, "clean": 0.2, "text": 0.2}
+SIMILAR_WEIGHT = 1.5          # with seeds: 1.5 of 2.5 of the score
+MAX_WATCHED_SEEDS = 20        # channels, most watched first
+BECAUSE_LIFT = 2.0            # standard deviations above the seed's mean cosine
+WATCHED_SEED = 0.6            # a watched channel's weight against a favourite's 1,
+WATCHED_SEED_STEP = 0.2       # plus this per watched video after the first
 
 _PAGE = 1000          # PostgREST's row cap per request
 _IN_CHUNK = 200
@@ -114,6 +139,12 @@ class HomeChannel(BaseModel):
     understood: float
     videos: int                  # unwatched videos of the channel in the index
     best: list[HomeVideo]
+    because: str | None = None   # the followed or watched channel it is most like
+
+
+class ChannelBasis(BaseModel):
+    following: list[str]         # names of the favourite channels in the index
+    watched: int                 # videos watched (or started) from the index
 
 
 class Home(BaseModel):
@@ -123,6 +154,7 @@ class Home(BaseModel):
     levels: dict[Level, int] | None
     empty: Empty | None
     channels: list[HomeChannel]
+    basis: ChannelBasis | None   # what channels rests on; None when it isn't shown
 
 
 class HideRequest(BaseModel):
@@ -362,61 +394,136 @@ def _channel_signals(corpus: _Corpus) -> dict[str, dict[str, float | None]]:
     } for name in looks.keys() | texts.keys()}
 
 
-def _taste(corpus: _Corpus) -> dict[str, float]:
-    """Topic -> share of the videos the learner started that are in it."""
-    topics = [corpus.categories[corpus.rows[v]] for v in corpus.watch if v in corpus.rows]
-    return {topic: n / len(topics) for topic, n in Counter(topics).items()}
+def _main_topic(corpus: _Corpus, video_ids: list[str]) -> str:
+    return Counter(corpus.categories[corpus.rows[v]] for v in video_ids).most_common(1)[0][0]
 
 
-def _channels(store: HomeStore, corpus: _Corpus, favourites: set[str]) -> list[HomeChannel]:
+def _seeds(corpus: _Corpus, favourite_names: set[str]) -> list[tuple[str, list[int]]]:
+    """(name, matrix rows) per seed: each favourite channel with all its
+    videos, then the channels of the videos watched, with those videos."""
+    rows_of: dict[str, list[int]] = defaultdict(list)
+    for row, name in enumerate(corpus.creators):
+        if name in favourite_names:
+            rows_of[name].append(row)
+    seeds = [(name, rows_of[name]) for name in sorted(favourite_names) if rows_of[name]]
+    watched: dict[str, list[int]] = defaultdict(list)
+    for video_id, played in corpus.watch.items():
+        row = corpus.rows.get(video_id)
+        if row is None or played.get("unmarked_at") is not None:
+            continue
+        name = corpus.creators[row]
+        if name and name not in favourite_names:
+            watched[name].append(row)
+    most = sorted(watched.items(), key=lambda item: (-len(item[1]), item[0]))
+    return seeds + most[:MAX_WATCHED_SEEDS]
+
+
+def _basis(corpus: _Corpus, favourite_names: set[str]) -> ChannelBasis:
+    return ChannelBasis(
+        following=sorted(favourite_names),
+        watched=sum(1 for video_id, played in corpus.watch.items()
+                    if video_id in corpus.rows and played.get("unmarked_at") is None),
+    )
+
+
+def _channels(store: HomeStore, recommender, corpus: _Corpus, favourites: set[str],
+              favourite_names: set[str], topic: str = ALL) -> list[HomeChannel]:
+    seeds = _seeds(corpus, favourite_names)
+    known = favourite_names | {name for name, _ in seeds}
     by_channel: dict[str, list[str]] = defaultdict(list)
     for video_id in corpus.ordered:
         name = corpus.creators[corpus.rows[video_id]]
-        if name:
+        if name and name not in known:
             by_channel[name].append(video_id)
     signals = _channel_signals(corpus)
-    eligible = []
-    for name, video_ids in by_channel.items():
-        if len(video_ids) < CHANNEL_MIN_VIDEOS:
-            continue
-        if (signals.get(name, {}).get("rejected") or 0) > CHANNEL_MAX_REJECTED:
-            continue
+    eligible = {name: video_ids for name, video_ids in by_channel.items()
+                if len(video_ids) >= CHANNEL_MIN_VIDEOS
+                and (signals.get(name, {}).get("rejected") or 0) <= CHANNEL_MAX_REJECTED}
+
+    # Before the topic cut: how alike a channel is to a seed is judged
+    # against every channel, or the closest gaming channel to a self-help
+    # video would look like a match.
+    similar: dict[str, float] = {}
+    seed_of: dict[str, str] = {}
+    because: dict[str, str] = {}
+    if seeds and eligible:
+        names = list(eligible)
+        cosines = channel_similarity.channel_cosines(
+            recommender, corpus.language, names, [rows for _, rows in seeds])
+        # Relative to how alike the seed is to every channel: a big, broad
+        # channel is fairly close to everything and would be every channel's
+        # nearest seed by raw cosine.
+        spread = cosines.std(axis=0)
+        lift = (cosines - cosines.mean(axis=0)) / np.where(spread > 0, spread, 1)
+        # A favourite counts in full, a channel watched once a little less.
+        strength = np.array([1.0 if name in favourite_names
+                             else min(1.0, WATCHED_SEED + WATCHED_SEED_STEP * (len(rows) - 1))
+                             for name, rows in seeds])
+        weighed = lift * strength
+        for i, j in enumerate(weighed.argmax(axis=1)):
+            similar[names[i]] = float(weighed[i, j])
+            seed_of[names[i]] = seeds[j][0]
+            if weighed[i, j] >= BECAUSE_LIFT:
+                because[names[i]] = seeds[j][0]
+
+    candidates = []
+    for name, video_ids in eligible.items():
+        if topic != ALL:
+            if _main_topic(corpus, video_ids) != topic:
+                continue
+            # Its videos in the topic first, each part in the grid's order.
+            video_ids = sorted(video_ids,
+                               key=lambda v: corpus.categories[corpus.rows[v]] != topic)
         rows = [corpus.rows[v] for v in video_ids]
         spoken = corpus.spoken[rows]
         if not spoken.sum():
             continue
         understood = float((corpus.ratios[rows] * spoken).sum() / spoken.sum())
-        eligible.append((understood, len(video_ids), name, video_ids))
-    eligible.sort(key=lambda s: (-s[0], -s[1], s[2]))
-    pool = eligible[:max(CHANNEL_POOL_MIN, int(len(eligible) * CHANNEL_POOL))]
+        candidates.append((understood, len(video_ids), name, video_ids))
+    candidates.sort(key=lambda s: (-s[0], -s[1], s[2]))
+    share = CHANNEL_POOL_SEEDED if seeds else CHANNEL_POOL
+    pool = candidates[:max(CHANNEL_POOL_MIN, int(len(candidates) * share))]
     if not pool:
         return []
 
-    taste = _taste(corpus)
-    def topic(video_ids: list[str]) -> str:
-        return Counter(corpus.categories[corpus.rows[v]] for v in video_ids).most_common(1)[0][0]
-    columns = {
+    columns: dict[str, list[float | None]] = {
         "understood": [understood for understood, *_ in pool],
-        "taste": [taste.get(topic(video_ids), 0.0) for *_, video_ids in pool],
         **{key: [signals.get(name, {}).get(key) for _, _, name, _ in pool]
            for key in ("interest", "clean", "text")},
     }
+    weights = dict(CHANNEL_WEIGHTS)
+    if similar:
+        columns["similar"] = [similar.get(name) for _, _, name, _ in pool]
+        weights["similar"] = SIMILAR_WEIGHT
+
     scores = [1.0] * len(pool)
-    for key, weight in CHANNEL_WEIGHTS.items():
+    for key, weight in weights.items():
         for i, p in enumerate(video_blend.percentiles(columns[key])):
             scores[i] *= max(p, video_blend.MIN_PERCENTILE) ** weight
     # Stable: ties keep the understood order.
-    chosen = [pool[i] for i in sorted(range(len(pool)), key=lambda i: -scores[i])[:CHANNELS]]
+    order = sorted(range(len(pool)), key=lambda i: -scores[i])
+    # One per seed first, so one favourite doesn't take every place.
+    picked: list[int] = []
+    used: set[str] = set()
+    for i in order:
+        seed = seed_of.get(pool[i][2])
+        if len(picked) < CHANNELS and (seed is None or seed not in used):
+            picked.append(i)
+            if seed:
+                used.add(seed)
+    picked += [i for i in order if i not in picked][:CHANNELS - len(picked)]
+    picked.sort(key=lambda i: -scores[i])
+    chosen = [(pool[i], because.get(pool[i][2])) for i in picked]
 
-    best = {name: video_ids[:SHELF] for _, _, name, video_ids in chosen}
-    ids = store.channel_ids([v for videos in best.values() for v in videos])
+    best_videos = {name: video_ids[:SHELF] for (_, _, name, video_ids), _ in chosen}
+    ids = store.channel_ids([v for videos in best_videos.values() for v in videos])
     out = []
-    for understood, count, name, _ in chosen:
-        channel_id = next((ids[v] for v in best[name] if v in ids), None)
+    for (understood, count, name, _), like in chosen:
+        channel_id = next((ids[v] for v in best_videos[name] if v in ids), None)
         out.append(HomeChannel(
             name=name, channel_id=channel_id, following=channel_id in favourites,
             understood=round(understood * 100, 1), videos=count,
-            best=[corpus.card(v) for v in best[name]],
+            best=[corpus.card(v) for v in best_videos[name]], because=like,
         ))
     return out
 
@@ -427,7 +534,11 @@ def home(store: HomeStore, recommender, user_id: str, language: str, topic: str 
     corpus = _Corpus(recommender, language, store.known_words(user_id), store.watch_rows(user_id),
                      hidden_videos, hidden_channels)
     favourites = store.favourites(user_id, language)
-    followed = store.videos_of(favourites, language) if topic == FOLLOWING and favourites else set()
+    with_channels = topic != FOLLOWING and not query.strip()
+    followed = (store.videos_of(favourites, language)
+                if favourites and (topic == FOLLOWING or with_channels) else set())
+    favourite_names = {name for v in followed
+                       if (row := corpus.rows.get(v)) is not None and (name := corpus.creators[row])}
     pool = _filtered(corpus, topic, followed, length, query)
 
     levels = None
@@ -462,8 +573,9 @@ def home(store: HomeStore, recommender, user_id: str, language: str, topic: str 
                 if c["category"].strip().lower() not in ("failed", "unknown")],
         levels=levels,
         empty=empty,
-        channels=(_channels(store, corpus, favourites)
-                  if topic == ALL and not query.strip() else []),
+        channels=(_channels(store, recommender, corpus, favourites, favourite_names, topic)
+                  if with_channels else []),
+        basis=_basis(corpus, favourite_names) if with_channels else None,
     )
 
 
