@@ -29,6 +29,14 @@ interface MissingWordsRequest {
   language_code: string;
 }
 
+// The API answers before Jev has ranked a text it hasn't seen, with
+// `ranking: true`, and saves the ranks when they come (2-5 s). Until then the
+// list shows unranked and is asked for again, so the key words move to the
+// top once they exist. A failed ranking is started again by the next ask, so
+// the cap also bounds how often Jev is retried while the panel is open.
+export const RANKING_POLL_MS = 2000;
+const RANKING_POLLS = 10;
+
 // Videos come from the shared corpus; Library items are per user and have
 // their own route.
 export const useMissingWords = (videoId: string, source: 'videos' | 'media' = 'videos') => {
@@ -39,7 +47,9 @@ export const useMissingWords = (videoId: string, source: 'videos' | 'media' = 'v
   const { fetchWithAuth, language } = useContext(UserContext);
 
   useEffect(() => {
-    const fetchMissingWords = async () => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const fetchMissingWords = async (poll = 0) => {
       try {
         const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
         // Prepare the request body
@@ -60,6 +70,7 @@ export const useMissingWords = (videoId: string, source: 'videos' | 'media' = 'v
         }
 
         const data = await response.json();
+        if (cancelled) return;
         const missingWordsData: ApiMissingWord[] = data.missing_words;
         const byId = new Map(missingWordsData.map((word) => [word.id, word]));
 
@@ -71,6 +82,7 @@ export const useMissingWords = (videoId: string, source: 'videos' | 'media' = 'v
         if (supabaseError) {
           throw supabaseError;
         }
+        if (cancelled) return;
 
         const recommended: MissingWord[] = [];
         const flagged: MissingWord[] = [];
@@ -95,14 +107,24 @@ export const useMissingWords = (videoId: string, source: 'videos' | 'media' = 'v
 
         setRecommendedWords(recommended);
         setFlaggedWords(flagged);
+        if (data.ranking && poll < RANKING_POLLS) {
+          timer = setTimeout(() => fetchMissingWords(poll + 1), RANKING_POLL_MS);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred while fetching missing words');
+        // A failed poll leaves the unranked list up rather than replacing it.
+        if (!cancelled && poll === 0) {
+          setError(err instanceof Error ? err.message : 'An error occurred while fetching missing words');
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     fetchMissingWords();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [videoId, source, fetchWithAuth, language]);
 
   return { recommendedWords, flaggedWords, isLoading, error };
