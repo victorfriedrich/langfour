@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { UserContext } from '@/context/UserContext';
 import VideoHome from './VideoHome';
@@ -93,7 +93,7 @@ it('shows each video with its channel, length and how much is known', async () =
   expect(within(night).getByText('22:28')).toBeTruthy();
   expect(night.textContent).toContain('96% · 14 new words');
   expect(screen.getByText('Ary Tenorio · watched 7 of 17 min')).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'Channels you might like' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Channels at your level' })).toBeTruthy();
   expect(screen.getByText('96% known · 8 videos · like Marc Vilas')).toBeTruthy();
   expect(screen.getByText('Based on Marc Vilas, which you follow, and 10 videos you watched.')).toBeTruthy();
   const topics = screen.getByRole('group', { name: 'Topics' });
@@ -282,7 +282,7 @@ it('opens the side panel with a video’s words from Show words, and Escape clos
   expect(screen.queryByRole('heading', { name: BUTLER.title })).toBeNull();
 });
 
-it('says what Channels you might like rests on, or how to steer it', () => {
+it('says what Channels at your level rests on, or how to steer it', () => {
   expect(basisText({ following: [], watched: 0 })).toMatch(/^Picked by how much you’d understand\. To match them/);
   expect(basisText(null)).toMatch(/turn on YouTube history/);
   expect(basisText({ following: [], watched: 1 })).toBe('Based on 1 video you watched.');
@@ -296,5 +296,88 @@ it('suggests channels on a topic too, under its name', async () => {
   renderHome();
   await screen.findByText(NIGHT.title);
   fireEvent.click(within(screen.getByRole('group', { name: 'Topics' })).getByRole('button', { name: 'Travel' }));
-  expect(await screen.findByRole('heading', { name: 'Travel channels you might like' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Travel channels at your level' })).toBeTruthy();
+});
+
+const topicButton = (name: string) =>
+  within(screen.getByRole('group', { name: 'Topics' })).getByRole('button', { name });
+
+const homeRequests = () => fetchWithAuth.mock.calls
+  .map(([url]) => new URL(url))
+  .filter((url) => url.pathname === '/api/home');
+
+it('shows a topic already seen at once, without asking again', async () => {
+  respond((url) => (url.searchParams.get('topic') === 'Travel'
+    ? { ...PAGE, videos: [BUTLER], channels: [] } : { ...PAGE, videos: [NIGHT], channels: [] }));
+  renderHome();
+  await screen.findByText(NIGHT.title);
+  fireEvent.click(topicButton('Travel'));
+  await screen.findByText(BUTLER.title);
+  expect(homeRequests()).toHaveLength(2);
+
+  fireEvent.click(topicButton('All'));
+  // No await: it is there in the same render.
+  expect(screen.getByText(NIGHT.title)).toBeTruthy();
+  expect(homeRequests()).toHaveLength(2);
+});
+
+it('reads the learner once a visit, and fetches a topic on hover', async () => {
+  respond((url) => (url.searchParams.get('topic') === 'Travel'
+    ? { ...PAGE, videos: [BUTLER], channels: [] } : { ...PAGE, videos: [NIGHT], channels: [] }));
+  renderHome();
+  await screen.findByText(NIGHT.title);
+  expect(homeRequests()[0].searchParams.get('reuse')).toBeNull();
+
+  fireEvent.pointerEnter(topicButton('Travel'));
+  await waitFor(() => expect(homeRequests()).toHaveLength(2));
+  expect(homeRequests()[1].searchParams.get('topic')).toBe('Travel');
+  expect(homeRequests()[1].searchParams.get('reuse')).toBe('1');
+  // The hover's request is the click's: the page doesn't change until then.
+  expect(screen.getByText(NIGHT.title)).toBeTruthy();
+
+  await act(async () => {});
+  fireEvent.click(topicButton('Travel'));
+  expect(await screen.findByText(BUTLER.title)).toBeTruthy();
+  expect(homeRequests()).toHaveLength(2);
+});
+
+it('starts over after a follow, and leaves the current page alone', async () => {
+  respond((url) => (url.pathname === '/api/home'
+    ? (url.searchParams.get('topic') === 'Travel' ? { ...PAGE, videos: [BUTLER] } : PAGE) : {}));
+  renderHome();
+  await screen.findByText(NIGHT.title);
+  fireEvent.click(topicButton('Travel'));
+  await screen.findByRole('heading', { name: 'Travel channels at your level' });
+  fireEvent.click(screen.getByRole('button', { name: 'Follow' }));
+  await screen.findByRole('button', { name: 'Following' });
+  expect(homeRequests()).toHaveLength(2);
+
+  fireEvent.click(topicButton('All'));
+  await waitFor(() => expect(homeRequests()).toHaveLength(3));
+  const after = homeRequests()[2];
+  expect(after.searchParams.get('topic')).toBe('All');
+  expect(after.searchParams.get('reuse')).toBeNull();
+});
+
+it('reveals more channels a few at a time, and starts over on another topic', async () => {
+  const channels = Array.from({ length: 7 }, (_, i) => ({
+    ...PAGE.channels[0], name: `Channel ${i}`, channel_id: null, best: [],
+  }));
+  respond(() => ({ ...PAGE, channels }));
+  renderHome();
+  await screen.findByText('Channel 2');
+  expect(screen.queryByText('Channel 3')).toBeNull();
+
+  const more = () => screen.queryByRole('button', { name: 'Show more channels' });
+  fireEvent.click(more()!);
+  expect(screen.getByText('Channel 5')).toBeTruthy();
+  expect(screen.queryByText('Channel 6')).toBeNull();
+  fireEvent.click(more()!);
+  expect(screen.getByText('Channel 6')).toBeTruthy();
+  expect(more()).toBeNull();
+
+  fireEvent.click(topicButton('Travel'));
+  await screen.findByRole('heading', { name: 'Travel channels at your level' });
+  expect(screen.queryByText('Channel 3')).toBeNull();
+  expect(more()).toBeTruthy();
 });

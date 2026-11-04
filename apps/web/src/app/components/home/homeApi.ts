@@ -48,7 +48,7 @@ export interface HomeChannel {
   because: string | null;      // the followed or watched channel it is most like
 }
 
-/** What Channels you might like rests on. */
+/** What Channels at your level rests on. */
 export interface ChannelBasis {
   following: string[];         // the favourite channels' names
   watched: number;             // videos watched from the library

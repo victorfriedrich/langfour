@@ -1,47 +1,99 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { UserContext } from '@/context/UserContext';
 import { homeQuery, type HomeFilters, type HomePage } from '../components/home/homeApi';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Past this, a topic already seen is fetched again.
+const PAGE_TTL_MS = 5 * 60_000;
 
 /**
  * The Videos page (GET /api/home) for these filters in the sidebar's
- * language. A response for filters that have since changed is dropped.
- * `reload` fetches the same page again, for coming back from YouTube.
+ * language. Pages already fetched come back at once, so going back to a topic
+ * costs nothing, and `prefetch` fetches one before it is asked for. The first
+ * request of a visit reads the learner's data; the rest ask the server to
+ * reuse it (`reuse=1`). `reload` starts over, for coming back from YouTube.
  */
 export function useHome(filters: HomeFilters) {
   const { fetchWithAuth, language } = useContext(UserContext);
   const code = language?.code;
   const key = code ? homeQuery(code, filters) : null;
-  const [result, setResult] = useState<{ key: string; page: HomePage | null; error: string | null } | null>(null);
+  const [pages, setPages] = useState<Record<string, HomePage>>({});
+  const [failed, setFailed] = useState<string | null>(null);
+  const [lastPage, setLastPage] = useState<HomePage | null>(null);
   const [tick, setTick] = useState(0);
+  const inFlight = useRef(new Map<string, Promise<void>>());
+  const generation = useRef(0);
+  const readAgain = useRef(true);
 
-  useEffect(() => {
-    if (!key) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const response = await fetchWithAuth(`${API_URL}${key}`);
+  const fetchPage = useCallback(
+    (pageKey: string): Promise<void> => {
+      const running = inFlight.current.get(pageKey);
+      if (running) return running;
+      const started = generation.current;
+      const reuse = !readAgain.current;
+      readAgain.current = false;
+      const request = (async () => {
+        const response = await fetchWithAuth(`${API_URL}${pageKey}${reuse ? '&reuse=1' : ''}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const page = (await response.json()) as HomePage;
-        if (!cancelled) setResult({ key, page, error: null });
-      } catch (err) {
+        // Asked before a reload: it may show what the reload is there to replace.
+        if (started === generation.current) setPages((known) => ({ ...known, [pageKey]: page }));
+      })().finally(() => {
+        if (inFlight.current.get(pageKey) === request) inFlight.current.delete(pageKey);
+      });
+      inFlight.current.set(pageKey, request);
+      return request;
+    },
+    [fetchWithAuth],
+  );
+
+  /** Forget what was fetched and have the server read it all again. `keep`
+   * stays up, for a page that is right as it is. */
+  const startOver = useCallback((keep: string | null) => {
+    generation.current += 1;
+    readAgain.current = true;
+    inFlight.current.clear();
+    setPages((known) => (keep && known[keep] ? { [keep]: known[keep] } : {}));
+  }, []);
+
+  const current = key ? pages[key] : undefined;
+  const loaded = Boolean(current);
+
+  useEffect(() => {
+    if (!key || loaded) return;
+    fetchPage(key)
+      .then(() => setFailed((was) => (was === key ? null : was)))
+      .catch((err) => {
         console.error(err);
-        if (!cancelled) {
-          setResult((prev) => ({ key, page: prev?.page ?? null, error: 'Could not load videos. Please try again later.' }));
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [key, tick, fetchWithAuth]);
+        setFailed(key);
+      });
+  }, [key, loaded, tick, fetchPage]);
+
+  useEffect(() => {
+    const id = setInterval(() => startOver(key), PAGE_TTL_MS);
+    return () => clearInterval(id);
+  }, [key, startOver]);
 
   // The last page stays up while the next one loads.
-  const page = result?.page ?? null;
-  const loading = result?.key !== key;
-  const error = result?.key === key ? result.error : null;
-  const reload = useCallback(() => setTick((t) => t + 1), []);
+  if (current && current !== lastPage) setLastPage(current);
+  const page = current ?? lastPage;
+  const error = failed === key ? 'Could not load videos. Please try again later.' : null;
+  const loading = !current && !error;
+
+  const reload = useCallback(() => {
+    startOver(null);
+    setTick((t) => t + 1);
+  }, [startOver]);
+
+  /** Fetch these filters' page ahead of a click. Failing is fine: the click asks again. */
+  const prefetch = useCallback(
+    (change: Partial<HomeFilters>) => {
+      if (!code) return;
+      const next = homeQuery(code, { ...filters, ...change });
+      if (next !== key && !pages[next]) fetchPage(next).catch(() => {});
+    },
+    [code, filters, key, pages, fetchPage],
+  );
 
   const post = useCallback(
     async (path: string, body: unknown) => {
@@ -74,8 +126,11 @@ export function useHome(filters: HomeFilters) {
     async (channelId: string, favourite: boolean) => {
       if (!code) return;
       await post(`/api/channels/${channelId}/favourite`, { language: code, favourite });
+      // What it suggests rests on who they follow. This page stays as it is,
+      // so the row they just clicked doesn't move away.
+      startOver(key);
     },
-    [code, post],
+    [code, key, post, startOver],
   );
 
   /** How far into a video the learner got and how many words they saved
@@ -90,5 +145,5 @@ export function useHome(filters: HomeFilters) {
     [fetchWithAuth],
   );
 
-  return { page, loading, error, reload, setHidden, setFollowing, cameBack, language: code };
+  return { page, loading, error, reload, prefetch, setHidden, setFollowing, cameBack, language: code };
 }

@@ -40,7 +40,7 @@ def video(vid, known, category="Travel", creator="", length=600, grammar=None, w
             "length": length, "grammar": grammar, "words": words}
 
 
-# What a video can be about, for Channels you might like: words past the
+# What a video can be about, for Channels at your level: words past the
 # 2..101 every video has, four per subject.
 SUBJECTS = {subject: range(102 + 4 * i, 106 + 4 * i)
             for i, subject in enumerate(("ghosts", "trips", "food", "games"))}
@@ -78,7 +78,10 @@ class Store(home.HomeStore):
         self.saved = saved
         self.saved_args = None
 
+    known_reads = 0
+
     def known_words(self, user_id):
+        self.known_reads += 1
         return {KNOWN_WORD}
 
     def watch_rows(self, user_id):
@@ -114,6 +117,7 @@ class Store(home.HomeStore):
 @pytest.fixture(autouse=True)
 def short_videos_count(monkeypatch):
     monkeypatch.setattr(home, "MIN_DISTINCT_WORDS", 1)
+    home._visits.clear()
 
 
 def ids(page):
@@ -222,7 +226,7 @@ def test_channels_without_signals_are_the_best_understood_with_enough_videos():
     store = Store(favourites=[FOLLOWED], channel_ids={"e2": FOLLOWED, "m0": "UC" + "m" * 22})
     page = home.home(store, build(videos), USER, "es")
 
-    assert [c.name for c in page.channels] == ["Easy", "Mid", "Extra"]
+    assert [c.name for c in page.channels] == ["Easy", "Mid", "Extra", "Hard"]
     easy = page.channels[0]
     assert easy.videos == 5 and easy.understood == pytest.approx(96.8)
     assert [v.understood for v in easy.best] == [98.0, 97.0, 97.0, 96.0]
@@ -232,7 +236,7 @@ def test_channels_without_signals_are_the_best_understood_with_enough_videos():
 
     # Every video here is Travel: the topic has the same channels; another has none.
     assert ([c.name for c in home.home(store, build(videos), USER, "es", topic="Travel").channels]
-            == ["Easy", "Mid", "Extra"])
+            == ["Easy", "Mid", "Extra", "Hard"])
     assert home.home(store, build(videos), USER, "es", topic="Food").channels == []
     assert home.home(store, build(videos), USER, "es", query="e").channels == []
     assert home.home(store, build(videos), USER, "es", query="e").basis is None
@@ -244,7 +248,7 @@ def look(channel, interest=5, trash=3):
     return {"look": {"channel": channel, "interest": interest, "trash": trash, "sensitive": "none"}}
 
 
-def test_channels_you_might_like_weigh_what_the_judge_thinks_of_them():
+def test_channels_at_your_level_weigh_what_the_judge_thinks_of_them():
     videos = (
         [video(f"c{i}", 97, creator="Clickbait") for i in range(10)]
         + [video(f"d{i}", 96, creator="Dull") for i in range(4)]
@@ -279,7 +283,7 @@ def watched(*video_ids):
 FILLER = [v for i in range(8) for v in subject_channel(f"filler{i}", None, 93)]
 
 
-def test_channels_you_might_like_follow_your_favourites_and_history(monkeypatch):
+def test_channels_at_your_level_follow_your_favourites_and_history(monkeypatch):
     videos = (
         subject_channel("Marc", "ghosts", 90)       # a favourite
         + subject_channel("Trips", "trips", 90)     # watched once
@@ -323,7 +327,7 @@ def test_channels_you_might_like_follow_your_favourites_and_history(monkeypatch)
 
 
 def test_two_favourites_each_get_a_place(monkeypatch):
-    monkeypatch.setattr(home, "CHANNELS", 2)
+    monkeypatch.setattr(home, "CHANNEL_PAGE", 2)
     videos = (
         subject_channel("Marc", "ghosts", 90) + subject_channel("Enrique", "trips", 90)
         + subject_channel("Ghosts", "ghosts", 97) + subject_channel("Haunted", "ghosts", 96)
@@ -333,11 +337,19 @@ def test_two_favourites_each_get_a_place(monkeypatch):
                   followed={f"{name}{i}" for name in ("Marc", "Enrique") for i in range(5)})
     page = home.home(store, build(videos), USER, "es")
     # Haunted is better understood than Travels, but Ghosts already took Marc's place.
-    assert [(c.name, c.because) for c in page.channels] == [
+    assert [(c.name, c.because) for c in page.channels[:2]] == [
         ("Ghosts", "Marc"), ("Travels", "Enrique")]
+    # It comes on the next page.
+    assert "Haunted" in [c.name for c in page.channels[2:]]
 
 
-def test_a_topic_suggests_its_own_channels_with_its_videos_first():
+def test_more_channels_are_sent_than_the_page_first_shows():
+    videos = [v for i in range(20) for v in subject_channel(f"c{i}", None, 80 + i % 10, n=4)]
+    page = home.home(Store(), build(videos), USER, "es")
+    assert len(page.channels) == home.CHANNELS > home.CHANNEL_PAGE
+
+
+def test_a_topic_suggests_the_channels_that_cover_it_with_only_those_videos():
     videos = (
         subject_channel("Marc", "ghosts", 90)
         + subject_channel("Cook", "food", 95, category="Food")
@@ -350,13 +362,81 @@ def test_a_topic_suggests_its_own_channels_with_its_videos_first():
     page = home.home(store, build(videos), USER, "es", topic="Food")
     channels = {c.name: c for c in page.channels}
     assert set(channels) == {"Cook", "Chef"}
-    # Cook9 is understood best but isn't Food: it comes after the Food ones.
+    # Cook9 is understood best but isn't Food: not in this list, or the count.
     assert [v.id for v in channels["Cook"].best] == ["Cook0", "Cook1", "Cook2", "Cook3"]
-    assert channels["Cook"].videos == 6
+    assert channels["Cook"].videos == 5
     assert page.basis.following == ["Marc"]
     # Following has no suggestions and no basis.
     following = home.home(store, build(videos), USER, "es", topic="Following")
     assert following.channels == [] and following.basis is None
+
+
+def test_a_channel_covers_a_topic_without_it_being_its_main_one():
+    def mixed(name, food, other, other_category="Other"):
+        return ([video(f"{name}f{i}", 90, creator=name, category="Food") for i in range(food)]
+                + [video(f"{name}o{i}", 90, creator=name, category=other_category)
+                   for i in range(other)])
+
+    videos = (
+        mixed("Mostly", 8, 2)
+        + mixed("Often", 3, 7)                      # 30%, though mostly Other
+        + mixed("Rarely", 2, 8)                     # one in five, and only two
+        + mixed("Thin", 3, 12)                      # 20% of what it has
+        + mixed("Vague", 3, 12, "Unknown")          # all of what has a category
+    )
+    page = home.home(Store(), build(videos), USER, "es", topic="Food")
+    names = [c.name for c in page.channels]
+    assert set(names) == {"Mostly", "Often", "Vague"}
+    assert {c.name: c.videos for c in page.channels} == {"Mostly": 8, "Often": 3, "Vague": 3}
+    # The more of it is about the topic, the better, understood being equal.
+    assert names.index("Mostly") < names.index("Often")
+    assert names.index("Vague") < names.index("Often")
+    # Food is a small part of the channels that show under Other.
+    assert "Often" in [c.name for c in home.home(Store(), build(videos), USER, "es",
+                                                 topic="Other").channels]
+
+
+def test_the_next_topic_reuses_what_the_visit_read():
+    videos = (subject_channel("Cook", "food", 95, category="Food")
+              + subject_channel("Walk", "trips", 94, category="Travel"))
+    recommender, store = build(videos), Store()
+    first = home.home(store, recommender, USER, "es")
+    assert store.known_reads == 1
+
+    food = home.home(store, recommender, USER, "es", topic="Food", reuse=True)
+    assert store.known_reads == 1
+    assert [c.name for c in food.channels] == ["Cook"] and ids(food)[0].startswith("Cook")
+    # The same answer as reading it all again.
+    assert home.home(store, recommender, USER, "es", reuse=True) == first
+    assert store.known_reads == 1
+
+    # Without reuse it reads again, so what changed shows.
+    store.watch = watched("Cook0")
+    assert "Cook0" in ids(home.home(store, recommender, USER, "es", topic="Food", reuse=True))
+    assert "Cook0" not in ids(home.home(store, recommender, USER, "es", topic="Food"))
+    assert store.known_reads == 2
+
+    # Nobody else's.
+    home.home(store, recommender, "other-user", "es", reuse=True)
+    assert store.known_reads == 3
+
+
+def test_a_visit_ends_with_its_time_or_its_matrix(monkeypatch):
+    videos = subject_channel("Cook", "food", 95, category="Food")
+    recommender, store = build(videos), Store()
+    home.home(store, recommender, USER, "es")
+
+    now = home.time.monotonic()
+    monkeypatch.setattr(home.time, "monotonic", lambda: now + home.VISIT_TTL + 1)
+    home.home(store, recommender, USER, "es", reuse=True)
+    assert store.known_reads == 2
+
+    # The corpus sync swaps the matrix: rows no longer mean what they did.
+    recommender._index_matrix("es", recommender.matrices["es"])
+    home.home(store, recommender, USER, "es", reuse=True)
+    assert store.known_reads == 3
+    home.home(store, recommender, USER, "es", reuse=True)
+    assert store.known_reads == 3
 
 
 def test_not_interested_hides_a_video_or_its_channel_and_undo_brings_it_back():
@@ -416,13 +496,16 @@ AUTH = {"authorization": "Bearer ordinary-session"}
 
 
 def test_the_page_route(client):
-    http, _ = client
+    http, store = client
     response = http.get("/api/home?language=es&grammar=B1&length=medium", headers=AUTH)
     assert response.status_code == 200
     assert response.json()["levels"] == {"A1": 0, "A2": 1, "B1": 0, "B2": 0, "C1": 0}
     response = http.get("/api/home?language=es", headers=AUTH)
     assert [v["id"] for v in response.json()["videos"]] == ["aaaaaaaaaaa"]
     assert http.get("/api/home?language=es&grammar=Z9", headers=AUTH).status_code == 422
+    reads = store.known_reads
+    assert http.get("/api/home?language=es&reuse=1", headers=AUTH).status_code == 200
+    assert store.known_reads == reads
     assert http.get("/api/home?language=es").status_code in (401, 403)
 
 

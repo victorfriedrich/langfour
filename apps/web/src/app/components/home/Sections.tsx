@@ -14,6 +14,8 @@ import {
   type Shelf,
 } from './homeApi';
 
+const CHANNEL_PAGE = 3;
+
 type Open = (video: HomeVideo, event: React.MouseEvent) => void;
 type Act = (video: HomeVideo) => void;
 
@@ -208,7 +210,7 @@ export function basisText(basis: ChannelBasis | null): string {
   return `Based on ${parts.join(', and ')}.`;
 }
 
-export function ChannelsYouMightLike({ channels, basis, topic, language, onOpen, onHide, onShowWords, onFollow }: {
+export function ChannelsAtYourLevel({ channels, basis, topic, language, onOpen, onHide, onShowWords, onFollow }: {
   channels: HomeChannel[];
   basis: ChannelBasis | null;
   topic: string;
@@ -218,14 +220,22 @@ export function ChannelsYouMightLike({ channels, basis, topic, language, onOpen,
   onShowWords: Act;
   onFollow: (channelId: string, follow: boolean) => Promise<void>;
 }) {
+  const [shown, setShown] = useState(CHANNEL_PAGE);
+  // A new topic starts from the top of its own list.
+  const [shownFor, setShownFor] = useState(topic);
+  if (topic !== shownFor) {
+    setShownFor(topic);
+    setShown(CHANNEL_PAGE);
+  }
+
   return (
     <section aria-labelledby="home-channels" className="mt-10 border-t border-gray-100 pt-8">
       <h2 id="home-channels" className="text-lg font-semibold text-gray-900">
-        {topic === ALL ? 'Channels you might like' : `${topic} channels you might like`}
+        {topic === ALL ? 'Channels at your level' : `${topic} channels at your level`}
       </h2>
       <p className="mb-5 mt-1 text-sm text-gray-500">{basisText(basis)}</p>
       <ul className="flex flex-col gap-8">
-        {channels.map((c) => (
+        {channels.slice(0, shown).map((c) => (
           <ChannelRow
             key={c.name}
             channel={c}
@@ -237,6 +247,17 @@ export function ChannelsYouMightLike({ channels, basis, topic, language, onOpen,
           />
         ))}
       </ul>
+      {channels.length > shown && (
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setShown((n) => n + CHANNEL_PAGE)}
+            className="h-9 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Show more channels
+          </button>
+        </div>
+      )}
     </section>
   );
 }
