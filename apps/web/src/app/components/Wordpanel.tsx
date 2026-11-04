@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
+import { useAddBucketWords, type BucketMove, type WordBucket } from '../hooks/useAddBucketWords';
 import { useMissingWords } from '../hooks/useMissingWords';
 import { useUpdateUserwords } from '../hooks/useUpdateUserwords';
 import type { TranscriptChunk } from '../media/api';
@@ -24,6 +25,8 @@ interface MissingWord {
   translation: string;
   importance?: number | null;
   key?: boolean;
+  bucket?: WordBucket;
+  familiarity?: number | null;
 }
 
 const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, variant = 'panel', transcript = [], eyebrow = 'Episode vocabulary', source = 'videos' }) => {
@@ -39,6 +42,23 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   const flaggedWords = useMemo(() => inTextOrder(missing.flaggedWords, firstSeen), [missing.flaggedWords, firstSeen]);
   const allWords = useMemo(() => [...keyWords, ...recommendedWords, ...flaggedWords], [keyWords, recommendedWords, flaggedWords]);
   const { addWordsToUserwords } = useUpdateUserwords();
+  const addBucketWords = useAddBucketWords();
+  // Accounts with the three groups: where the learner moved a word wins over
+  // where Jev put it, including when the ratings arrive after the move.
+  const [moved, setMoved] = useState<Map<number, WordBucket>>(new Map());
+  const moveWord = useCallback((id: number, bucket: WordBucket) => {
+    setMoved((current) => new Map(current).set(id, bucket));
+  }, []);
+  const groups = useMemo(() => {
+    if (!missing.buckets) return null;
+    const words: MissingWord[] = [...missing.recommendedWords, ...missing.flaggedWords];
+    const inGroup = (bucket: WordBucket) => words.filter((word) => (moved.get(word.id) ?? word.bucket ?? 'skip') === bucket);
+    return {
+      probably: [...inGroup('probably')].sort((a, b) => (b.familiarity ?? 0) - (a.familiarity ?? 0)),
+      should: byImportance(inGroup('should')),
+      skip: inTextOrder(inGroup('skip'), firstSeen),
+    };
+  }, [missing.buckets, missing.recommendedWords, missing.flaggedWords, moved, firstSeen]);
   const fullPage = variant === 'page';
   // On the page, the text sits beside the list, laid out as the reader showed it.
   const showText = fullPage && transcript.length > 0;
@@ -75,6 +95,30 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
     }
   }, [selectedWords, addWordsToUserwords, onClose, videoId]);
 
+  const addGroups = useCallback(async () => {
+    if (!groups) return;
+    const familiar = groups.probably.map((word) => word.id);
+    const priority = groups.should.map((word) => word.id);
+    const moves: BucketMove[] = allWords.flatMap((word) => {
+      const now = moved.get(word.id);
+      const was = word.bucket ?? 'skip';
+      return now && now !== was ? [{ word_id: word.id, was, now }] : [];
+    });
+    try {
+      await addBucketWords({ familiar, priority, source: videoId, moves });
+      onClose(familiar.length + priority.length);
+    } catch {
+      onClose(0);
+    }
+  }, [groups, allWords, moved, addBucketWords, videoId, onClose]);
+
+  // Beside the text, the words that will be added are the marked ones.
+  const addedIds = useMemo(() => groups ? [...groups.probably, ...groups.should].map((word) => word.id) : selectedWords, [groups, selectedWords]);
+  const clickTextWord = useCallback((id: number) => {
+    if (groups) moveWord(id, addedIds.includes(id) ? 'skip' : 'should');
+    else toggleWordSelection(id);
+  }, [groups, addedIds, moveWord, toggleWordSelection]);
+
   useEffect(() => {
     const updateShiftState = (event: KeyboardEvent) => setIsShiftPressed(event.shiftKey);
     window.addEventListener('keydown', updateShiftState);
@@ -100,7 +144,11 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
     );
   }
 
-  const list = allWords.length === 0 ? <NothingNew fullPage={fullPage} onClose={onClose} /> : <>
+  const list = allWords.length === 0 ? <NothingNew fullPage={fullPage} onClose={onClose} /> : groups ? <>
+    <BucketGroup label="Words you probably know" words={groups.probably} actions={(word) => <ArrowButton label={`Move ${word.content} down`} onClick={() => moveWord(word.id, 'should')} icon={ArrowDown} />} />
+    <BucketGroup label="Words you should know" words={groups.should} actions={(word) => <><ArrowButton label={`Move ${word.content} up`} onClick={() => moveWord(word.id, 'probably')} icon={ArrowUp} /><ArrowButton label={`Move ${word.content} down`} onClick={() => moveWord(word.id, 'skip')} icon={ArrowDown} /></>} />
+    <BucketGroup label="Skip for now" words={groups.skip} actions={(word) => <><TextButton label={`Know ${word.content}`} text="Know" onClick={() => moveWord(word.id, 'probably')} /><TextButton label={`Priority ${word.content}`} text="Priority" onClick={() => moveWord(word.id, 'should')} /></>} />
+  </> : <>
     {keyWords.length > 0 && <WordGroup label="Key words" words={keyWords} startIndex={0} selectedWords={selectedWords} toggleGroup={() => toggleWordGroup(keyWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
     {(recommendedWords.length > 0 || keyWords.length === 0) && <WordGroup label={keyWords.length > 0 ? 'Other words' : 'Recommended'} words={recommendedWords} startIndex={keyWords.length} selectedWords={selectedWords} toggleGroup={() => toggleWordGroup(recommendedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
     {flaggedWords.length > 0 && <WordGroup label="Flagged" words={flaggedWords} startIndex={keyWords.length + recommendedWords.length} selectedWords={selectedWords} collapsible toggleGroup={() => toggleWordGroup(flaggedWords)} handleWordClick={handleWordClick} toggleWordSelection={toggleWordSelection} />}
@@ -112,7 +160,7 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
   const body = !showText
     ? <>{header}<div className={fullPage ? 'mx-auto max-w-3xl flex-1 space-y-10 px-4 pb-32 sm:px-8' : 'flex-1 space-y-8 overflow-y-auto px-5 py-5'}>{list}</div></>
     : <div className="mx-auto max-w-[70rem] px-4 sm:px-8 lg:grid lg:grid-cols-[minmax(0,42rem)_20rem] lg:items-start lg:gap-16">
-      <div className="pb-12 lg:pb-32">{header}<MediaText chunks={transcript} newIds={newIds} selectedIds={selectedWords} onWordClick={toggleWordSelection} /></div>
+      <div className="pb-12 lg:pb-32">{header}<MediaText chunks={transcript} newIds={newIds} selectedIds={addedIds} onWordClick={clickTextWord} /></div>
       <aside className="space-y-10 pb-32 lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto lg:pb-10 lg:pt-10">{list}</aside>
     </div>;
 
@@ -121,8 +169,8 @@ const Wordpanel: React.FC<WordpanelProps> = ({ videoId, videoTitle, onClose, var
       {body}
       {/* The page uses the app's floating selection pill; the panel has a bar, while there are words to add. */}
       {fullPage
-        ? <SelectionPill count={selectedWords.length} onAdd={addToLearningSet} onClear={() => setSelectedWords([])} />
-        : allWords.length > 0 && <ActionBar selectedWordsCount={selectedWords.length} addToLearningSet={addToLearningSet} />}
+        ? <SelectionPill count={addedIds.length} onAdd={groups ? addGroups : addToLearningSet} onClear={groups ? undefined : () => setSelectedWords([])} />
+        : allWords.length > 0 && <ActionBar selectedWordsCount={addedIds.length} addToLearningSet={groups ? addGroups : addToLearningSet} />}
     </div>
   );
 };
@@ -174,9 +222,21 @@ function WordItem({ word, index, selected, handleWordClick, toggleWordSelection 
 }
 
 // The same pill the Vocabulary page shows for a selection.
-function SelectionPill({ count, onAdd, onClear }: { count: number; onAdd: () => void; onClear: () => void }) {
+function BucketGroup({ label, words, actions }: { label: string; words: MissingWord[]; actions: (word: MissingWord) => React.ReactNode }) {
+  return <section aria-label={label}><div className="border-b border-gray-100 pb-2 text-sm"><span className="font-medium text-gray-900">{label}<span className="ml-1.5 tabular-nums text-gray-400">{words.length}</span></span></div><ul className="divide-y divide-gray-100">{words.map((word) => <li key={word.id} className="flex items-center gap-3 py-2.5 pl-1 text-sm"><div className="min-w-0 flex-1"><div className="font-medium text-gray-900">{word.content}</div><div className="text-gray-500">{word.translation || 'No translation'}</div></div><div className="flex flex-none items-center gap-1.5">{actions(word)}</div></li>)}</ul></section>;
+}
+
+function ArrowButton({ label, onClick, icon: Icon }: { label: string; onClick: () => void; icon: typeof ArrowUp }) {
+  return <button type="button" onClick={onClick} aria-label={label} className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900"><Icon size={16} /></button>;
+}
+
+function TextButton({ label, text, onClick }: { label: string; text: string; onClick: () => void }) {
+  return <button type="button" onClick={onClick} aria-label={label} className="h-8 rounded-md border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">{text}</button>;
+}
+
+function SelectionPill({ count, onAdd, onClear }: { count: number; onAdd: () => void; onClear?: () => void }) {
   if (count === 0) return null;
-  return <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full bg-gray-900 py-1.5 pl-4 pr-1.5 text-sm text-white shadow-lg"><span className="mr-2 tabular-nums">{count} selected</span><button className="rounded-full bg-white px-3 py-1 font-medium text-gray-900 hover:bg-gray-100" onClick={onAdd}>Add to learning set</button><button className="rounded-full p-1.5 text-gray-400 hover:text-white" onClick={onClear} aria-label="Clear selection"><X size={16}/></button></div>;
+  return <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full bg-gray-900 py-1.5 pl-4 pr-1.5 text-sm text-white shadow-lg"><span className="mr-2 tabular-nums">{count} selected</span><button className="rounded-full bg-white px-3 py-1 font-medium text-gray-900 hover:bg-gray-100" onClick={onAdd}>Add to learning set</button>{onClear && <button className="rounded-full p-1.5 text-gray-400 hover:text-white" onClick={onClear} aria-label="Clear selection"><X size={16}/></button>}</div>;
 }
 
 function ActionBar({ selectedWordsCount, addToLearningSet }: { selectedWordsCount: number; addToLearningSet: () => void }) {

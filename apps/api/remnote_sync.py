@@ -248,7 +248,7 @@ class SyncStore:
         """Oldest first, with the dictionary entry embedded."""
         return _select_all(lambda: (
             self.db.table("userwords")
-            .select("word_id, created_at, words(root, language, translation, status)")
+            .select("word_id, created_at, familiar_until, words(root, language, translation, status)")
             .eq("user_id", user_id).eq("status", "learning")
             .order("created_at").order("word_id")
         ))
@@ -286,9 +286,12 @@ class SyncStore:
         return moved
 
     def count_learning_words(self, user_id: str) -> int:
-        """Learning words RemNote may get: not those marked invalid."""
+        """Learning words RemNote may get: not those marked invalid, nor those
+        still held back as probably known (see held_back)."""
+        now = datetime.now(UTC).isoformat()
         res = (self.db.table("userwords").select("word_id, words!inner(status)", count="exact")
                .eq("user_id", user_id).eq("status", "learning")
+               .or_(f"familiar_until.is.null,familiar_until.lte.{now}")
                .neq("words.status", "invalid").limit(1).execute())
         return res.count or 0
 
@@ -498,6 +501,13 @@ def get_store() -> SyncStore:
 # Sync logic
 # ---------------------------------------------------------------------------
 
+def held_back(row: dict) -> bool:
+    """Added as probably known and not due yet. RemNote can't take a due date, so
+    its card is only created once the date has passed (sql/word_buckets.sql)."""
+    until = row.get("familiar_until")
+    return bool(until) and datetime.fromisoformat(until) > datetime.now(UTC)
+
+
 def pending_words(store: SyncStore, user_id: str, limit: int) -> PendingResponse:
     """Learning words that have never had a Rem. A word whose Rem was deleted
     keeps its (removed) note, so it is not offered again. Nor is a word the
@@ -506,7 +516,7 @@ def pending_words(store: SyncStore, user_id: str, limit: int) -> PendingResponse
     linked = {n["word_id"] for n in store.notes_for_user(user_id)}
     todo = [r for r in store.learning_words(user_id)
             if r["word_id"] not in linked and r.get("words")
-            and r["words"].get("status") != "invalid"]
+            and r["words"].get("status") != "invalid" and not held_back(r)]
     custom = store.custom_translations(user_id) if todo else {}
 
     words = [

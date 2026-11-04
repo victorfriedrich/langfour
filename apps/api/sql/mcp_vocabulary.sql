@@ -60,6 +60,9 @@ as $$
         where uw.user_id = p_user_id
           and uw.status <> 'disabled'
           and w.language = (select language from settings)
+          -- Added as probably known: not practised before its first review
+          -- is due (word_buckets.sql).
+          and (uw.familiar_until is null or uw.familiar_until <= now())
     ),
     due as (
         select n.word_id, min(c.next_due_at) as due_at

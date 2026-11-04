@@ -52,7 +52,9 @@ from video_fit_routes import router as video_fit_router
 from videoparsing import main as process_video
 from vocabulary_routes import router as vocabulary_router
 from watch_routes import router as watch_router
-from word_importance import media_key, media_ranks, ranking, video_key, video_ranks, with_importance
+from word_familiarity import panel_words
+from word_familiarity import router as word_buckets_router
+from word_importance import media_key, media_ranks, ranking, video_key, video_ranks
 
 app = FastAPI()
 
@@ -145,6 +147,7 @@ app.include_router(mcp_auth_router)
 app.include_router(tts_router, tags=["tts"])
 app.include_router(grammar_router, tags=["grammar"])
 app.include_router(language_check_router, tags=["language-check"])
+app.include_router(word_buckets_router, tags=["word-buckets"])
 app.include_router(exposure_router, tags=["exposure"])
 app.include_router(vocabulary_router, tags=["vocabulary"])
 app.include_router(channel_router, tags=["channels"])
@@ -510,8 +513,8 @@ async def check_missing_words(
         # doesn't wait for it: `ranking` tells the panel to ask again.
         ranks = await video_ranks(supabase, video_id, language_code, words, wait=False)
 
-        return {"missing_words": with_importance(missing_words, ranks),
-                "ranking": ranks is None and ranking(video_key(video_id))}
+        listed = await panel_words(supabase, str(current_user.id), language_code, missing_words, ranks)
+        return {**listed, "ranking": listed["ranking"] or (ranks is None and ranking(video_key(video_id)))}
     except Exception as e:
         logger.exception("💥 unhandled error in /missing-words")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -675,8 +678,8 @@ async def get_imported_media_missing_words(
         # The list doesn't wait for it: `ranking` tells the panel to ask again.
         ranks = await media_ranks(supabase, store, user_id, media_id, language_code,
                                   _tokens_from_cache, wait=False)
-        return {"missing_words": with_importance(missing_words, ranks),
-                "ranking": ranks is None and ranking(media_key(user_id, media_id))}
+        listed = await panel_words(supabase, user_id, language_code, missing_words, ranks)
+        return {**listed, "ranking": listed["ranking"] or (ranks is None and ranking(media_key(user_id, media_id)))}
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Media not found: {media_id}") from exc
     except ValueError as error:

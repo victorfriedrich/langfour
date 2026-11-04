@@ -1,12 +1,14 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Wordpanel from './Wordpanel';
 
-const words = vi.hoisted(() => ({ recommendedWords: [] as { id: number; content: string; translation: string; importance?: number | null; key?: boolean }[], flaggedWords: [], isLoading: false, error: null }));
+const words = vi.hoisted(() => ({ recommendedWords: [] as { id: number; content: string; translation: string; importance?: number | null; key?: boolean; bucket?: 'probably' | 'should' | 'skip'; familiarity?: number | null }[], flaggedWords: [], buckets: false, isLoading: false, error: null }));
+const addBucketWords = vi.hoisted(() => vi.fn());
 vi.mock('../hooks/useMissingWords', () => ({ useMissingWords: () => words }));
 vi.mock('../hooks/useUpdateUserwords', () => ({ useUpdateUserwords: () => ({ addWordsToUserwords: vi.fn() }) }));
+vi.mock('../hooks/useAddBucketWords', () => ({ useAddBucketWords: () => addBucketWords }));
 
-beforeEach(() => { words.recommendedWords = []; });
+beforeEach(() => { words.recommendedWords = []; words.buckets = false; addBucketWords.mockReset(); addBucketWords.mockResolvedValue(undefined); });
 
 it('says there is nothing new instead of an empty list when every word is known', () => {
   const onClose = vi.fn();
@@ -86,4 +88,68 @@ it('lists the most important words first in the side panel', () => {
   render(<Wordpanel videoId="video" videoTitle="Video" onClose={vi.fn()} />);
   expect(screen.getByRole('list').textContent).toMatch(/mar.*luna.*barco/);
   expect(screen.queryByText(/Key words/)).not.toBeInTheDocument();
+});
+
+describe('with the three groups', () => {
+  const group = (name: string) => within(screen.getByRole('region', { name }));
+  const three = () => {
+    words.buckets = true;
+    words.recommendedWords = [
+      { id: 1, content: 'la estación', translation: 'station', bucket: 'probably', familiarity: 4.2 },
+      { id: 2, content: 'mandar', translation: 'send', bucket: 'should', importance: 4 },
+      { id: 3, content: 'el rabo', translation: 'tail', bucket: 'skip', importance: 1 },
+    ];
+  };
+
+  it('shows the three groups with arrows, and Know and Priority on the last', () => {
+    three();
+    render(<Wordpanel videoId="v" videoTitle="Video" onClose={vi.fn()} />);
+    expect(group('Words you probably know').getByText('la estación')).toBeInTheDocument();
+    expect(group('Words you probably know').getByRole('button', { name: 'Move la estación down' })).toBeInTheDocument();
+    expect(group('Words you probably know').queryByRole('button', { name: 'Move la estación up' })).not.toBeInTheDocument();
+    expect(group('Words you should know').getByRole('button', { name: 'Move mandar up' })).toBeInTheDocument();
+    expect(group('Words you should know').getByRole('button', { name: 'Move mandar down' })).toBeInTheDocument();
+    expect(group('Skip for now').getByRole('button', { name: 'Know el rabo' })).toHaveTextContent('Know');
+    expect(group('Skip for now').getByRole('button', { name: 'Priority el rabo' })).toHaveTextContent('Priority');
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add 2 words to learning set' })).toBeInTheDocument();
+  });
+
+  it('moves words between groups and adds the first two, with what moved', async () => {
+    three();
+    const onClose = vi.fn();
+    render(<Wordpanel videoId="v" videoTitle="Video" onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Move la estación down' }));
+    expect(group('Words you should know').getByText('la estación')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Move mandar down' }));
+    expect(group('Skip for now').getByText('mandar')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Know el rabo' }));
+    expect(group('Words you probably know').getByText('el rabo')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 words to learning set' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(2));
+    expect(addBucketWords).toHaveBeenCalledWith({
+      familiar: [3], priority: [1], source: 'v',
+      moves: expect.arrayContaining([{ word_id: 1, was: 'probably', now: 'should' }, { word_id: 2, was: 'should', now: 'skip' }, { word_id: 3, was: 'skip', now: 'probably' }]),
+    });
+  });
+
+  it('keeps a moved word where it is when the ratings arrive', () => {
+    three();
+    const { rerender } = render(<Wordpanel videoId="v" videoTitle="Video" onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Priority el rabo' }));
+    words.recommendedWords = words.recommendedWords.map((word) => ({ ...word, bucket: 'probably' as const }));
+    rerender(<Wordpanel videoId="v" videoTitle="Video" onClose={vi.fn()} />);
+    expect(group('Words you should know').getByText('el rabo')).toBeInTheDocument();
+    expect(group('Words you probably know').getByText('mandar')).toBeInTheDocument();
+  });
+
+  it('adds a word from the text to the second group and takes it out again', () => {
+    three();
+    const transcript = [{ timestamp: null, text: 'el rabo', words: [[0, 7, 3]] as [number, number, number][] }];
+    render(<Wordpanel videoId="v" videoTitle="Video" variant="page" transcript={transcript} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'el rabo', pressed: false }));
+    expect(group('Words you should know').getByText('el rabo')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'el rabo', pressed: true }));
+    expect(group('Skip for now').getByText('el rabo')).toBeInTheDocument();
+  });
 });

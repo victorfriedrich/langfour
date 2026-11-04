@@ -891,3 +891,13 @@ def test_disconnecting_hands_reviews_back_with_remnotes_due_dates():
     store.provider = "remnote"
     revoke_token(SimpleNamespace(id=USER), store)
     assert (store.token, store.provider, store.carried_over) == (None, "langfour", True)
+
+
+def test_a_word_added_as_probably_known_waits_for_its_date():
+    store = FakeStore(spanish(1, 2, 3))
+    rows = store.learning_words(USER)
+    rows[0]["familiar_until"] = (datetime.now(UTC) + timedelta(days=9)).isoformat()
+    rows[1]["familiar_until"] = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    store.learning_words = lambda user_id: rows
+
+    assert [w.word_id for w in pending_words(store, USER, limit=10).words] == [2, 3]
