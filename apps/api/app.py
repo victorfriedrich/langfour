@@ -52,7 +52,7 @@ from video_fit_routes import router as video_fit_router
 from videoparsing import main as process_video
 from vocabulary_routes import router as vocabulary_router
 from watch_routes import router as watch_router
-from word_importance import media_ranks, video_ranks, with_importance
+from word_importance import media_key, media_ranks, ranking, video_key, video_ranks, with_importance
 
 app = FastAPI()
 
@@ -506,10 +506,12 @@ async def check_missing_words(
         words = get_video_words(video_id, language_code)
 
         missing_words = await get_missing_words(current_user.id, words, language_code)
-        # Ranked once per video, for every user (word_importance.py).
-        ranks = await video_ranks(supabase, video_id, language_code, words)
+        # Ranked once per video, for every user (word_importance.py). The list
+        # doesn't wait for it: `ranking` tells the panel to ask again.
+        ranks = await video_ranks(supabase, video_id, language_code, words, wait=False)
 
-        return {"missing_words": with_importance(missing_words, ranks)}
+        return {"missing_words": with_importance(missing_words, ranks),
+                "ranking": ranks is None and ranking(video_key(video_id))}
     except Exception as e:
         logger.exception("💥 unhandled error in /missing-words")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -670,8 +672,11 @@ async def get_imported_media_missing_words(
         words = get_media_words(store, user_id, media_id, language_code)
         missing_words = await get_missing_words(current_user.id, words, language_code)
         # Ranked on the first open, then saved with the item (word_importance.py).
-        ranks = await media_ranks(supabase, store, user_id, media_id, language_code, _tokens_from_cache)
-        return {"missing_words": with_importance(missing_words, ranks)}
+        # The list doesn't wait for it: `ranking` tells the panel to ask again.
+        ranks = await media_ranks(supabase, store, user_id, media_id, language_code,
+                                  _tokens_from_cache, wait=False)
+        return {"missing_words": with_importance(missing_words, ranks),
+                "ranking": ranks is None and ranking(media_key(user_id, media_id))}
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Media not found: {media_id}") from exc
     except ValueError as error:

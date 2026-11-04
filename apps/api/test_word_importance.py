@@ -151,3 +151,38 @@ def test_unranked_flagged_and_invalid_words_are_never_key():
 def test_unranked_words_come_back_as_they_were():
     assert with_importance([{"id": 1, "content": "w"}], None) == [
         {"id": 1, "content": "w", "importance": None, "key": False}]
+
+
+def test_without_waiting_the_list_comes_back_at_once_and_is_ranked_behind_it(jev):
+    store = Store({"kind": "song", "title": "", "chunks": CHUNKS})
+    key = word_importance.media_key("alice", "x")
+
+    async def opens():
+        first = await media_ranks(None, store, "alice", "x", "es", None, wait=False)
+        running = word_importance.ranking(key)
+        # A poll while it runs doesn't ask Jev again.
+        assert await media_ranks(None, store, "alice", "x", "es", None, wait=False) is None
+        await asyncio.gather(*word_importance._running.values())
+        return first, running, word_importance.ranking(key), await media_ranks(
+            None, store, "alice", "x", "es", None, wait=False)
+
+    first, running, still, later = asyncio.run(opens())
+    assert first is None and running and not still
+    assert later == {"1": [8.0, 6.0], "2": [8.0, 6.0], "3": [8.0, 6.0]}
+    assert len(jev) == 1 and len(store.saved) == 1
+
+
+def test_a_failed_background_ranking_stops_running_and_saves_nothing(monkeypatch):
+    async def down(*args):
+        raise RuntimeError("Jev HTTP 502")
+
+    monkeypatch.setattr(word_importance, "rank", down)
+    store = Store({"kind": "song", "title": "", "chunks": CHUNKS})
+
+    async def opens():
+        assert await media_ranks(None, store, "alice", "y", "es", None, wait=False) is None
+        await asyncio.gather(*word_importance._running.values())
+        return word_importance.ranking(word_importance.media_key("alice", "y"))
+
+    assert asyncio.run(opens()) is False
+    assert store.saved == []

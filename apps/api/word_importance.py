@@ -30,6 +30,13 @@ and ends el nogal, timar, la antártica, el maní.
 
 Ranking never breaks the list: if Jev or the table fails, the words come
 back unranked and the next open tries again.
+
+The list doesn't wait for Jev either. The endpoints pass wait=False: saved
+ranks come back at once, and a text without them comes back unranked while
+the ranking runs on the event loop and is saved. The response says
+`ranking`, and the word panel asks again until the key words are there.
+Waiting cost the first open of every video 2-5 s (2026-11-04: 1.8-2.4 s on
+Koyeb for a first open, 0.3 s for the next), and nearly every open is a first.
 """
 
 from __future__ import annotations
@@ -38,7 +45,7 @@ import asyncio
 import logging
 import os
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -78,6 +85,32 @@ HERE = {"1": "A learner would miss nothing without it", "2": "They would miss a 
         "4": "They would miss much of the text", "5": "They could not follow the text without it"}
 GENERAL = {"1": "Rare, a name, or niche", "2": "Uncommon", "3": "Common in some topics",
            "4": "Common", "5": "Core everyday vocabulary"}
+
+
+# Rankings running in the background, by "video:<id>" or "media:<user>:<id>",
+# so polls and double clicks don't start a second request for the same text.
+# Only touched from the event loop.
+_running: dict[str, asyncio.Task] = {}
+
+
+def ranking(key: str) -> bool:
+    """Whether a background ranking for this text is still running."""
+    return key in _running
+
+
+def _in_background(key: str, work: Callable[[], Awaitable[object]]) -> None:
+    if key in _running:
+        return
+
+    async def run() -> None:
+        try:
+            await work()
+        except Exception:
+            log.exception("Could not rank the words of %s", key)
+
+    task = asyncio.get_running_loop().create_task(run())
+    _running[key] = task
+    task.add_done_callback(lambda _: _running.pop(key, None))
 
 
 class TooLong(Exception):
@@ -210,37 +243,49 @@ def tokens_of_content(content: list[dict]) -> list[tuple[str, int]]:
     return [(t["content"], t["id"]) for t in content if t.get("id") is not None]
 
 
-async def video_ranks(sb, video_id: str, language: str, content: list[dict]) -> dict | None:
-    """A corpus video's saved ranks, ranking it first if it has none."""
-    try:
-        rows = await asyncio.to_thread(lambda: (
-            sb.table("video_word_ranks").select("rubric_version,ranks")
-            .eq("video_id", video_id).limit(1).execute().data))
-        if rows and rows[0]["rubric_version"] == RUBRIC_VERSION:
-            return rows[0]["ranks"]
+def video_key(video_id: str) -> str:
+    return f"video:{video_id}"
+
+
+def media_key(user_id: str, media_id: str) -> str:
+    return f"media:{user_id}:{media_id}"
+
+
+async def video_ranks(sb, video_id: str, language: str, content: list[dict],
+                      wait: bool = True) -> dict | None:
+    """A corpus video's saved ranks, ranking it first if it has none. Without
+    `wait`, a video with none comes back None at once and is ranked in the
+    background (video_key says whether that is still running)."""
+    async def rank_and_save() -> dict:
         text = "".join(t.get("content", "") for t in content)
         ranks = await rank(sb, language, "video", "", text, tokens_of_content(content))
         await asyncio.to_thread(lambda: sb.table("video_word_ranks").upsert({
             "video_id": video_id, "language": language,
             "rubric_version": RUBRIC_VERSION, "ranks": ranks}, on_conflict="video_id").execute())
         return ranks
+
+    try:
+        rows = await asyncio.to_thread(lambda: (
+            sb.table("video_word_ranks").select("rubric_version,ranks")
+            .eq("video_id", video_id).limit(1).execute().data))
+        if rows and rows[0]["rubric_version"] == RUBRIC_VERSION:
+            return rows[0]["ranks"]
+        if not wait:
+            _in_background(video_key(video_id), rank_and_save)
+            return None
+        return await rank_and_save()
     except Exception:
         log.exception("Could not rank the words of video %s", video_id)
         return None
 
 
 async def media_ranks(sb, store, user_id: str, media_id: str, language: str,
-                      tokenize: Callable[[str, str], list[dict]]) -> dict | None:
+                      tokenize: Callable[[str, str], list[dict]],
+                      wait: bool = True) -> dict | None:
     """A Library item's saved ranks, ranking it first if it has none. Items
     imported before chunks carried `words` are read with `tokenize`, as
-    media_import.get_media does."""
-    try:
-        row = await asyncio.to_thread(store.get, user_id, language, media_id,
-                                      "kind,title,chunks,word_ranks,word_ranks_version")
-        if row is None:
-            return None
-        if row.get("word_ranks") is not None and row.get("word_ranks_version") == RUBRIC_VERSION:
-            return row["word_ranks"]
+    media_import.get_media does. Without `wait`, as video_ranks."""
+    async def rank_and_save(row: dict) -> dict:
         chunks = row.get("chunks") or []
         text = "\n".join(chunk["text"] for chunk in chunks)
         tokens = (tokens_of_chunks(chunks) if all("words" in chunk for chunk in chunks)
@@ -249,6 +294,18 @@ async def media_ranks(sb, store, user_id: str, media_id: str, language: str,
         await asyncio.to_thread(store.save_word_ranks, user_id, language, media_id,
                                 ranks, RUBRIC_VERSION)
         return ranks
+
+    try:
+        row = await asyncio.to_thread(store.get, user_id, language, media_id,
+                                      "kind,title,chunks,word_ranks,word_ranks_version")
+        if row is None:
+            return None
+        if row.get("word_ranks") is not None and row.get("word_ranks_version") == RUBRIC_VERSION:
+            return row["word_ranks"]
+        if not wait:
+            _in_background(media_key(user_id, media_id), lambda: rank_and_save(row))
+            return None
+        return await rank_and_save(row)
     except Exception:
         log.exception("Could not rank the words of media %s", media_id)
         return None
