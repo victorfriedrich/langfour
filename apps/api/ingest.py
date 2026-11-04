@@ -65,24 +65,26 @@ def batched(seq: Iterable[Any], n: int = 500) -> Iterable[list]:
 # ─────────────────────────────────────────────────────────────── queue ──
 
 def pending(sb, lang: str, limit: int, columns: str = "video_id,channel_id,title,attempts",
-            max_attempts: int = MAX_ATTEMPTS) -> list[dict]:
+            max_attempts: int = MAX_ATTEMPTS, min_priority: int | None = None) -> list[dict]:
     """The queue's one hot query: what to work on next, in drain order.
 
     claim() and the dry run both need it. While they each spelled it out, the
     dry run could silently disagree with what run() would actually take -- the
     one thing a dry run exists to show."""
-    return (sb.table(TABLE).select(columns)
-            .eq("lang", lang).eq("status", "pending").lt("attempts", max_attempts)
-            .order("priority", desc=True).order("score", desc=True)
-            .limit(limit).execute().data)
+    q = (sb.table(TABLE).select(columns)
+         .eq("lang", lang).eq("status", "pending").lt("attempts", max_attempts))
+    if min_priority is not None:
+        q = q.gte("priority", min_priority)
+    return q.order("priority", desc=True).order("score", desc=True).limit(limit).execute().data
 
 
-def claim(sb, lang: str, limit: int, max_attempts: int = MAX_ATTEMPTS) -> list[dict]:
+def claim(sb, lang: str, limit: int, max_attempts: int = MAX_ATTEMPTS,
+          min_priority: int | None = None) -> list[dict]:
     """Take up to `limit` pending rows. Each claim is a conditional update on
     status='pending', so a row another worker took first simply comes back
     empty and is skipped rather than processed twice."""
     # Over-fetch: some of these will have been taken by another worker.
-    rows = pending(sb, lang, limit * 2, max_attempts=max_attempts)
+    rows = pending(sb, lang, limit * 2, max_attempts=max_attempts, min_priority=min_priority)
     claimed = []
     for row in rows:
         won = (sb.table(TABLE)
@@ -345,10 +347,12 @@ def hourly_order(mix: dict[str, int]) -> list[str]:
 
 def run_mix(sb, lang: str, mix: dict[str, int], hours: float,
             clock=time.monotonic, sleep=time.sleep, *, cache_ready: bool = False,
-            publish=None, stopped=lambda: False) -> dict[str, dict[str, int]]:
+            publish=None, stopped=lambda: False,
+            min_priority: int | None = None) -> dict[str, dict[str, int]]:
     """cache_ready=True when the word cache is already loaded, as in the API:
     initialize_cache() empties it while it reloads, under live requests.
-    `stopped()` is checked before each video, after its wait."""
+    `stopped()` is checked before each video, after its wait.
+    `min_priority` leaves lower-priority rows alone (see ingest_worker)."""
     order = hourly_order(mix)
     gap = 3600 / len(order)
     tally = {name: {"done": 0, "failed": 0} for name in mix}
@@ -362,7 +366,7 @@ def run_mix(sb, lang: str, mix: dict[str, int], hours: float,
             if stopped():
                 break
             method = order[n % len(order)]
-            rows = claim(sb, lang, 1)
+            rows = claim(sb, lang, 1, min_priority=min_priority)
             if not rows:
                 print("queue empty", flush=True)
                 break

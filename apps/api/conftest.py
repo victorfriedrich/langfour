@@ -56,6 +56,10 @@ class FakeQuery:
         self.filters.append(lambda r: r.get(k) is not None and r.get(k) < v)
         return self
 
+    def gte(self, k, v):
+        self.filters.append(lambda r: r.get(k) is not None and r.get(k) >= v)
+        return self
+
     def order(self, k, desc=False):
         self.orders.append((k, desc))
         return self
