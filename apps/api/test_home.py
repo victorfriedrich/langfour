@@ -203,7 +203,7 @@ def test_following_shows_the_favourite_channels_videos():
     assert ids(home.home(Store(), recommender, USER, "es", topic="Following")) == []
 
 
-def test_channels_at_your_level_are_the_best_understood_with_enough_videos():
+def test_channels_without_signals_are_the_best_understood_with_enough_videos():
     videos = (
         [video(f"e{i}", 96 + i % 3, creator="Easy") for i in range(5)]
         + [video(f"h{i}", 80, creator="Hard") for i in range(4)]
@@ -225,6 +225,36 @@ def test_channels_at_your_level_are_the_best_understood_with_enough_videos():
 
     assert home.home(store, build(videos), USER, "es", topic="Travel").channels == []
     assert home.home(store, build(videos), USER, "es", query="e").channels == []
+
+
+def look(channel, interest=5, trash=3):
+    return {"look": {"channel": channel, "interest": interest, "trash": trash, "sensitive": "none"}}
+
+
+def test_channels_you_might_like_weigh_what_the_judge_thinks_of_them():
+    videos = (
+        [video(f"c{i}", 97, creator="Clickbait") for i in range(10)]
+        + [video(f"d{i}", 96, creator="Dull") for i in range(4)]
+        + [video(f"g{i}", 92, creator="Good") for i in range(4)]
+        + [video(f"t{i}", 90, creator="Taste", category="Food") for i in range(5)]
+    )
+    recommender = build(videos)
+    recommender.video_signals = {"es": {
+        # Most videos get through, but three in ten are rejected as trash.
+        **{f"c{i}": look("Clickbait", trash=8 if i < 3 else 5) for i in range(10)},
+        **{f"d{i}": look("Dull", interest=3) for i in range(4)},
+        **{f"g{i}": look("Good", interest=8, trash=1) for i in range(4)},
+        **{f"t{i}": look("Taste", interest=5) for i in range(5)},
+    }}
+    page = home.home(Store(), recommender, USER, "es")
+    assert [c.name for c in page.channels] == ["Good", "Dull", "Taste"]
+
+    # The learner watches food videos: the Food channel moves up.
+    store = Store(watch={"t0": {"video_id": "t0", "share": 0.95, "unmarked_at": None}})
+    page = home.home(store, recommender, USER, "es")
+    assert [c.name for c in page.channels] == ["Good", "Taste", "Dull"]
+    # The channel's videos come in the grid's order, without the watched one.
+    assert [v.id for v in page.channels[1].best] == ["t1", "t2", "t3", "t4"]
 
 
 def test_not_interested_hides_a_video_or_its_channel_and_undo_brings_it_back():

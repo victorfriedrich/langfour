@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from scipy.sparse import csr_matrix
 
+import recommender as recommender_module
 from recommender import Recommender
 
 
@@ -118,6 +119,13 @@ def test_unreadable_video_signals_keep_known_words_order(monkeypatch):
     recommender = blank_recommender()
     recommender.supabase = None
     assert recommender._load_video_signals() == {}
+
+
+def test_dropped_channels_videos_are_found_by_creator(monkeypatch):
+    recommender = make_recommender([np.ones(150, dtype=np.int8)] * 3)
+    recommender.creators = {"es": ["Kept", "Dropped", ""]}
+    monkeypatch.setattr(recommender_module, "DROPPED_CHANNELS", frozenset({"Dropped"}))
+    assert recommender._dropped_channel_videos() == {"video-1"}
 
 
 def test_videos_gone_from_youtube_are_hidden_until_they_come_back():

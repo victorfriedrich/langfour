@@ -7,8 +7,9 @@ import { UserContext } from '@/context/UserContext';
 import { useHome } from '../../hooks/useHome';
 import { useExtensionStatus } from '../../hooks/useExtensionStatus';
 import { useWatchedVideos } from '../../hooks/useWatchedVideos';
-import VideoCard, { Thumbnail } from './VideoCard';
-import { ChannelsAtYourLevel, EmptyFilters } from './Sections';
+import Wordpanel from '../Wordpanel';
+import VideoCard, { GRID, Thumbnail } from './VideoCard';
+import { ChannelsYouMightLike, EmptyFilters } from './Sections';
 import { ExtensionPrompt, Pill, PillButton, PillText } from './Overlays';
 import {
   ALL,
@@ -37,7 +38,8 @@ const grammarKey = (language: string) => `langfour-home-grammar-${language}`;
 
 type PillState =
   | { kind: 'hidden'; video: HomeVideo; scope: 'video' | 'channel' }
-  | { kind: 'saved'; count: number; title: string };
+  | { kind: 'saved'; count: number; title: string }
+  | { kind: 'added'; count: number };
 
 function stored(key: string): string | null {
   try {
@@ -87,9 +89,9 @@ function WatchedList({ language, onUnmark }: { language: string; onUnmark: () =>
   if (videos === null) return <Loader2 className="mx-auto my-8 h-6 w-6 animate-spin text-indigo-500" />;
   if (videos.length === 0) return <p className="py-8 text-center text-gray-500">No watched videos yet</p>;
   return (
-    <ul className="grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-[repeat(auto-fill,minmax(240px,1fr))]">
+    <ul className={GRID}>
       {videos.map((video) => (
-        <li key={video.video_id} className="flex min-w-0 flex-col gap-2.5">
+        <li key={video.video_id} className="flex min-w-0 flex-col gap-2">
           <a
             href={youtubeUrl(video.video_id)}
             target="_blank"
@@ -146,6 +148,7 @@ function VideoHomeContent() {
   const [hiddenChannels, setHiddenChannels] = useState<Set<string>>(new Set());
   const [pill, setPill] = useState<PillState | null>(null);
   const [prompt, setPrompt] = useState<HomeVideo | null>(null);
+  const [words, setWords] = useState<HomeVideo | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const extension = useExtensionStatus();
 
@@ -223,6 +226,13 @@ function VideoHomeContent() {
       window.removeEventListener('focus', check);
     };
   }, [cameBack, reload]);
+
+  useEffect(() => {
+    if (!words) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setWords(null);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [words]);
 
   useEffect(() => {
     if (pill?.kind !== 'hidden') return;
@@ -325,13 +335,14 @@ function VideoHomeContent() {
             onTopic={setTopic}
             onOpen={onOpen}
             onHide={hide}
+            onShowWords={setWords}
           />
         );
       }
       return (
         <div className="flex flex-col items-center gap-3 py-16 text-center text-gray-500">
           {filters.topic === FOLLOWING && !query ? (
-            <p>Videos from the channels you follow show up here. Follow one under Channels at your level in All, or with Favourite on its YouTube page.</p>
+            <p>Videos from the channels you follow show up here. Follow one under Channels you might like in All, or with Favourite on its YouTube page.</p>
           ) : query ? (
             <p>No videos match “{query}”.</p>
           ) : (
@@ -356,13 +367,13 @@ function VideoHomeContent() {
     }
     return (
       <>
-        <ul className="grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-[repeat(auto-fill,minmax(240px,1fr))]">
+        <ul className={GRID}>
           {visible.slice(0, shown).map((v) => (
-            <VideoCard key={v.id} video={v} language={code} onOpen={onOpen} onHide={hide} />
+            <VideoCard key={v.id} video={v} language={code} onOpen={onOpen} onHide={hide} onShowWords={setWords} />
           ))}
         </ul>
         {visible.length > shown && (
-          <div className="mt-8 flex justify-center">
+          <div className="mt-6 flex justify-center">
             <button
               type="button"
               onClick={() => setShown((n) => n + PAGE)}
@@ -373,7 +384,14 @@ function VideoHomeContent() {
           </div>
         )}
         {filters.topic === ALL && !query && channels.length > 0 && (
-          <ChannelsAtYourLevel channels={channels} language={code} onOpen={onOpen} onFollow={setFollowing} />
+          <ChannelsYouMightLike
+            channels={channels}
+            language={code}
+            onOpen={onOpen}
+            onHide={hide}
+            onShowWords={setWords}
+            onFollow={setFollowing}
+          />
         )}
       </>
     );
@@ -413,7 +431,7 @@ function VideoHomeContent() {
         />
       </header>
 
-      <div lang="en" role="group" aria-label="Topics" className="mb-6 mt-7 flex flex-wrap gap-1">
+      <div lang="en" role="group" aria-label="Topics" className="mb-5 mt-5 flex flex-wrap gap-1">
         {[ALL, FOLLOWING, ...topics, WATCHED].map((t) => (
           <button
             key={t}
@@ -462,6 +480,33 @@ function VideoHomeContent() {
             See them
           </Link>
         </Pill>
+      )}
+      {pill?.kind === 'added' && (
+        <Pill onDismiss={() => setPill(null)}>
+          <PillText>
+            Added {pill.count} {pill.count === 1 ? 'word' : 'words'} to your learning set
+          </PillText>
+          <Link
+            href="/vocabulary"
+            className="inline-flex h-8 flex-none items-center rounded-full bg-white/15 px-3.5 text-sm font-medium text-white hover:bg-white/25"
+          >
+            See them
+          </Link>
+        </Pill>
+      )}
+      {words && (
+        <>
+          <div aria-hidden="true" className="fixed inset-0 z-40 bg-gray-900/30" onClick={() => setWords(null)} />
+          <Wordpanel
+            key={words.id}
+            videoId={words.id}
+            videoTitle={words.title}
+            onClose={(added) => {
+              setWords(null);
+              if (added > 0) setPill({ kind: 'added', count: added });
+            }}
+          />
+        </>
       )}
       {prompt && (
         <ExtensionPrompt

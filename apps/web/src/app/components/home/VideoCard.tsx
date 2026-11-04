@@ -4,6 +4,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { MoreVertical } from 'lucide-react';
 import { formatDuration, percent, watchedText, youtubeUrl, type HomeVideo } from './homeApi';
 
+// Every row of cards on the page shares these columns, so a channel's row
+// lines up with the grid above it. A row shows as many cards as fit in one
+// line, and two on a phone.
+export const GRID = 'grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+export const ROW = `${GRID} max-lg:[&>li:nth-child(n+3)]:hidden lg:max-xl:[&>li:nth-child(n+4)]:hidden`;
+
 export function Thumbnail({ video, className = '' }: { video: HomeVideo; className?: string }) {
   return (
     // YouTube's thumbnail; the grey shows while it loads or if it can't.
@@ -20,7 +26,7 @@ export function Thumbnail({ video, className = '' }: { video: HomeVideo; classNa
   );
 }
 
-function CardMenu({ onHide }: { onHide: () => void }) {
+function CardMenu({ items }: { items: [string, () => void][] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -56,17 +62,20 @@ function CardMenu({ onHide }: { onHide: () => void }) {
           role="menu"
           className="absolute right-0 top-8 z-20 min-w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
         >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onHide();
-            }}
-            className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Not interested
-          </button>
+          {items.map(([label, act]) => (
+            <button
+              key={label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                act();
+              }}
+              className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              {label}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -78,20 +87,23 @@ interface CardProps {
   language: string;
   onOpen: (video: HomeVideo, event: React.MouseEvent) => void;
   onHide?: (video: HomeVideo) => void;
+  onShowWords?: (video: HomeVideo) => void;
+  /** In a channel's own row, where the name is already above. */
+  hideChannel?: boolean;
 }
 
 /**
  * A video in the grid. The badge widens to "96% · 14 new words" on hover;
  * where nothing hovers, the new words go in the line under the title.
  */
-export default function VideoCard({ video, language, onOpen, onHide }: CardProps) {
+export default function VideoCard({ video, language, onOpen, onHide, onShowWords, hideChannel = false }: CardProps) {
   const href = youtubeUrl(video.id);
   const started = video.watched_share !== null;
-  const meta = [video.channel, started && watchedText(video.watched_share!, video.duration_s)].filter(Boolean);
+  const meta = [!hideChannel && video.channel, started && watchedText(video.watched_share!, video.duration_s)].filter(Boolean);
   const newWords = `${video.new_words} new ${video.new_words === 1 ? 'word' : 'words'}`;
 
   return (
-    <li className="group flex min-w-0 flex-col gap-2.5">
+    <li className="group flex min-w-0 flex-col gap-2">
       <a
         href={href}
         target="_blank"
@@ -145,7 +157,14 @@ export default function VideoCard({ video, language, onOpen, onHide }: CardProps
             </span>
           </span>
         </div>
-        {onHide && <CardMenu onHide={() => onHide(video)} />}
+        {(onShowWords || onHide) && (
+          <CardMenu
+            items={[
+              ...(onShowWords ? [['Show words', () => onShowWords(video)] as [string, () => void]] : []),
+              ...(onHide ? [['Not interested', () => onHide(video)] as [string, () => void]] : []),
+            ]}
+          />
+        )}
       </div>
     </li>
   );

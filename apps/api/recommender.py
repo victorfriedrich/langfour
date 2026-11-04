@@ -32,6 +32,10 @@ MATRIX_FILE = "document_term_counts.npz"
 MIN_DISTINCT_WORDS = 100
 # Rows asked for per user_known_words request; see known_word_ids.
 KNOWN_WORDS_PAGE = 50_000
+# Channels taken out of the app by hand, by the name the corpus gives them:
+# their videos are never recommended, whatever their scores. Clickbait the
+# per-video judge lets through one video at a time.
+DROPPED_CHANNELS = frozenset({"Angelika Seleznova"})
 
 class Recommender:
     def __init__(self, base_folder: str):
@@ -76,6 +80,9 @@ class Recommender:
         # initialized.
         for lang in self.languages:
             self._ensure_language_loaded(lang)
+        # With the quality filter's, so the sweep of gone videos keeps them.
+        self.hidden_by_score = self.hidden_by_score | self._dropped_channel_videos()
+        self.hidden_videos = self.hidden_by_score
 
         # Report the steady-state footprint of what we actually retain. This is
         # the number that governs how much memory the container needs, and it
@@ -335,6 +342,12 @@ class Recommender:
             return {}
         logger.info("Ranking by video signals for %s", sorted(signals))
         return signals
+
+    def _dropped_channel_videos(self) -> set[str]:
+        """Every loaded video of a DROPPED_CHANNELS channel."""
+        return {self.filenames[lang][row].replace("_processed.json", "")
+                for lang, creators in self.creators.items()
+                for row, creator in enumerate(creators) if creator in DROPPED_CHANNELS}
 
     def video_ids(self) -> list[str]:
         """Every loaded video, in every language."""
