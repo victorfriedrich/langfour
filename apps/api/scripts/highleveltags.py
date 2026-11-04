@@ -38,8 +38,11 @@ PARALLEL = 16   # Jev requests in flight
 
 
 def wanted(file_path: str, redo: bool, redo_all: bool) -> bool:
-    with open(file_path, encoding="utf-8") as f:
-        current_cat = json.load(f).get("category")
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            current_cat = json.load(f).get("category")
+    except (OSError, ValueError):
+        return True   # update() reports it, rather than one bad file ending the run
     return redo_all or current_cat is None or (redo and current_cat in REDO_CATEGORIES)
 
 
