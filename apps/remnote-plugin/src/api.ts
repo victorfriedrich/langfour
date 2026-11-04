@@ -60,6 +60,7 @@ export interface PracticeItem {
   rem_id: string;
   outcome: 'again' | 'good';
   practiced_at: string;
+  rated?: boolean; // the user's thumb in the extension: applied even when not due
 }
 
 export interface PracticeDecision {

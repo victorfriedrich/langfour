@@ -14,6 +14,8 @@ import {
   AccountResponse,
   WordProgress,
   WordProgressResponse,
+  RateWordResponse,
+  WordRating,
   sendToTab,
 } from './messages';
 import { getErrorMessage } from './errors';
@@ -331,6 +333,13 @@ async function wordProgress(wordId: number): Promise<WordProgressResponse> {
   return { ok: true, progress: ((data ?? []) as WordProgress[])[0] ?? null };
 }
 
+/** A thumb on the word popup: moves the word's card up or down its schedule. */
+async function rateWord(wordId: number, rating: WordRating): Promise<RateWordResponse> {
+  const response = await postBackend('/api/word-rating', { word_id: wordId, rating });
+  if (!response.ok) return { ok: false, error: response.statusText || `HTTP ${response.status}` };
+  return { ok: true, ...(JSON.parse(response.body) as { status: Extract<RateWordResponse, { ok: true }>['status'] }) };
+}
+
 /** Who is signed in, for the reader's settings panel. null when nobody is. */
 async function getAccount(): Promise<AccountResponse> {
   const { supabaseSession } = await chrome.storage.local.get('supabaseSession');
@@ -574,6 +583,13 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
     case 'OPEN_SIGN_IN': {
       void chrome.tabs.create({ url: chrome.runtime.getURL('src/auth.html') });
       return;
+    }
+
+    case 'RATE_WORD': {
+      rateWord(message.wordId, message.rating)
+        .catch((error): RateWordResponse => ({ ok: false, error: getErrorMessage(error, 'Rating failed') }))
+        .then(sendResponse);
+      return true; // Keeps the message channel open for async response
     }
 
     case 'WORD_PROGRESS': {

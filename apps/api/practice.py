@@ -20,6 +20,10 @@ history for research, and the same rules keep Langfour's schedule honest:
   - at most one result per card per day: within one call a wrong answer wins,
     and a later call the same day gets no outbox row for that card.
 Answers that don't reach a card stay as events.
+
+The thumbs on the extension's word popup (rate_word) take the same road with
+one difference: the user grades the word themselves, so a thumbs-up moves the
+card even when it isn't due. Up is 'good', down is 'again'.
 """
 
 from collections.abc import Iterable
@@ -95,6 +99,23 @@ class PracticeItem(BaseModel):
     rem_id: str           # RemNote Rem _id of the card's note
     outcome: Literal["again", "good"]
     practiced_at: str
+    # The user's own thumb on the word popup (rate_word): applied even when
+    # the card isn't due.
+    rated: bool = False
+
+
+class RatingRequest(BaseModel):
+    word_id: int = Field(..., gt=0)
+    rating: Literal["up", "down"]
+    media: str | None = Field(None, max_length=500)
+
+
+class RatingResult(BaseModel):
+    # applied: on the Langfour card now. queued: on its way to RemNote.
+    # relearning: a word marked known, back to learning. logged: recorded,
+    # with no card to move (none yet, or known and rated up). rated_today: the
+    # card already took a result today. not_in_list: not learning or known.
+    status: Literal["applied", "queued", "relearning", "logged", "rated_today", "not_in_list"]
 
 
 class PracticeDecision(BaseModel):
@@ -154,6 +175,18 @@ class PracticeStore:
                     found[w] = word_id
         return found
 
+    def word_status(self, user_id: str, word_id: int) -> str | None:
+        """The word's userwords status, None when it isn't in the list."""
+        res = (self.db.table("userwords").select("status").eq("user_id", user_id)
+               .eq("word_id", word_id).limit(1).execute())
+        return (res.data or [{}])[0].get("status")
+
+    def set_learning(self, user_id: str, word_id: int) -> None:
+        """A known word back to learning; the userwords trigger gives it a
+        Langfour card again (langfour_provider.sql)."""
+        (self.db.table("userwords").update({"status": "learning"})
+         .eq("user_id", user_id).eq("word_id", word_id).eq("status", "known").execute())
+
     def review_provider(self, user_id: str) -> str:
         res = (self.db.table("userdata").select("review_provider")
                .eq("user_id", user_id).limit(1).execute())
@@ -176,6 +209,12 @@ class PracticeStore:
         """Apply a result to the event's Langfour card and record it in
         srs_outbox, in one transaction (sql/langfour_provider.sql); the row."""
         return self.db.rpc("srs_langfour_practice", {
+            "p_event_id": event_id, "p_outcome": outcome,
+        }).execute().data
+
+    def langfour_rate(self, event_id: int, outcome: str) -> dict:
+        """As langfour_practice, due or not (sql/word_rating.sql)."""
+        return self.db.rpc("srs_langfour_rate", {
             "p_event_id": event_id, "p_outcome": outcome,
         }).execute().data
 
@@ -209,7 +248,7 @@ class PracticeStore:
         """Pending rows with the RemNote ids the plugin needs. A row whose card
         is gone comes back with srs_cards null."""
         res = (self.db.table("srs_outbox")
-               .select("event_id, outcome, word_events!inner(user_id, occurred_at), "
+               .select("event_id, outcome, word_events!inner(user_id, occurred_at, context), "
                        "srs_cards(external_id, srs_notes(external_id, removed_at))")
                .eq("word_events.user_id", user_id).eq("status", "pending")
                .order("event_id").limit(500).execute())
@@ -293,6 +332,54 @@ def record_practice(store: PracticeStore, user_id: str, req: PracticeRequest,
     )
 
 
+RATING_SOURCE = "extension"
+
+
+def rate_word(store: PracticeStore, user_id: str, req: RatingRequest,
+              now: datetime | None = None) -> RatingResult:
+    """A thumb on the word popup: the user saying they recognise the word, or
+    don't. Logged as a self-reported recognition answer, then:
+      - learning: 'good' or 'again' on the word's recognition card (Langfour's
+        one card, RemNote's forward card), at most one result per card a day;
+      - known (marked so): down puts it back to learning, up has nothing to move.
+    A word known through reviews is a learning word with a long interval, so a
+    thumbs-down's 'again' brings it back by itself."""
+    now = now or datetime.now(UTC)
+    status = store.word_status(user_id, req.word_id)
+    if status not in ("learning", "known"):
+        return RatingResult(status="not_in_list")
+
+    correct = req.rating == "up"
+    [event_id] = store.insert_events([{
+        "user_id": user_id, "word_id": req.word_id,
+        "kind": "recall_correct" if correct else "recall_wrong",
+        "source": RATING_SOURCE, "occurred_at": now.isoformat(),
+        "context": {"direction": "recognize", "self_reported": True, "rating": req.rating,
+                    **({"media": req.media} if req.media else {})},
+    }])
+
+    if status == "known":
+        if correct:
+            return RatingResult(status="logged")
+        store.set_learning(user_id, req.word_id)
+        return RatingResult(status="relearning")
+
+    provider = store.review_provider(user_id)
+    card = store.live_cards(user_id, provider, [req.word_id]).get((req.word_id, "forward"))
+    if card is None:
+        return RatingResult(status="logged")
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if store.cards_practiced_since([card["id"]], day_start.isoformat()):
+        return RatingResult(status="rated_today")
+
+    outcome = "good" if correct else "again"
+    if provider == "langfour":
+        row = store.langfour_rate(event_id, outcome)
+        return RatingResult(status="applied" if row["status"] == "applied" else "logged")
+    store.insert_outbox([{"event_id": event_id, "card_id": card["id"], "outcome": outcome}])
+    return RatingResult(status="queued")
+
+
 def pending_practice(store: PracticeStore, user_id: str,
                      now: datetime | None = None) -> list[PracticeItem]:
     """What the plugin should apply. Rows whose card or Rem is gone are skipped
@@ -312,6 +399,7 @@ def pending_practice(store: PracticeStore, user_id: str,
             rem_id=note["external_id"],
             outcome=row["outcome"],
             practiced_at=row["word_events"]["occurred_at"],
+            rated="rating" in (row["word_events"].get("context") or {}),
         ))
     return items
 

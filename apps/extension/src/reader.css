@@ -741,6 +741,22 @@ body.theme-dark .problem-btn { color: #1c1c1e; }
 .progress-mark { color: var(--text); font-weight: 500; }
 .progress-mark.progress-learning { border-bottom: 1.5px solid var(--learning-line); }
 
+/* Thumbs at the end of the status line: move the card up or down. */
+.word-progress { display: flex; align-items: center; gap: 8px; }
+.rating { display: inline-flex; gap: 2px; margin-left: auto; }
+.rate-btn {
+  display: inline-flex;
+  padding: 5px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.rate-btn:hover:not(:disabled) { background: rgba(127, 127, 127, 0.15); color: var(--text); }
+.rate-btn:disabled { cursor: default; opacity: 0.45; }
+.rate-btn[aria-pressed="true"] { opacity: 1; color: var(--popup-word); background: rgba(127, 127, 127, 0.12); }
+
 /* Failure notice: the inverse of the page, above Safari's toolbar. */
 .reader-toast {
   position: fixed;

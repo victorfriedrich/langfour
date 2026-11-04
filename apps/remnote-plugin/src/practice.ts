@@ -3,13 +3,15 @@
 
 export interface PracticeOutcome {
   outcome: 'again' | 'good';
+  rated?: boolean;
 }
 
 /** Whether a result may be added to its card, judged on the live card and
  *  Rem: never while the Rem's flashcards are turned off; a wrong answer
  *  always; a right one only when the card is due. RemNote can't tell these
  *  reviews from its own, so a lucky answer in chat must not push a card weeks
- *  out. */
+ *  out. A thumb the user gave the word in the extension (`rated`) is their
+ *  own grade, so it applies due or not. */
 export function practiceVerdict(
   item: PracticeOutcome,
   card: { nextRepetitionTime?: number } | undefined,
@@ -18,7 +20,7 @@ export function practiceVerdict(
 ): 'apply' | 'card_missing' | 'practice_off' | 'not_due' {
   if (!card) return 'card_missing';
   if (!practiced) return 'practice_off';
-  if (item.outcome === 'good' && card.nextRepetitionTime !== undefined && card.nextRepetitionTime > now) {
+  if (item.outcome === 'good' && !item.rated && card.nextRepetitionTime !== undefined && card.nextRepetitionTime > now) {
     return 'not_due';
   }
   return 'apply';

@@ -377,15 +377,17 @@ class VocabularyStore:
         return out
 
     def video_evidence(self, user_id: str, word_ids: list[int]) -> list[dict]:
-        """What stuck_words weighs for these words: their look-ups and their
-        exposures in videos, [{word_id, kind, context}], every page of them."""
+        """What stuck_words weighs for these words: their look-ups, their
+        exposures in videos and the popup's thumbs (practice.rate_word),
+        [{word_id, kind, context}] in the order they happened, every page."""
         out: list[dict] = []
         for chunk in _chunks(word_ids, _IN_CHUNK):
             start = 0
             while True:
                 res = (self.db.table("word_events").select("word_id, kind, context")
                        .eq("user_id", user_id).in_("word_id", chunk)
-                       .or_("kind.eq.lookup,and(kind.eq.exposure,source.eq.video)")
+                       .or_("kind.eq.lookup,and(kind.eq.exposure,source.eq.video),"
+                            "and(kind.eq.recall_correct,source.eq.extension)")
                        .order("id").range(start, start + _PAGE - 1).execute())
                 rows = res.data or []
                 out.extend(rows)
@@ -598,7 +600,10 @@ def stuck_words(store: VocabularyStore, user_id: str, common: list[int],
     ago and left. Then any other learning word in the language seen in
     SEEN_VIDEOS videos or more and never looked up, most seen first. Each with
     the videos it was seen in and how often it was looked up, so the user can
-    tell which they know."""
+    tell which they know.
+
+    Rating a word means opening its popup, which logs a look-up; a thumbs-up
+    there says the user knows it, so it clears the look-ups before it."""
     rank = {w: i for i, w in enumerate(common)}
     rows = [r for r in store.learning_rows(user_id, common) if not r.get("last_reviewed_at")]
     reviewed = store.reviewed(user_id, [r["word_id"] for r in rows]) if rows else set()
@@ -608,9 +613,12 @@ def stuck_words(store: VocabularyStore, user_id: str, common: list[int],
 
     videos: dict[int, set[str]] = {}
     lookups: Counter[int] = Counter()
-    for e in store.video_evidence(user_id, ids) if ids else []:
+    for e in store.video_evidence(user_id, ids) if ids else []:  # oldest first
         if e["kind"] == "lookup":
             lookups[e["word_id"]] += 1
+        elif e["kind"] == "recall_correct":
+            if (e.get("context") or {}).get("rating") == "up":
+                lookups[e["word_id"]] = 0
         elif media := (e.get("context") or {}).get("media"):
             videos.setdefault(e["word_id"], set()).add(media)
 

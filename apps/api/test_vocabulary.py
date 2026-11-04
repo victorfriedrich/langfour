@@ -323,7 +323,8 @@ class StuckStore(FakeStore):
     def video_evidence(self, user_id, word_ids):
         self.calls.append(("video_evidence", user_id, word_ids))
         return [e for e in self.logged if e["word_id"] in word_ids
-                and (e["kind"] == "lookup" or (e["kind"] == "exposure" and e["source"] == "video"))]
+                and (e["kind"] == "lookup" or (e["kind"] == "exposure" and e["source"] == "video")
+                     or (e["kind"] == "recall_correct" and e["source"] == "extension"))]
 
 
 def seen(word_id, media, source="video", kind="exposure"):
@@ -375,6 +376,21 @@ def test_stuck_words_leave_out_seen_words_looked_up_or_in_too_few_videos():
         *[seen(23, f"https://example.com/{i}", source="reader") for i in range(20)],
     ])
     assert vocabulary.stuck_words(store, USER, [], "es").words == []
+
+
+def rated(word_id, rating):
+    return {"word_id": word_id, "kind": "recall_correct", "source": "extension",
+            "context": {"direction": "recognize", "self_reported": True, "rating": rating}}
+
+
+def test_a_thumbs_up_clears_the_lookups_before_it():
+    # Rating a word opens its popup, which logs a look-up; the thumbs-up after
+    # it says the user knows the word. A look-up after the rating counts again.
+    store = StuckStore(events=[
+        *in_videos(21, vocabulary.SEEN_VIDEOS), seen(21, None, kind="lookup"), rated(21, "up"),
+        *in_videos(22, vocabulary.SEEN_VIDEOS), rated(22, "up"), seen(22, None, kind="lookup"),
+    ])
+    assert [(w.word, w.lookups) for w in vocabulary.stuck_words(store, USER, [], "es").words] == [("ya", 0)]
 
 
 def test_stuck_words_with_none_learning_reads_nothing_else():
