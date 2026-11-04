@@ -1,13 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import VideoCard, { Thumbnail } from './VideoCard';
+import VideoCard, { ROW } from './VideoCard';
 import {
   ALL,
   LEVELS,
-  minutes,
   percent,
-  youtubeUrl,
   type HomeChannel,
   type HomeEmpty,
   type HomeVideo,
@@ -16,15 +14,17 @@ import {
 } from './homeApi';
 
 type Open = (video: HomeVideo, event: React.MouseEvent) => void;
+type Act = (video: HomeVideo) => void;
 
-function ShelfRow({ title, link, onLink, shelf, language, onOpen, onHide }: {
+function ShelfRow({ title, link, onLink, shelf, language, onOpen, onHide, onShowWords }: {
   title: string;
   link: string;
   onLink: () => void;
   shelf: Shelf;
   language: string;
   onOpen: Open;
-  onHide: (video: HomeVideo) => void;
+  onHide: Act;
+  onShowWords: Act;
 }) {
   return (
     <section className="flex flex-col gap-3">
@@ -34,9 +34,9 @@ function ShelfRow({ title, link, onLink, shelf, language, onOpen, onHide }: {
           {link}
         </button>
       </div>
-      <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      <ul className={ROW}>
         {shelf.videos.map((v) => (
-          <VideoCard key={v.id} video={v} language={language} onOpen={onOpen} onHide={onHide} />
+          <VideoCard key={v.id} video={v} language={language} onOpen={onOpen} onHide={onHide} onShowWords={onShowWords} />
         ))}
       </ul>
     </section>
@@ -48,7 +48,7 @@ function ShelfRow({ title, link, onLink, shelf, language, onOpen, onHide }: {
  * how many videos each level has, the nearest videos and easy videos from
  * other topics (docs/plans/home-redesign.md, screen 5).
  */
-export function EmptyFilters({ topic, grammar, levels, empty, language, onGrammar, onTopic, onOpen, onHide }: {
+export function EmptyFilters({ topic, grammar, levels, empty, language, onGrammar, onTopic, onOpen, onHide, onShowWords }: {
   topic: string;
   grammar: Level;
   levels: Record<Level, number>;
@@ -57,7 +57,8 @@ export function EmptyFilters({ topic, grammar, levels, empty, language, onGramma
   onGrammar: (level: Level) => void;
   onTopic: (topic: string) => void;
   onOpen: Open;
-  onHide: (video: HomeVideo) => void;
+  onHide: Act;
+  onShowWords: Act;
 }) {
   const name = topic === ALL ? 'Videos' : topic;
   const nearest = empty.nearest_level;
@@ -103,6 +104,7 @@ export function EmptyFilters({ topic, grammar, levels, empty, language, onGramma
           language={language}
           onOpen={onOpen}
           onHide={onHide}
+          onShowWords={onShowWords}
         />
       )}
       {empty.other && (
@@ -114,16 +116,19 @@ export function EmptyFilters({ topic, grammar, levels, empty, language, onGramma
           language={language}
           onOpen={onOpen}
           onHide={onHide}
+          onShowWords={onShowWords}
         />
       )}
     </div>
   );
 }
 
-function ChannelRow({ channel, language, onOpen, onFollow }: {
+function ChannelRow({ channel, language, onOpen, onHide, onShowWords, onFollow }: {
   channel: HomeChannel;
   language: string;
   onOpen: Open;
+  onHide: Act;
+  onShowWords: Act;
   onFollow: (channelId: string, follow: boolean) => Promise<void>;
 }) {
   const [following, setFollowing] = useState(channel.following);
@@ -144,72 +149,67 @@ function ChannelRow({ channel, language, onOpen, onFollow }: {
   };
 
   return (
-    <li className="flex flex-wrap items-start gap-x-8 gap-y-4 border-b border-gray-100 py-6">
-      <div className="flex w-full flex-col gap-1 sm:w-[200px] sm:flex-none">
-        <span className="text-base font-semibold text-gray-900">{channel.name}</span>
-        <span className="text-xs text-gray-500">
-          {percent(channel.understood)} known · {channel.videos} videos
-        </span>
+    <li className="flex flex-col gap-3">
+      <div className="flex min-h-8 items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="truncate text-sm font-semibold text-gray-900">{channel.name}</span>
+          <span className="text-xs text-gray-500">
+            {percent(channel.understood)} known · {channel.videos} videos
+          </span>
+        </div>
         {channelId && (
           <button
             type="button"
             aria-pressed={following}
             disabled={busy}
             onClick={toggle}
-            className="mt-3 h-9 self-start rounded-lg border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+            className="ml-auto h-8 flex-none rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
           >
             {following ? 'Following' : 'Follow'}
           </button>
         )}
       </div>
-      <ul lang={language} className="grid min-w-0 flex-1 basis-[560px] grid-cols-2 gap-4 sm:grid-cols-4">
+      <ul className={ROW}>
         {channel.best.map((v) => (
-          <li key={v.id} className="flex min-w-0 flex-col gap-2">
-            <a
-              href={youtubeUrl(v.id)}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => onOpen(v, e)}
-              tabIndex={-1}
-              aria-hidden="true"
-              className="block aspect-video overflow-hidden rounded-md bg-gray-200"
-            >
-              <Thumbnail video={v} />
-            </a>
-            <a
-              href={youtubeUrl(v.id)}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => onOpen(v, e)}
-              className="line-clamp-2 text-sm font-medium leading-[18px] text-gray-900 hover:underline"
-            >
-              {v.title}
-            </a>
-            <span lang="en" className="text-xs text-gray-500">
-              <span className="font-semibold text-gray-900">{percent(v.understood)}</span>
-              {v.duration_s !== null && ` · ${minutes(v.duration_s)} min`}
-            </span>
-          </li>
+          <VideoCard
+            key={v.id}
+            video={v}
+            language={language}
+            onOpen={onOpen}
+            onHide={onHide}
+            onShowWords={onShowWords}
+            hideChannel
+          />
         ))}
       </ul>
     </li>
   );
 }
 
-export function ChannelsAtYourLevel({ channels, language, onOpen, onFollow }: {
+export function ChannelsYouMightLike({ channels, language, onOpen, onHide, onShowWords, onFollow }: {
   channels: HomeChannel[];
   language: string;
   onOpen: Open;
+  onHide: Act;
+  onShowWords: Act;
   onFollow: (channelId: string, follow: boolean) => Promise<void>;
 }) {
   return (
-    <section aria-labelledby="home-channels" className="mt-12 border-t border-gray-100 pt-8">
-      <h2 id="home-channels" className="mb-2 text-base font-semibold text-gray-900">
-        Channels at your level
+    <section aria-labelledby="home-channels" className="mt-10 border-t border-gray-100 pt-8">
+      <h2 id="home-channels" className="mb-5 text-lg font-semibold text-gray-900">
+        Channels you might like
       </h2>
-      <ul>
+      <ul className="flex flex-col gap-8">
         {channels.map((c) => (
-          <ChannelRow key={c.name} channel={c} language={language} onOpen={onOpen} onFollow={onFollow} />
+          <ChannelRow
+            key={c.name}
+            channel={c}
+            language={language}
+            onOpen={onOpen}
+            onHide={onHide}
+            onShowWords={onShowWords}
+            onFollow={onFollow}
+          />
         ))}
       </ul>
     </section>

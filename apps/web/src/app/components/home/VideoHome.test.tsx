@@ -89,7 +89,7 @@ it('shows each video with its channel, length and how much is known', async () =
   expect(within(night).getByText('22:28')).toBeTruthy();
   expect(night.textContent).toContain('96% · 14 new words');
   expect(screen.getByText('Ary Tenorio · watched 7 of 17 min')).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'Channels at your level' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Channels you might like' })).toBeTruthy();
   expect(screen.getByText('96% known · 8 videos')).toBeTruthy();
   const topics = screen.getByRole('group', { name: 'Topics' });
   expect(within(topics).getAllByRole('button').map((b) => b.textContent)).toEqual([
@@ -262,4 +262,17 @@ it('clears the previous language’s cards, topic and optimistic hides on a lang
   expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
   finish(new Response(JSON.stringify(PAGE)));
   expect(await screen.findByText(BUTLER.title)).toBeTruthy();
+});
+
+it('opens the side panel with a video’s words from Show words, and Escape closes it', async () => {
+  renderHome();
+  const butler = (await screen.findByText(BUTLER.title)).closest('li')!;
+  fireEvent.click(within(butler).getByRole('button', { name: 'More actions' }));
+  fireEvent.click(within(butler).getByRole('menuitem', { name: 'Show words' }));
+
+  expect(await screen.findByRole('heading', { name: BUTLER.title })).toBeTruthy();
+  await waitFor(() => expect(fetchWithAuth.mock.calls.some(([url]) =>
+    String(url).endsWith(`/api/videos/${BUTLER.id}/missing-words`))).toBe(true));
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('heading', { name: BUTLER.title })).toBeNull();
 });
