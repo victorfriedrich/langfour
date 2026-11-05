@@ -669,7 +669,7 @@ export default function ExtensionDemo({ mode }: { mode: DemoMode }) {
                         <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
                     </div>
                     <div className="mx-auto w-full max-w-xs truncate rounded-md bg-gray-50 px-3 py-1 text-center text-[11px] text-gray-400">
-                        {mode === 'video' ? 'youtube.com/watch' : mode === 'chatgpt' ? 'chatgpt.com' : 'diariodelsur.example/noticias'}
+                        {mode === 'video' ? 'youtube.com/watch' : mode === 'chatgpt' ? 'chatgpt.com' : 'noticiasespanolas.es/noticias'}
                     </div>
                     <div className="w-[42px]" />
                 </div>
