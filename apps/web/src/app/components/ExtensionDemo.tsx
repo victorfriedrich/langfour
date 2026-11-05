@@ -10,12 +10,12 @@ import { ArrowUp, BookCopy, Captions, Check, Highlighter, Languages, Layers, Max
  * the demo matches what people get after installing.
  */
 
-type Word = { id: string; text: string; lemma?: string; translation: string };
-type Segment = string | Word;
+export type Word = { id: string; text: string; lemma?: string; translation: string };
+export type Segment = string | Word;
 
 export type DemoMode = 'video' | 'reader' | 'chatgpt';
 
-const SUBTITLE: Segment[] = [
+export const SUBTITLE: Segment[] = [
     'Nunca ',
     { id: 'pense', text: 'pensé', lemma: 'pensar', translation: 'I thought' },
     ' que ',
@@ -27,7 +27,7 @@ const SUBTITLE: Segment[] = [
     '.',
 ];
 
-const ARTICLE: Segment[] = [
+export const ARTICLE: Segment[] = [
     'Madrid ',
     { id: 'despierta', text: 'despierta', lemma: 'despertar', translation: 'wakes up, rouses' },
     ' tarde, pero cuando lo hace, sus calles se ',
@@ -39,7 +39,7 @@ const ARTICLE: Segment[] = [
     ' del barrio.',
 ];
 
-const ARTICLE_2: Segment[] = [
+export const ARTICLE_2: Segment[] = [
     'Al caer la noche, la ciudad cambia de ',
     { id: 'ritmo', text: 'ritmo', translation: 'rhythm, pace' },
     '. Los bares se ',
@@ -69,14 +69,14 @@ const ANSWER: Segment[] = [
     ' a la sombra en el Retiro.',
 ];
 
-const isWord = (s: Segment): s is Word => typeof s !== 'string';
+export const isWord = (s: Segment): s is Word => typeof s !== 'string';
 const FIRST_WORD: Record<DemoMode, string> = {
     video: (SUBTITLE.find(isWord) as Word).id,
     reader: (ARTICLE.find(isWord) as Word).id,
     chatgpt: (ANSWER.find(isWord) as Word).id,
 };
 
-const popupMotion = {
+export const popupMotion = {
     initial: { opacity: 0, y: 6, scale: 0.96 },
     animate: { opacity: 1, y: 0, scale: 1 },
     exit: { opacity: 0, y: 4, scale: 0.98 },
@@ -85,7 +85,7 @@ const popupMotion = {
 
 // Keep the whole popup inside the clipped content area, including its Add
 // button. Padding bridges the gap so moving from the word does not close it.
-function WordPopup({ mode, children }: { mode: DemoMode; children: ReactNode }) {
+export function WordPopup({ mode, children }: { mode: DemoMode; children: ReactNode }) {
     const ref = useRef<HTMLSpanElement>(null);
     const [position, setPosition] = useState({ left: 0, top: 0 });
 
