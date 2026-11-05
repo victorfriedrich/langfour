@@ -62,6 +62,6 @@ describe('stuckWordsText', () => {
 
 describe('stuckWordsUrl', () => {
   it('opens the Vocabulary tab', () => {
-    expect(stuckWordsUrl('https://app.langfour.com')).toBe('https://app.langfour.com/vocabulary?words=stuck');
+    expect(stuckWordsUrl('https://app.langfour.com')).toBe('https://app.langfour.com/practice?words=stuck');
   });
 });

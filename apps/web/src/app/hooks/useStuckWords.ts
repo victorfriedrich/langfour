@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { UserContext } from '@/context/UserContext';
-import type { StuckWord } from '../vocabulary/stuck';
+import type { StuckWord } from '../practice/stuck';
 
 /**
  * Learning words the user likely knows, in the sidebar's language: common

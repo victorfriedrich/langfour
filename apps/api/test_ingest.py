@@ -53,6 +53,12 @@ def test_claim_is_compare_and_set():
     assert ingest.claim(sb, "es", limit=5) == []
 
 
+def test_min_priority_leaves_discovery_rows_alone():
+    sb = FakeSupabase([pending("disc"), pending("fav", priority=5)])
+    assert [r["video_id"] for r in ingest.claim(sb, "es", limit=5, min_priority=1)] == ["fav"]
+    assert sb.row("disc")["status"] == "pending"
+
+
 def test_claim_respects_attempt_cap_and_language():
     sb = FakeSupabase([pending("worn", attempts=ingest.MAX_ATTEMPTS),
                        pending("german", lang="de")])
@@ -227,7 +233,7 @@ def test_each_methods_videos_are_spread_across_the_hour():
 
 def test_run_mix_paces_claims_and_routes_each_method(corpus, monkeypatch):
     queue = [pending(f"v{i}") for i in range(10)]
-    monkeypatch.setattr(ingest, "claim", lambda sb, lang, n: [queue.pop(0)] if queue else [])
+    monkeypatch.setattr(ingest, "claim", lambda sb, lang, n, **k: [queue.pop(0)] if queue else [])
     monkeypatch.setattr(ingest, "finish", lambda *a, **k: None)
     monkeypatch.setattr(ingest, "prepare_cache", lambda: None)
     routes = []
@@ -253,7 +259,7 @@ def test_run_mix_paces_claims_and_routes_each_method(corpus, monkeypatch):
 
 
 def test_run_mix_stops_when_the_queue_is_empty(corpus, monkeypatch):
-    monkeypatch.setattr(ingest, "claim", lambda sb, lang, n: [])
+    monkeypatch.setattr(ingest, "claim", lambda sb, lang, n, **k: [])
     monkeypatch.setattr(ingest, "transcribe", lambda *a: pytest.fail("nothing to do"))
     tally = ingest.run_mix(None, "es", {"proxy": 100}, hours=5, sleep=lambda s: None)
     assert tally == {"proxy": {"done": 0, "failed": 0}}
@@ -306,7 +312,7 @@ def test_publish_runs_before_done_and_its_failure_hands_the_row_back(corpus, mon
 
 def test_run_mix_can_be_stopped_and_can_skip_the_cache_load(corpus, monkeypatch):
     queue = [pending(f"v{i}") for i in range(5)]
-    monkeypatch.setattr(ingest, "claim", lambda sb, lang, n: [queue.pop(0)] if queue else [])
+    monkeypatch.setattr(ingest, "claim", lambda sb, lang, n, **k: [queue.pop(0)] if queue else [])
     monkeypatch.setattr(ingest, "finish", lambda *a, **k: None)
     monkeypatch.setattr(ingest, "prepare_cache", lambda: pytest.fail("the API's cache is loaded"))
     monkeypatch.setattr(ingest, "transcribe", lambda *a: ("failed", "boom"))

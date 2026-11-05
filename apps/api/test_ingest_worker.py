@@ -127,7 +127,37 @@ def test_an_uploaded_transcript_comes_back_on_a_fresh_disk(corpus, monkeypatch):
     assert corpus_sync.pull_incoming("es") == 0          # already on disk
 
 
+def test_extraction_drops_macos_appledouble_files(tmp_path, monkeypatch):
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, body in [("processed/es/abc_processed.json", b"{}"),
+                           ("processed/es/._abc_processed.json", b"\x00\x05\x16\x07\xa3")]:
+            info = tarfile.TarInfo(name)
+            info.size = len(body)
+            tar.addfile(info, io.BytesIO(body))
+    buf.seek(0)
+    monkeypatch.setattr(corpus_sync, "DATA_DIR", tmp_path)
+    assert corpus_sync._extract(buf, "es") == 1
+    assert [p.name for p in (tmp_path / "processed/es").iterdir()] == ["abc_processed.json"]
+
+
 def test_uploading_needs_its_own_write_token(monkeypatch):
     monkeypatch.delenv("LANGFIVE_CORPUS_WRITE_ACCESS_KEY_ID", raising=False)
     with pytest.raises(RuntimeError, match="WRITE_ACCESS_KEY_ID"):
         corpus_sync._s3(write=True)
+
+
+def test_the_worker_skips_discovery_by_default(monkeypatch):
+    seen = []
+
+    def run_mix(sb, lang, mix, hours, **k):
+        seen.append(k["min_priority"])
+        return {"proxy": {"done": 0, "failed": 0}}
+
+    worker(monkeypatch, run_mix, StopAfter())
+    monkeypatch.setenv("INGEST_WORKER_MIN_PRIORITY", "0")
+    worker(monkeypatch, run_mix, StopAfter())
+    assert seen == [1, 0]

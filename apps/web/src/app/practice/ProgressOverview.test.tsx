@@ -10,6 +10,7 @@ const word = (root: string, cards: CardLike[] = [], translation: string | null =
   root,
   language: 'es',
   translation,
+  status: 'learning' as const,
   cards,
 });
 const saved = (root: string, addedAt: number) => ({ wordId: 0, root, language: 'es', addedAt });

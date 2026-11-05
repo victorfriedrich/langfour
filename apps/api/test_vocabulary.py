@@ -27,11 +27,12 @@ class FakeStore:
         self.events = []
         self.recalls = list(recalls)
 
-    def vocabulary(self, user_id, language, status, limit):
-        self.calls.append(("vocabulary", user_id, language, status, limit))
+    def vocabulary(self, user_id, language, status, limit, order=None):
+        self.calls.append(("vocabulary", user_id, language, status, limit, order))
         return {"language": "es", "counts": {"known": 2, "learning": 1, "due": 1},
                 "words": [{"word": "el perro", "translation": "dog",
-                           "status": "learning", "due": True}]}
+                           "status": "learning", "due": True,
+                           "added": "2026-10-01", "seen": 3, "last_seen": "2026-11-02"}]}
 
     def recall_events(self, user_id, language):
         self.calls.append(("recall_events", user_id, language))
@@ -98,9 +99,45 @@ class FakeStore:
 def test_get_vocabulary_passes_the_user_and_parses_the_answer():
     store = FakeStore()
     vocab = vocabulary.get_vocabulary(store, USER, None, "due", 20)
-    assert store.calls == [("vocabulary", USER, None, "due", 20), ("recall_events", USER, "es")]
+    assert store.calls == [("vocabulary", USER, None, "due", 20, None),
+                           ("recall_events", USER, "es")]
     assert vocab.counts.due == 1
     assert vocab.words[0].word == "el perro"
+    assert (vocab.words[0].added, vocab.words[0].seen, vocab.words[0].last_seen) == \
+        ("2026-10-01", 3, "2026-11-02")
+
+
+def test_get_vocabulary_passes_the_order():
+    store = FakeStore()
+    vocabulary.get_vocabulary(store, USER, "es", "learning", 5000, "least_recently_seen")
+    assert store.calls[0] == ("vocabulary", USER, "es", "learning", 5000, "least_recently_seen")
+
+
+def test_vocabulary_words_from_before_dates_were_listed_still_parse():
+    word = vocabulary.VocabularyWord.model_validate(
+        {"word": "el perro", "translation": "dog", "status": "learning", "due": False})
+    assert (word.added, word.seen, word.last_seen) == (None, 0, None)
+
+
+class _Rpc:
+    def __init__(self):
+        self.params = None
+
+    def rpc(self, name, params):
+        self.params = params
+        return self
+
+    def execute(self):
+        return type("Res", (), {"data": {}})()
+
+
+def test_store_leaves_the_order_out_unless_given():
+    # So the API still works against the four-argument mcp_vocabulary.
+    db = _Rpc()
+    vocabulary.VocabularyStore(db).vocabulary(USER, None, "due", 50)
+    assert "p_order" not in db.params
+    vocabulary.VocabularyStore(db).vocabulary(USER, None, "learning", 50, "least_recently_seen")
+    assert db.params["p_order"] == "least_recently_seen"
 
 
 def test_score_text_counts_running_words_and_skips_non_vocabulary():
@@ -286,7 +323,8 @@ class StuckStore(FakeStore):
     def video_evidence(self, user_id, word_ids):
         self.calls.append(("video_evidence", user_id, word_ids))
         return [e for e in self.logged if e["word_id"] in word_ids
-                and (e["kind"] == "lookup" or (e["kind"] == "exposure" and e["source"] == "video"))]
+                and (e["kind"] == "lookup" or (e["kind"] == "exposure" and e["source"] == "video")
+                     or (e["kind"] == "recall_correct" and e["source"] == "extension"))]
 
 
 def seen(word_id, media, source="video", kind="exposure"):
@@ -338,6 +376,21 @@ def test_stuck_words_leave_out_seen_words_looked_up_or_in_too_few_videos():
         *[seen(23, f"https://example.com/{i}", source="reader") for i in range(20)],
     ])
     assert vocabulary.stuck_words(store, USER, [], "es").words == []
+
+
+def rated(word_id, rating):
+    return {"word_id": word_id, "kind": "recall_correct", "source": "extension",
+            "context": {"direction": "recognize", "self_reported": True, "rating": rating}}
+
+
+def test_a_thumbs_up_clears_the_lookups_before_it():
+    # Rating a word opens its popup, which logs a look-up; the thumbs-up after
+    # it says the user knows the word. A look-up after the rating counts again.
+    store = StuckStore(events=[
+        *in_videos(21, vocabulary.SEEN_VIDEOS), seen(21, None, kind="lookup"), rated(21, "up"),
+        *in_videos(22, vocabulary.SEEN_VIDEOS), rated(22, "up"), seen(22, None, kind="lookup"),
+    ])
+    assert [(w.word, w.lookups) for w in vocabulary.stuck_words(store, USER, [], "es").words] == [("ya", 0)]
 
 
 def test_stuck_words_with_none_learning_reads_nothing_else():

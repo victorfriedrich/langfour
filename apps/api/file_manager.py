@@ -42,7 +42,17 @@ def initialize_categories():
 Document = tuple[np.ndarray, np.ndarray]
 
 
-def load_documents(base_folder: str) -> tuple[list[Document], list[str], list[str], list[str]]:
+def video_details(data: dict) -> tuple[str, int | None]:
+    """A transcript's channel name and length in seconds, as videoparsing
+    stores them ("creator", "length"): '' and None when missing."""
+    creator = data.get("creator")
+    length = data.get("length")
+    return (creator.strip() if isinstance(creator, str) else "",
+            int(length) if isinstance(length, (int, float)) and length > 0 else None)
+
+
+def load_documents(base_folder: str) -> tuple[list[Document], list[str], list[str], list[str],
+                                              list[str], list[int | None]]:
     """
     Load all documents from the base_folder. Extract category from each JSON file.
     Instead of loading full JSON content (which contains dictionaries for each word),
@@ -55,12 +65,16 @@ def load_documents(base_folder: str) -> tuple[list[Document], list[str], list[st
         filenames (List[str]): List of filenames corresponding to the documents.
         categories (List[str]): List of categories corresponding to each document.
         titles (List[str]): Display titles corresponding to each document.
+        creators: each document's channel name, '' when unknown.
+        lengths: each document's length in seconds, None when unknown.
     """
     documents = []
     filenames = []
     categories = []
     titles = []
-    
+    creators = []
+    lengths = []
+
     for filename in os.listdir(base_folder):
         if filename.endswith('.json') and not filename.endswith('.npz.meta.json'):
             file_path = os.path.join(base_folder, filename)
@@ -90,10 +104,13 @@ def load_documents(base_folder: str) -> tuple[list[Document], list[str], list[st
                     categories.append(category)
                     title = data.get('title', '')
                     titles.append(title if isinstance(title, str) else '')
+                    creator, length = video_details(data)
+                    creators.append(creator)
+                    lengths.append(length)
             except Exception as e:
                 print(f"Error loading {file_path}: {e}")
     
-    return documents, filenames, categories, titles
+    return documents, filenames, categories, titles, creators, lengths
 
 def get_category_icon(base_folder: str, category: str) -> str:
     icon_path = os.path.join(base_folder, 'icons', f'{category}.svg')  # Assuming icons are stored in a separate 'icons' folder
@@ -105,7 +122,7 @@ def get_categories_with_icons(base_folder: str | None = None) -> list[dict[str, 
     categories = []
     if base_folder is None:
         base_folder = str(PROCESSED_DIR)
-    _documents, _, categories_list, _ = load_documents(base_folder)
+    _documents, _, categories_list, *_ = load_documents(base_folder)
     unique_categories = set(categories_list)
     for category in unique_categories:
         icon = get_category_icon(base_folder, category)

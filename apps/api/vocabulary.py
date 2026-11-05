@@ -3,7 +3,9 @@ What an AI app connected over MCP can learn about the user's vocabulary, and
 what it reports back about texts the user read with it.
 
   - get_vocabulary: counts and a list of known, learning or due words
-    (mcp_vocabulary in sql/mcp_vocabulary.sql), plus the words whose last
+    (mcp_vocabulary in sql/mcp_vocabulary.sql), each with the date it was
+    added and how often and when last the user saw it, newest first or least
+    recently seen first so an AI app rotates through them; plus the words whose last
     practice answer was wrong, with the AI app's note: the mistakes to revise,
     known words included, since those have no card to bring back.
   - score_text: how much of a text the user would understand, and which of its
@@ -57,6 +59,10 @@ from practice import PracticeStore
 from supabase_client import supabase
 
 Language = Literal["es", "de", "it", "fr"]
+# How get_vocabulary lists words: None for the status's own order (due: most
+# overdue first, else newest first); least_recently_seen puts words never seen
+# first, newest of them first, then the ones seen longest ago.
+VocabularyOrder = Literal["newest", "least_recently_seen"]
 SOURCE = "chatgpt"
 MAX_TEXT = 20_000
 MAX_MEDIA = 500
@@ -97,6 +103,9 @@ class VocabularyWord(BaseModel):
     translation: str | None
     status: Literal["known", "learning"]
     due: bool
+    added: str | None = None      # put in the user's list, YYYY-MM-DD
+    seen: int = 0                 # exposure rows, every source
+    last_seen: str | None = None  # YYYY-MM-DD
 
 
 class WordMistake(BaseModel):
@@ -207,11 +216,13 @@ class VocabularyStore:
     def __init__(self, client):
         self.db = client
 
-    def vocabulary(self, user_id: str, language: str | None, status: str, limit: int) -> dict:
-        return self.db.rpc("mcp_vocabulary", {
-            "p_user_id": user_id, "p_language": language,
-            "p_status": status, "p_limit": limit,
-        }).execute().data
+    def vocabulary(self, user_id: str, language: str | None, status: str, limit: int,
+                   order: str | None = None) -> dict:
+        params = {"p_user_id": user_id, "p_language": language,
+                  "p_status": status, "p_limit": limit}
+        if order:
+            params["p_order"] = order
+        return self.db.rpc("mcp_vocabulary", params).execute().data
 
     def recall_events(self, user_id: str, language: str) -> list[dict]:
         """The user's latest practice answers in a language, newest first."""
@@ -366,15 +377,17 @@ class VocabularyStore:
         return out
 
     def video_evidence(self, user_id: str, word_ids: list[int]) -> list[dict]:
-        """What stuck_words weighs for these words: their look-ups and their
-        exposures in videos, [{word_id, kind, context}], every page of them."""
+        """What stuck_words weighs for these words: their look-ups, their
+        exposures in videos and the popup's thumbs (practice.rate_word),
+        [{word_id, kind, context}] in the order they happened, every page."""
         out: list[dict] = []
         for chunk in _chunks(word_ids, _IN_CHUNK):
             start = 0
             while True:
                 res = (self.db.table("word_events").select("word_id, kind, context")
                        .eq("user_id", user_id).in_("word_id", chunk)
-                       .or_("kind.eq.lookup,and(kind.eq.exposure,source.eq.video)")
+                       .or_("kind.eq.lookup,and(kind.eq.exposure,source.eq.video),"
+                            "and(kind.eq.recall_correct,source.eq.extension)")
                        .order("id").range(start, start + _PAGE - 1).execute())
                 rows = res.data or []
                 out.extend(rows)
@@ -397,8 +410,9 @@ def get_vocabulary_store() -> VocabularyStore:
 # ---------------------------------------------------------------------------
 
 def get_vocabulary(store: VocabularyStore, user_id: str, language: str | None,
-                   status: Literal["due", "learning", "known"], limit: int) -> Vocabulary:
-    vocab = Vocabulary.model_validate(store.vocabulary(user_id, language, status, limit))
+                   status: Literal["due", "learning", "known"], limit: int,
+                   order: VocabularyOrder | None = None) -> Vocabulary:
+    vocab = Vocabulary.model_validate(store.vocabulary(user_id, language, status, limit, order))
     if vocab.language:
         vocab.mistakes = _mistakes(store.recall_events(user_id, vocab.language))
     return vocab
@@ -586,7 +600,10 @@ def stuck_words(store: VocabularyStore, user_id: str, common: list[int],
     ago and left. Then any other learning word in the language seen in
     SEEN_VIDEOS videos or more and never looked up, most seen first. Each with
     the videos it was seen in and how often it was looked up, so the user can
-    tell which they know."""
+    tell which they know.
+
+    Rating a word means opening its popup, which logs a look-up; a thumbs-up
+    there says the user knows it, so it clears the look-ups before it."""
     rank = {w: i for i, w in enumerate(common)}
     rows = [r for r in store.learning_rows(user_id, common) if not r.get("last_reviewed_at")]
     reviewed = store.reviewed(user_id, [r["word_id"] for r in rows]) if rows else set()
@@ -596,9 +613,12 @@ def stuck_words(store: VocabularyStore, user_id: str, common: list[int],
 
     videos: dict[int, set[str]] = {}
     lookups: Counter[int] = Counter()
-    for e in store.video_evidence(user_id, ids) if ids else []:
+    for e in store.video_evidence(user_id, ids) if ids else []:  # oldest first
         if e["kind"] == "lookup":
             lookups[e["word_id"]] += 1
+        elif e["kind"] == "recall_correct":
+            if (e.get("context") or {}).get("rating") == "up":
+                lookups[e["word_id"]] = 0
         elif media := (e.get("context") or {}).get("media"):
             videos.setdefault(e["word_id"], set()).add(media)
 

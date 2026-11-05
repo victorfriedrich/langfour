@@ -27,8 +27,8 @@ Policies on all three: `*_select_authenticated`, `*_insert_admin`,
 
 | Table | Columns | Keys and constraints |
 |---|---|---|
-| `userdata` | `user_id`, `languages text[]`, `default_language`, `known_words_updated_at`, `review_provider`, `chatgpt_language_check` | PK `user_id`; FK → `auth.users`; `default_language` in the four codes; `review_provider` in `langfour, remnote`, default `langfour`; `chatgpt_language_check` default false (`language_check.sql`, not applied yet) |
-| `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known, disabled` (`disabled`: flashcards turned off in RemNote, set by the sync; see `remnote_sync.sql`); SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
+| `userdata` | `user_id`, `languages text[]`, `default_language`, `known_words_updated_at`, `review_provider`, `chatgpt_language_check`, `known_languages text[]` | PK `user_id`; FK → `auth.users`; `default_language` in the four codes; `review_provider` in `langfour, remnote`, default `langfour`; `chatgpt_language_check` default false (`language_check.sql`, applied 2026-10-30) |
+| `userwords` | `id`, `user_id`, `word_id`, `status`, `source`, `created_at`, `last_reviewed_at`, `next_review_due_at`, `ease_factor`, `repetition`, `interval_days`, `familiar_until` | PK `id`; unique `(user_id, word_id)`; `status` in `learning, known, disabled` (`disabled`: flashcards turned off in RemNote, set by the sync; see `remnote_sync.sql`); SM-2 fields default `ease_factor 2.5`, `interval_days 1` |
 | `flashcardtests` | `id`, `user_id`, `word_id`, `test_type`, `test_result`, `tested_at` | PK `id`; `test_type` in `flashcard, typing`; index `(user_id, word_id, test_result)` |
 | `usertranslations` | `id`, `user_id`, `word_id`, `custom_translation`, `created_at` | PK `id`; index `(user_id, word_id)` |
 | `videos_seen` | `id`, `user_id`, `video_id`, `seen_at` | PK `id` (identity); unique `(user_id, video_id)`. Replaced by `watch_events`; moved to `archive.videos_seen_2026_11` by `watch_events.sql` (applied 2026-11-02) |
@@ -90,7 +90,7 @@ All three: policy `select_own`; written only by the API, through
 `record_grammar(p_user_id, p_events, p_concepts, p_chapters)` (service role
 only), which writes a session's events and new state in one transaction.
 
-### Langfour as a provider (`langfour_provider.sql`, not applied yet)
+### Langfour as a provider (`langfour_provider.sql`, applied 2026-10-29)
 
 Langfour's schedule moves from the SM-2 columns on `userwords` into the
 `srs_*` tables as provider `langfour`: a note and one `forward` card per
@@ -119,16 +119,18 @@ Vocabulary page; see the functions `known_words_summary` and
 |---|---|---|
 | `video_queue` | `video_id`, `lang`, `channel_id`, `title`, `duration_s`, `views`, `score`, `source`, `priority`, `status`, `attempts`, `error`, `submitted_by`, `created_at`, `claimed_at`, `done_at` | PK `video_id`; FK `submitted_by → auth.users`; `source` in `discovery, user, manual, legacy`; `status` in `pending, processing, done, failed, skipped`; partial index `(lang, priority desc, score desc) where status = 'pending'`, which is exactly `ingest.py`'s claim query; index on `channel_id` |
 | `channel_favourites` | `user_id`, `channel_id`, `lang`, `created_at`, `uploads_outcome` | PK `(user_id, channel_id)`; FK `user_id → auth.users`; `channel_id` a `UC…` id; `uploads_outcome` in `queued, other_language`, null until a listing finishes; index on `channel_id`; own-row select/insert/delete (`channel_favourites.sql`) |
+| `video_hides` | `user_id`, `language`, `kind`, `key`, `created_at` | PK `(user_id, language, kind, key)`; FK `user_id → auth.users` on delete cascade; `kind` in `video, channel`; `key` a video id or a channel name (the transcripts' `creator`); own-row select/insert/delete. The web Videos page's Not interested (`video_hides.sql`, applied 2026-11-03; `home.py`) |
 | `pending_words` | `language`, `word`, `outcome`, `source`, `candidates text[]`, `jev jsonb`, `seen`, `created_at`, `resolved_at` | PK `(language, word)`; `outcome` in `pending, not_a_word`. Unknown tokens `parse()` did not attach to a root; written through `record_pending_words(rows jsonb)` (service role only) |
-| `video_scores` | `video_id`, `language`, `rubric_version`, `integrity`, `p_garbled`, `p_foreign_lesson`, `p_sung`, `grammar`, `content`, `developed`, `transferable`, `jev jsonb`, `scored_at` | PK `video_id`; `integrity` in `clean, patchy, garbled`; index `(language, video_id)`. Jev's rating of each transcript (`video_quality.py`), written by `ingest.py` and `scripts/score_videos.py`, read by the recommender at startup |
+| `video_scores` | `video_id`, `language`, `rubric_version`, `integrity`, `p_garbled`, `p_foreign_lesson`, `p_sung`, `grammar`, `content`, `developed`, `transferable`, `jev jsonb`, `scored_at` | PK `video_id`; `integrity` in `clean, patchy, garbled`; index `(language, video_id)`. Jev's rating of each transcript (`video_quality.py`), written by `ingest.py` and `scripts/score_videos.py`, read by the recommender at startup; `grammar` drives the Videos page's grammar filter (`home.py`) |
 | `video_looks` | `video_id`, `language`, `channel`, `interest`, `trash`, `polish`, `sensitive`, `genre`, `model`, `judged_at` | PK `video_id`; `sensitive` in `none, mild, strong`; index `(language, video_id)`. A vision model's verdict on each thumbnail (`video_looks.py`), written by `scripts/judge_thumbnails.py`, read by the recommender at startup for `video_blend.py` |
+| `user_word_familiarity` | `user_id`, `word_id`, `score`, `rubric_version`, `rated_at` | PK `(user_id, word_id)`. Jev's rating of whether a learner can work a word out, for the word list's three groups (`word_buckets.sql`, `word_familiarity.py`). Service role only |
 | `video_word_ranks` | `video_id`, `language`, `rubric_version`, `ranks jsonb`, `ranked_at` | PK `video_id`. Jev's ranking of each video's words, `{"<word id>": [here, general]}` (`word_importance.py`), written the first time a video's word list is opened |
 
 Policies: `users queue own videos [insert]`, `users read own submissions
 [select]`. Workers claim and update rows with `service_role`. Definition in
 `video_queue.sql`. `pending_words` (`pending_words.sql`, applied 2026-10-15) has RLS on
 and no policies: only `service_role` reads or writes it. The same holds for
-`video_scores` (`video_scores.sql`, applied 2026-10-29), for `video_looks` (`video_looks.sql`, not applied yet). And for `video_word_ranks` (`word_ranks.sql`, which also adds
+`video_scores` (`video_scores.sql`, applied 2026-10-29), for `video_looks` (`video_looks.sql`, applied 2026-11-02). And for `video_word_ranks` (`word_ranks.sql`, which also adds
 `user_media.word_ranks` and `word_ranks_version`, the same ranking for a
 Library item).
 
@@ -175,7 +177,7 @@ name in each app; `none` means nothing in the repo calls it today.
 | `set_userwords_status(_word_ids int[], _status)` | void | web |
 | `total_words_known()` | integer | web |
 | `total_words_known(language_filter)` | integer | web |
-| `update_spaced_repetition(_word_id, _test_result)` | void | web. The SM-2 update lives here, not in client code. `langfour_provider.sql` (not applied yet) makes it record the review too and work on the word's Langfour card |
+| `update_spaced_repetition(_word_id, _test_result)` | void | web. The SM-2 update lives here, not in client code. `langfour_provider.sql` (applied 2026-10-29) makes it record the review too and work on the word's Langfour card |
 
 `unaccent`, `unaccent_init`, `unaccent_lexize` are the `unaccent` extension,
 installed into `public`.

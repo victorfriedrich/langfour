@@ -76,6 +76,14 @@ export type WordProgressResponse =
   | { ok: true; progress: WordProgress | null }
   | { ok: false; error: string };
 
+// A thumb on the word popup (apps/api/practice.py rate_word), and what became
+// of it: on the card now, on its way to RemNote, a known word back to
+// learning, logged with no card to move, or the card already rated today.
+export type WordRating = 'up' | 'down';
+export type RateWordResponse =
+  | { ok: true; status: 'applied' | 'queued' | 'relearning' | 'logged' | 'rated_today' | 'not_in_list' }
+  | { ok: false; error: string };
+
 // The signed-in user as the reader's settings panel shows them. The review
 // link goes to RemNote when the user schedules reviews there.
 export type Account = {
@@ -108,6 +116,7 @@ export type BackgroundMessage =
   // ChatGPT reply, or hovered long enough in captions (index.ts).
   | { type: 'RECORD_LOOKUP'; wordId: number; source: LookupSource; media: string }
   | { type: 'WORD_PROGRESS'; wordId: number }
+  | { type: 'RATE_WORD'; wordId: number; rating: WordRating }
   | { type: 'GET_ACCOUNT' }
   | { type: 'SET_LANGUAGE'; language: Language }
   | { type: 'SIGN_OUT' }

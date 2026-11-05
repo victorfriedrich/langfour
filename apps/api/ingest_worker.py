@@ -8,6 +8,11 @@ mix in hour-long chunks for as long as the API is up:
     INGEST_WORKER_MIX=proxy=300     videos per hour per method, per worker; unset = off
     INGEST_WORKER_LANG=es
     INGEST_WORKER_COUNT=2           worker threads; default 2
+    INGEST_WORKER_MIN_PRIORITY=1    only rows at or above this priority; default 1
+
+Priority 0 is discovery (ytpipeline's automatic fill), so by default the
+worker no longer drains it. Favourite channels (5), user (10) and manual (20)
+rows still run. Set 0 to work the whole queue again.
 
 A video is mostly waiting -- on the proxy, YouTube, Jev and Supabase -- so
 one worker managed ~200 an hour (14.6 s a video on 2026-11-01) and a second
@@ -49,6 +54,8 @@ ERROR_PAUSE_S = 60
 OUTAGE_PAUSE_S = 60 * 60
 RECLAIM_AFTER_MIN = 60
 DEFAULT_COUNT = 2
+# Above discovery (0): favourites, user and manual rows only.
+DEFAULT_MIN_PRIORITY = 1
 # ~190 KB a transcript, 300 an hour: ~1.3 GB a day on a disk that also holds
 # the corpus. Pausing beats the API failing to write anything.
 MIN_FREE_BYTES = 1 << 30
@@ -70,6 +77,13 @@ def count() -> int:
     return int(raw)
 
 
+def min_priority() -> int:
+    raw = os.getenv("INGEST_WORKER_MIN_PRIORITY", "").strip() or str(DEFAULT_MIN_PRIORITY)
+    if not raw.isdigit():
+        raise ValueError(f"INGEST_WORKER_MIN_PRIORITY={raw!r}: use a whole number, 0 or more")
+    return int(raw)
+
+
 def run_forever(sb, lang: str, mix: dict[str, int], stop: threading.Event,
                 publish=None, free_bytes=lambda: shutil.disk_usage(DATA_DIR).free,
                 name: str = "ingest worker") -> None:
@@ -85,7 +99,8 @@ def run_forever(sb, lang: str, mix: dict[str, int], stop: threading.Event,
                 if n := ingest.reclaim(sb, lang, RECLAIM_AFTER_MIN):
                     print(f"{name}: reclaimed {n} stale rows", flush=True)
                 tally = ingest.run_mix(sb, lang, mix, CHUNK_HOURS, sleep=stop.wait,
-                                       cache_ready=True, publish=publish, stopped=stop.is_set)
+                                       cache_ready=True, publish=publish, stopped=stop.is_set,
+                                       min_priority=min_priority())
                 print(f"{name}: {ingest.mix_summary(tally)}", flush=True)
                 if not sum(t["done"] + t["failed"] for t in tally.values()):
                     pause = EMPTY_PAUSE_S
@@ -107,6 +122,7 @@ def start(sb) -> threading.Event | None:
     try:
         config = configured()
         workers = count() if config else 0
+        min_priority()  # validate now, not on the worker threads
     except ValueError as exc:
         log.error("ingest worker: not started, bad setting: %s", exc)
         return None

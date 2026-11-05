@@ -9,6 +9,7 @@ import { BackendRequestEvent, BackendResponseEvent, CaptionExposureEvent, KnownW
 import { isAllowedHost } from './siteApi';
 import { getErrorMessage } from './errors';
 import { FitBadges, startFitBadges } from './youtubeFit';
+import { startTitleBoxes } from './youtubeTitles';
 import { watchDesktop } from './watchSignal';
 import { promptForHistory } from './historyPrompt';
 
@@ -161,6 +162,7 @@ if (isAllowedHost(location.host)) {
   // Desktop YouTube only: m.youtube.com has its own cards (youtubeSelectors.ts).
   if (location.host === 'www.youtube.com') {
     fitBadges = startFitBadges(() => (prefs ? determineLanguage(prefs) : null));
+    startTitleBoxes();
     watchDesktop();
     promptForHistory();
   }

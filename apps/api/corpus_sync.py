@@ -73,6 +73,12 @@ MARKER = ".corpus_complete"
 
 COPY_BUFSIZE = 1024 * 1024  # 1 MB
 
+# incoming/ is thousands of ~17 KB objects, so pulling it is bound by request
+# latency, not bandwidth. Measured against R2: 8 workers ~32 objects/s, 32
+# workers ~64/s, 64 workers no better. botocore keeps 10 connections per client
+# by default, so the client pool is sized to match or the extra workers queue.
+INCOMING_WORKERS = 32
+
 
 def _is_populated(language: str) -> bool:
     return (PROCESSED_DIR / language / MARKER).exists()
@@ -85,6 +91,7 @@ def _key(name: str) -> str:
 
 def _s3(write: bool = False):
     import boto3  # imported lazily so local dev needs no AWS SDK
+    from botocore.config import Config
 
     creds = {}
     if write:
@@ -98,6 +105,7 @@ def _s3(write: bool = False):
         "s3",
         endpoint_url=os.getenv("LANGFIVE_CORPUS_ENDPOINT") or None,
         region_name=os.getenv("AWS_REGION", "auto"),
+        config=Config(max_pool_connections=INCOMING_WORKERS),
         **creds,
     )
 
@@ -142,6 +150,10 @@ def _safe_members(tar: tarfile.TarFile, language: str) -> Iterable[tarfile.TarIn
             continue
         if member.issym() or member.islnk() or member.isdev():
             log.warning("corpus: skipping non-regular member %r", name)
+            continue
+        if Path(name).name.startswith("._"):
+            # macOS AppleDouble metadata, packed by a Mac tar. Not JSON: each
+            # one only costs a write here and an "Error loading" line later.
             continue
         yield member
 
@@ -209,8 +221,8 @@ def upload_transcript(language: str, video_id: str) -> None:
 def pull_incoming(language: str) -> int:
     """Fetch the incoming/ transcripts this disk lacks. Returns how many.
 
-    One small object each (~12 KB gzipped), so they come 8 at a time; the
-    tarball's single stream is what has to stay sequential."""
+    One small object each (~17 KB gzipped), so they come INCOMING_WORKERS at a
+    time; the tarball's single stream is what has to stay sequential."""
     bucket = os.environ["LANGFIVE_CORPUS_BUCKET"]
     s3 = _s3()
     prefix = _key(f"incoming/{language}/")
@@ -229,7 +241,7 @@ def pull_incoming(language: str) -> int:
         tmp.replace(target)
 
     processed_dir(language).mkdir(parents=True, exist_ok=True)
-    with ThreadPoolExecutor(8) as pool:
+    with ThreadPoolExecutor(INCOMING_WORKERS) as pool:
         list(pool.map(fetch, wanted))
     log.info("corpus: %s pulled %d incoming transcripts", language, len(wanted))
     return len(wanted)

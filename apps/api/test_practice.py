@@ -21,7 +21,9 @@ from practice import (
     PracticeReport,
     PracticeRequest,
     PracticeStore,
+    RatingRequest,
     pending_practice,
+    rate_word,
     record_practice,
     report_practice,
 )
@@ -50,6 +52,26 @@ class FakeStore:
         self.removed_rems: set[str] = set()
         self.events: list[dict] = []
         self.outbox: dict[int, dict] = {}
+        self.statuses = {(USER, 1): "learning", (USER, 2): "learning", (USER, 3): "known"}
+
+    def word_status(self, user_id, word_id):
+        return self.statuses.get((user_id, word_id))
+
+    def set_learning(self, user_id, word_id):
+        if self.statuses.get((user_id, word_id)) == "known":
+            self.statuses[(user_id, word_id)] = "learning"
+
+    def langfour_rate(self, event_id, outcome):
+        """Like srs_langfour_rate: as langfour_practice, due or not."""
+        if event_id in self.outbox:
+            return self.outbox[event_id]
+        event = next(e for e in self.events if e["id"] == event_id)
+        card = self.langfour[(event["user_id"], event["word_id"])]
+        self.langfour_reviews.append((event["word_id"], outcome == "good"))
+        row = {"event_id": event_id, "card_id": card["id"], "outcome": outcome,
+               "status": "applied", "applied_review_at": NOW.isoformat()}
+        self.outbox[event_id] = row
+        return row
 
     def resolve_words(self, language, words):
         lower = {k.lower(): v for k, v in self.dictionary.items()}
@@ -110,7 +132,8 @@ class FakeStore:
             card = self.card_ids.get(row["card_id"])
             out.append({
                 "event_id": row["event_id"], "outcome": row["outcome"],
-                "word_events": {"user_id": user_id, "occurred_at": event["occurred_at"]},
+                "word_events": {"user_id": user_id, "occurred_at": event["occurred_at"],
+                                "context": event.get("context")},
                 "srs_cards": card and {"external_id": card[0], "srs_notes": {
                     "external_id": card[1],
                     "removed_at": "gone" if card[1] in self.removed_rems else None}},
@@ -322,3 +345,80 @@ def test_german_nouns_are_found_and_case_tells_noun_from_verb():
     ))
     found = store.resolve_words("de", ["Haus", "haus", "Essen", "essen", "Häuser", "aß", "Bank"])
     assert found == {"Haus": 4, "haus": 4, "Essen": 6, "essen": 5, "Häuser": 4, "aß": 5}
+
+
+# --- the word popup's thumbs ------------------------------------------------
+
+def rate(store, word_id, rating, now=NOW):
+    return rate_word(store, USER, RatingRequest(word_id=word_id, rating=rating), now=now).status
+
+
+def test_a_thumb_is_logged_as_a_self_reported_recognition():
+    store = FakeStore(provider="langfour")
+    rate(store, 1, "up")
+    rate(store, 2, "down")
+    assert [(e["word_id"], e["kind"], e["source"], e["context"]) for e in store.events] == [
+        (1, "recall_correct", "extension", {"direction": "recognize", "self_reported": True, "rating": "up"}),
+        (2, "recall_wrong", "extension", {"direction": "recognize", "self_reported": True, "rating": "down"}),
+    ]
+
+
+def test_a_thumbs_up_moves_a_langfour_card_even_before_it_is_due():
+    store = FakeStore(provider="langfour")  # word 2's card is due in 5 days
+    assert rate(store, 2, "up") == "applied"
+    assert store.langfour_reviews == [(2, True)]
+
+
+def test_a_thumbs_down_sends_a_langfour_card_back():
+    store = FakeStore(provider="langfour")
+    assert rate(store, 2, "down") == "applied"
+    assert store.langfour_reviews == [(2, False)]
+
+
+def test_one_rating_per_card_a_day():
+    store = FakeStore(provider="langfour")
+    assert rate(store, 1, "up") == "applied"
+    assert rate(store, 1, "down") == "rated_today"
+    assert rate(store, 1, "down", now=NOW + timedelta(days=1)) == "applied"
+    assert store.langfour_reviews == [(1, True), (1, False)]
+
+
+def test_a_remnote_rating_is_queued_for_the_forward_card_and_applies_when_not_due():
+    store = FakeStore(provider="remnote")
+    assert rate(store, 1, "up") == "queued"
+    assert [(r["card_id"], r["outcome"]) for r in store.outbox.values()] == [(10, "good")]
+    [item] = pending_practice(store, USER, now=NOW)
+    assert (item.card_id, item.outcome, item.rated) == ("c10", "good", True)
+
+
+def test_a_chatgpt_answer_is_not_marked_rated():
+    store = FakeStore(provider="remnote")
+    record_practice(store, USER, answers(("hablar", "recognize", True)), now=NOW)
+    assert [i.rated for i in pending_practice(store, USER, now=NOW)] == [False]
+
+
+def test_a_known_word_rated_down_goes_back_to_learning():
+    store = FakeStore(provider="langfour")
+    assert rate(store, 3, "down") == "relearning"
+    assert store.statuses[(USER, 3)] == "learning"
+
+
+def test_a_known_word_rated_up_is_only_logged():
+    store = FakeStore(provider="langfour")
+    assert rate(store, 3, "up") == "logged"
+    assert store.statuses[(USER, 3)] == "known" and len(store.events) == 1
+
+
+def test_a_learning_word_without_a_card_yet_is_only_logged():
+    store = FakeStore(provider="remnote")
+    store.statuses[(USER, 4)] = "learning"
+    assert rate(store, 4, "up") == "logged"
+    assert store.outbox == {} and len(store.events) == 1
+
+
+def test_a_word_not_in_the_list_is_not_rated():
+    store = FakeStore(provider="langfour")
+    store.statuses[(USER, 2)] = "disabled"
+    assert rate(store, 2, "up") == "not_in_list"
+    assert rate(store, 99, "up") == "not_in_list"
+    assert store.events == []

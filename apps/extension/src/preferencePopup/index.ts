@@ -326,7 +326,7 @@ signUpBtn.addEventListener('click', () => {
 // Quick links for the signed-in view. chrome.tabs.create opens a normal tab
 // and closes the popup, which window.open does not do reliably.
 const reviewBtn = document.getElementById('reviewBtn') as HTMLButtonElement;
-let reviewUrl = `${WEB_URL}/vocabulary`;
+let reviewUrl = `${WEB_URL}/practice`;
 // RemNote reviews open the active language's notes, so the link is redrawn
 // when either the settings arrive or the language changes.
 let reviewSettings: Parameters<typeof reviewLink>[0] = null;

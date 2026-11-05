@@ -14,9 +14,12 @@ import {
   AccountResponse,
   WordProgress,
   WordProgressResponse,
+  RateWordResponse,
+  WordRating,
   sendToTab,
 } from './messages';
 import { getErrorMessage } from './errors';
+import { savedContext } from './savedFrom';
 import { BACKEND_URL, debugLog } from './config';
 import { Language, toLanguage } from './languages';
 import { reviewLink } from './reviewLink';
@@ -192,9 +195,13 @@ async function refreshKnownWordsIfStale(language: string): Promise<{ success: bo
 }
 
 /**
- * Add a word to the user's known words list via Supabase RPC call.
+ * Add a word to the user's known words list via Supabase RPC call. Saved on a
+ * YouTube watch page (`tabUrl`), it also gets a 'saved' event naming the video.
  */
-async function addWordToUserwords(wordId: string | number): Promise<{ success: boolean; error?: string }> {
+async function addWordToUserwords(
+  wordId: string | number,
+  tabUrl?: string,
+): Promise<{ success: boolean; error?: string }> {
   const result = await chrome.storage.local.get('supabaseSession');
   const hasSession = await ensureSupabaseSession(result.supabaseSession);
   if (!hasSession) {
@@ -213,6 +220,14 @@ async function addWordToUserwords(wordId: string | number): Promise<{ success: b
 
     // The next article marks it as learning without waiting for a refresh.
     await markLearning(Number(wordId)).catch((err: unknown) => console.warn('Could not update word statuses:', err));
+    const context = savedContext(tabUrl);
+    if (context) {
+      // The word is saved either way; only the count on the Videos page misses it.
+      const { error: eventError } = await supabase.rpc('record_word_events', {
+        rows: [{ word_id: Number(wordId), kind: 'saved', source: 'video', context }],
+      });
+      if (eventError) console.warn('Could not record the saved event:', eventError.message);
+    }
     return { success: true };
   } catch (err: unknown) {
     console.error('Error adding words to userwords:', err);
@@ -316,6 +331,13 @@ async function wordProgress(wordId: number): Promise<WordProgressResponse> {
     return { ok: false, error: error.message };
   }
   return { ok: true, progress: ((data ?? []) as WordProgress[])[0] ?? null };
+}
+
+/** A thumb on the word popup: moves the word's card up or down its schedule. */
+async function rateWord(wordId: number, rating: WordRating): Promise<RateWordResponse> {
+  const response = await postBackend('/api/word-rating', { word_id: wordId, rating });
+  if (!response.ok) return { ok: false, error: response.statusText || `HTTP ${response.status}` };
+  return { ok: true, ...(JSON.parse(response.body) as { status: Extract<RateWordResponse, { ok: true }>['status'] }) };
 }
 
 /** Who is signed in, for the reader's settings panel. null when nobody is. */
@@ -563,6 +585,13 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
       return;
     }
 
+    case 'RATE_WORD': {
+      rateWord(message.wordId, message.rating)
+        .catch((error): RateWordResponse => ({ ok: false, error: getErrorMessage(error, 'Rating failed') }))
+        .then(sendResponse);
+      return true; // Keeps the message channel open for async response
+    }
+
     case 'WORD_PROGRESS': {
       wordProgress(message.wordId)
         .catch((error): WordProgressResponse => ({ ok: false, error: getErrorMessage(error, 'Lookup failed') }))
@@ -572,7 +601,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
 
     case 'ADD_WORD_TO_USERWORDS': {
       const { wordId } = message;
-      addWordToUserwords(wordId).then(sendResponse);
+      addWordToUserwords(wordId, sender.tab?.url).then(sendResponse);
       return true; // Keeps the message channel open for async response
     }
 

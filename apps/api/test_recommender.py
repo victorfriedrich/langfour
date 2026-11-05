@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from scipy.sparse import csr_matrix
 
+import recommender as recommender_module
 from recommender import Recommender
 
 
@@ -25,6 +26,9 @@ def blank_recommender(base_folder=None):
     recommender.distinct_words_per_doc = {}
     recommender.rows_by_video = {}
     recommender.video_signals = {}
+    recommender.creators = {}
+    recommender.lengths = {}
+    recommender.grammar = {}
     return recommender
 
 
@@ -117,6 +121,13 @@ def test_unreadable_video_signals_keep_known_words_order(monkeypatch):
     assert recommender._load_video_signals() == {}
 
 
+def test_dropped_channels_videos_are_found_by_creator(monkeypatch):
+    recommender = make_recommender([np.ones(150, dtype=np.int8)] * 3)
+    recommender.creators = {"es": ["Kept", "Dropped", ""]}
+    monkeypatch.setattr(recommender_module, "DROPPED_CHANNELS", frozenset({"Dropped"}))
+    assert recommender._dropped_channel_videos() == {"video-1"}
+
+
 def test_videos_gone_from_youtube_are_hidden_until_they_come_back():
     recommender = make_recommender([np.ones(150, dtype=np.int8)] * 3)
     recommender.hidden_by_score = recommender.hidden_videos = {"video-0"}
@@ -139,7 +150,7 @@ def test_unreadable_scores_hide_nothing(monkeypatch):
     def boom(_sb):
         raise RuntimeError("supabase down")
 
-    monkeypatch.setattr(video_quality, "hidden_ids", boom)
+    monkeypatch.setattr(video_quality, "hidden_and_grammar", boom)
     recommender = Recommender.__new__(Recommender)
     recommender.supabase = None
     assert recommender._load_hidden_videos() == set()
@@ -253,6 +264,8 @@ def test_matrix_manifest_persists_titles_and_loads_without_transcripts(tmp_path)
         "category": "Travel",
         "content": [{"id": 4}, {"id": 9}],
         "title": "A trip",
+        "creator": " Katy Travels ",
+        "length": 1348,
     }
     transcript_path = language_dir / "abc_processed.json"
     transcript_path.write_text(json.dumps(transcript), encoding="utf-8")
@@ -261,13 +274,33 @@ def test_matrix_manifest_persists_titles_and_loads_without_transcripts(tmp_path)
     recommender._ensure_language_loaded("es")
 
     manifest_path = language_dir / "document_term_counts.npz.meta.json"
-    assert json.loads(manifest_path.read_text(encoding="utf-8"))["titles"] == ["A trip"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["titles"] == ["A trip"]
+    assert (manifest["creators"], manifest["lengths"]) == (["Katy Travels"], [1348])
 
     transcript_path.write_text("not valid JSON", encoding="utf-8")
     loaded = blank_recommender(str(tmp_path))
 
     assert loaded._try_load_cached_language("es") is True
     assert loaded.titles["es"] == ["A trip"]
+    assert (loaded.creators["es"], loaded.lengths["es"]) == (["Katy Travels"], [1348])
+
+
+def test_a_manifest_from_before_channel_names_loads_with_blanks(tmp_path):
+    from scipy.sparse import save_npz
+    language_dir = tmp_path / "es"
+    language_dir.mkdir()
+    (language_dir / "aaa_processed.json").write_text("not read", encoding="utf-8")
+    save_npz(language_dir / "document_term_counts.npz",
+             csr_matrix(np.asarray([[1] * 150], dtype=np.int16)))
+    (language_dir / "document_term_counts.npz.meta.json").write_text(json.dumps({
+        "filenames": ["aaa_processed.json"], "categories": ["Other"], "titles": ["A"],
+        "max_word_id": 149, "weights": "counts",
+    }), encoding="utf-8")
+
+    recommender = blank_recommender(str(tmp_path))
+    assert recommender._try_load_cached_language("es")
+    assert (recommender.creators["es"], recommender.lengths["es"]) == ([""], [None])
 
 
 def test_coverage_counts_every_word_and_new_words_are_distinct():

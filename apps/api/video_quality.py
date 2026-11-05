@@ -4,7 +4,7 @@ One Decisions API request per video asks eight choice questions about the raw
 transcript (sql/video_scores.sql stores the answers):
 
   filters   integrity (clean/patchy/garbled), foreign-language lesson, sung
-  A         grammar level, A1..C1 mapped to 1..9           stored, not used yet
+  A         grammar level, A1..C1 mapped to 1..9           the Videos page's grammar filter
   C         content in the words, 1..10                    used in the floor
   D         developed thought, 1..10                       stored, not used yet
   E         transferable language, 1..10                   used in the floor
@@ -223,16 +223,22 @@ def score_and_store(sb, http: httpx.Client, video_id: str, language: str,
     return scores
 
 
-def hidden_ids(sb, language: str | None = None) -> set[str]:
-    """Video ids the recommender must skip, under the current thresholds."""
-    cols = "video_id,p_garbled,p_foreign_lesson,p_sung,content,transferable"
-    out, page = set(), 0
+def hidden_and_grammar(sb) -> tuple[set[str], dict[str, dict[str, float]]]:
+    """Video ids the recommender must skip, under the current thresholds, and
+    each video's grammar level (A, 1..9) by language, from one read of the
+    table: the Videos page filters and counts by grammar (home.py)."""
+    cols = "video_id,language,p_garbled,p_foreign_lesson,p_sung,content,transferable,grammar"
+    rejected: set[str] = set()
+    grammar: dict[str, dict[str, float]] = {}
+    page = 0
     while True:
-        q = sb.table("video_scores").select(cols).order("video_id")
-        if language:
-            q = q.eq("language", language)
-        rows = q.range(page * 1000, page * 1000 + 999).execute().data
-        out |= {r["video_id"] for r in rows if hidden(r)}
+        rows = (sb.table("video_scores").select(cols).order("video_id")
+                .range(page * 1000, page * 1000 + 999).execute().data)
+        for r in rows:
+            if hidden(r):
+                rejected.add(r["video_id"])
+            if r.get("grammar") is not None:
+                grammar.setdefault(r["language"], {})[r["video_id"]] = float(r["grammar"])
         if len(rows) < 1000:
-            return out
+            return rejected, grammar
         page += 1
