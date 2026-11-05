@@ -248,7 +248,7 @@ function ReaderDemo() {
                     <div aria-hidden className="flex h-9 items-center justify-between border-b-[0.5px] border-[color:var(--line)] px-1.5 font-sans">
                         <span className="flex items-center text-[13px] text-[color:var(--accent)]">
                             <ChevronLeft size={16} strokeWidth={2.4} />
-                            elpais.com
+                            diariodelsur.example
                         </span>
                         <span className="flex items-center gap-2.5 pr-2">
                             <span style={{ fontFamily: SERIF }} className="rounded-sm border-b border-dashed border-[color:var(--new-line)] bg-[var(--new-bg)] px-0.5 text-[13px] leading-tight">abc</span>
