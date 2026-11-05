@@ -508,10 +508,12 @@ async def check_missing_words(
 
         words = get_video_words(video_id, language_code)
 
-        missing_words = await get_missing_words(current_user.id, words, language_code)
         # Ranked once per video, for every user (word_importance.py). The list
-        # doesn't wait for it: `ranking` tells the panel to ask again.
-        ranks = await video_ranks(supabase, video_id, language_code, words, wait=False)
+        # doesn't wait for it: `ranking` tells the panel to ask again. Looked
+        # up beside the missing words, since neither needs the other.
+        missing_words, ranks = await asyncio.gather(
+            get_missing_words(current_user.id, words, language_code),
+            video_ranks(supabase, video_id, language_code, words, wait=False))
 
         listed = await panel_words(supabase, str(current_user.id), language_code, missing_words, ranks)
         return {**listed, "ranking": listed["ranking"] or (ranks is None and ranking(video_key(video_id)))}
@@ -673,11 +675,12 @@ async def get_imported_media_missing_words(
         language_code = require_code(request.language_code)
         user_id = str(current_user.id)
         words = get_media_words(store, user_id, media_id, language_code)
-        missing_words = await get_missing_words(current_user.id, words, language_code)
         # Ranked on the first open, then saved with the item (word_importance.py).
         # The list doesn't wait for it: `ranking` tells the panel to ask again.
-        ranks = await media_ranks(supabase, store, user_id, media_id, language_code,
-                                  _tokens_from_cache, wait=False)
+        missing_words, ranks = await asyncio.gather(
+            get_missing_words(current_user.id, words, language_code),
+            media_ranks(supabase, store, user_id, media_id, language_code,
+                        _tokens_from_cache, wait=False))
         listed = await panel_words(supabase, user_id, language_code, missing_words, ranks)
         return {**listed, "ranking": listed["ranking"] or (ranks is None and ranking(media_key(user_id, media_id)))}
     except FileNotFoundError as exc:

@@ -145,3 +145,36 @@ def test_a_failed_log_does_not_fail_the_add():
 def test_a_move_names_real_groups():
     with pytest.raises(ValueError):
         BucketMove(word_id=1, was="should", now="elsewhere")
+
+
+def test_many_words_are_rated_in_concurrent_requests_and_come_back_whole(monkeypatch):
+    sizes = []
+
+    async def ask(client, state, ids):
+        sizes.append(len(ids))
+        return dict.fromkeys(ids, 3.0)
+
+    monkeypatch.setattr(word_familiarity, "ask", ask)
+    entries = {i: {"word": str(i), "translation": None} for i in range(300)}
+    scores = asyncio.run(word_familiarity._ask_all(None, {}, entries))
+    assert sorted(scores) == list(range(300)) and len(sizes) == word_importance.PARALLEL_REQUESTS
+
+
+def test_select_all_pages_several_at_once_and_keeps_every_row():
+    total = 2350
+
+    class Query:
+        def __init__(self):
+            self.span = (0, 0)
+
+        def range(self, a, b):
+            self.span = (a, b)
+            return self
+
+        def execute(self):
+            a, b = self.span
+            return type("R", (), {"data": [{"i": i} for i in range(a, min(b + 1, total))]})()
+
+    rows = word_familiarity._select_all(Query)
+    assert [r["i"] for r in rows] == list(range(total))
+    assert [r["i"] for r in word_familiarity._select_all(Query)][:3] == [0, 1, 2]
