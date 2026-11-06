@@ -37,11 +37,15 @@ interface MissingWordsRequest {
 }
 
 // The API answers before Jev has ranked a text it hasn't seen, with
-// `ranking: true`, and saves the ranks when they come (2-5 s). Until then the
-// list shows unranked and is asked for again, so the key words move to the
-// top once they exist. A failed ranking is started again by the next ask, so
-// the cap also bounds how often Jev is retried while the panel is open.
-export const RANKING_POLL_MS = 2000;
+// `ranking: true`, and saves the ranks when they come (about 1-3 s). Until then
+// the list shows unranked and is asked for again, so the key words move to the
+// top once they exist. The first asks come quickly, since that is when they
+// usually land; a ranking that is still not there is slower to ask about. A
+// failed ranking is started again by the next ask, so the cap also bounds how
+// often Jev is retried while the panel is open.
+export const RANKING_POLL_MS = 700;
+const SLOW_POLL_MS = 2000;
+const QUICK_POLLS = 4;
 const RANKING_POLLS = 10;
 
 // Videos come from the shared corpus; Library items are per user and have
@@ -119,7 +123,7 @@ export const useMissingWords = (videoId: string, source: 'videos' | 'media' = 'v
         setFlaggedWords(flagged);
         setBuckets(Boolean(data.buckets));
         if (data.ranking && poll < RANKING_POLLS) {
-          timer = setTimeout(() => fetchMissingWords(poll + 1), RANKING_POLL_MS);
+          timer = setTimeout(() => fetchMissingWords(poll + 1), poll < QUICK_POLLS ? RANKING_POLL_MS : SLOW_POLL_MS);
         }
       } catch (err) {
         // A failed poll leaves the unranked list up rather than replacing it.

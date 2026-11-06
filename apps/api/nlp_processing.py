@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -327,8 +328,9 @@ async def get_missing_words(user_id: str, words: list[dict], language: str) -> l
     word_ids = [word['id'] for word in words if 'id' in word and word['id'] is not None]
     word_ids = list(dict.fromkeys(word_ids))
     try:
-        missing_words = get_missing_words_from_db(user_id, word_ids, language)
-        return missing_words
+        # Off the event loop: it is a few blocking round trips, and the endpoints
+        # run it beside the rank lookup.
+        return await asyncio.to_thread(get_missing_words_from_db, user_id, word_ids, language)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching data from Supabase: {e!s}") from e
 

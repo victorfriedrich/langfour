@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 import httpx
@@ -37,7 +38,7 @@ from pydantic import BaseModel, Field
 from auth import get_current_user
 from languages import LANGUAGES
 from supabase_client import supabase
-from word_importance import MODEL, URL, TooLong, _in_background, ranking, with_importance
+from word_importance import MODEL, URL, TooLong, _in_background, ranking, spread, with_importance
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ SCALE = {
 }
 
 _PAGE = 1000
+_PAGES_AT_ONCE = 4
 _CHUNK = 200
 
 
@@ -74,15 +76,22 @@ def _chunks(items: list, size: int = _CHUNK):
 
 
 def _select_all(build) -> list[dict]:
-    """Page through a select. `build` must set an order: without one, pages can
-    overlap and silently drop rows."""
-    rows, start = [], 0
-    while True:
-        page = build().range(start, start + _PAGE - 1).execute().data or []
-        rows.extend(page)
-        if len(page) < _PAGE:
-            return rows
-        start += _PAGE
+    """Page through a select, the pages after the first several at a time.
+    `build` must set an order: without one, pages can overlap and silently drop rows."""
+    def page(n: int) -> list[dict]:
+        return build().range(n * _PAGE, (n + 1) * _PAGE - 1).execute().data or []
+
+    rows = page(0)
+    n = 1
+    with ThreadPoolExecutor(_PAGES_AT_ONCE) as pool:
+        while len(rows) == n * _PAGE:
+            batch = list(pool.map(page, range(n, n + _PAGES_AT_ONCE)))
+            for got in batch:
+                rows.extend(got)
+                n += 1
+                if len(got) < _PAGE:
+                    return rows
+    return rows
 
 
 def known_languages(sb, user_id: str) -> list[str] | None:
@@ -93,37 +102,43 @@ def known_languages(sb, user_id: str) -> list[str] | None:
 
 
 def saved_scores(sb, user_id: str, word_ids: list[int]) -> dict[int, float]:
-    out: dict[int, float] = {}
-    for chunk in _chunks(word_ids):
-        rows = (sb.table("user_word_familiarity").select("word_id,score")
+    def read(chunk: list[int]) -> list[dict]:
+        return (sb.table("user_word_familiarity").select("word_id,score")
                 .eq("user_id", user_id).eq("rubric_version", RUBRIC_VERSION)
-                .in_("word_id", chunk).execute().data)
-        out.update({r["word_id"]: float(r["score"]) for r in rows or []})
-    return out
+                .in_("word_id", chunk).execute().data) or []
+
+    with ThreadPoolExecutor(_PAGES_AT_ONCE) as pool:
+        return {r["word_id"]: float(r["score"]) for rows in pool.map(read, _chunks(word_ids)) for r in rows}
 
 
 def vocabulary(sb, user_id: str, language: str) -> tuple[list[str], list[str]]:
     """The roots of the learner's known and learning words in this language."""
-    known_ids = {r["word_id"] for r in _select_all(lambda: (
-        sb.table("user_known_words").select("word_id").eq("user_id", user_id).order("word_id")))}
-    rows = _select_all(lambda: (
-        sb.table("userwords").select("word_id,status,words!inner(root,language)")
-        .eq("user_id", user_id).eq("words.language", language).neq("status", "disabled")
-        .order("word_id")))
-    known = [r["words"]["root"] for r in rows if r["word_id"] in known_ids]
+    def known_ids() -> set[int]:
+        return {r["word_id"] for r in _select_all(lambda: (
+            sb.table("user_known_words").select("word_id").eq("user_id", user_id).order("word_id")))}
+
+    def words() -> list[dict]:
+        return _select_all(lambda: (
+            sb.table("userwords").select("word_id,status,words!inner(root,language)")
+            .eq("user_id", user_id).eq("words.language", language).neq("status", "disabled")
+            .order("word_id")))
+
+    with ThreadPoolExecutor(2) as pool:
+        known_future, rows_future = pool.submit(known_ids), pool.submit(words)
+        known_set, rows = known_future.result(), rows_future.result()
+    known = [r["words"]["root"] for r in rows if r["word_id"] in known_set]
     learning = [r["words"]["root"] for r in rows
-                if r["word_id"] not in known_ids and r["status"] == "learning"]
+                if r["word_id"] not in known_set and r["status"] == "learning"]
     return known, learning
 
 
 def word_entries(sb, word_ids: list[int]) -> dict[int, dict]:
-    out: dict[int, dict] = {}
-    for chunk in _chunks(word_ids):
-        rows = (sb.table("words").select("id,root,translation,status")
-                .in_("id", chunk).execute().data)
-        out.update({r["id"]: {"word": r["root"], "translation": r["translation"]}
-                    for r in rows or [] if r.get("status") != "invalid"})
-    return out
+    def read(chunk: list[int]) -> list[dict]:
+        return sb.table("words").select("id,root,translation,status").in_("id", chunk).execute().data or []
+
+    with ThreadPoolExecutor(_PAGES_AT_ONCE) as pool:
+        return {r["id"]: {"word": r["root"], "translation": r["translation"]}
+                for rows in pool.map(read, _chunks(word_ids)) for r in rows if r.get("status") != "invalid"}
 
 
 def _expected(probabilities: dict[str, float]) -> float:
@@ -151,8 +166,13 @@ async def ask(client: httpx.AsyncClient, state: dict, word_ids: list[int]) -> di
     raise last or RuntimeError("Jev did not answer")
 
 
-async def _ask_all(client: httpx.AsyncClient, learner: dict, entries: dict[int, dict]) -> dict[int, float]:
-    """All the words in one request, or in two halves if that is too long."""
+async def _ask_all(client: httpx.AsyncClient, learner: dict, entries: dict[int, dict],
+                   split: bool = True) -> dict[int, float]:
+    """All the words, in a few concurrent requests when there are many (see
+    word_importance.spread), or in two halves if a request is too long."""
+    if split and len(groups := spread(list(entries.items()))) > 1:
+        parts = await asyncio.gather(*(_ask_all(client, learner, dict(group), split=False) for group in groups))
+        return {k: v for part in parts for k, v in part.items()}
     state = {"learner": learner, "rubric": RUBRIC,
              "words": {f"w{i}": entry for i, entry in entries.items()}}
     try:
@@ -162,17 +182,18 @@ async def _ask_all(client: httpx.AsyncClient, learner: dict, entries: dict[int, 
             raise
     items = list(entries.items())
     half = len(items) // 2
-    left, right = await asyncio.gather(_ask_all(client, learner, dict(items[:half])),
-                                       _ask_all(client, learner, dict(items[half:])))
+    left, right = await asyncio.gather(_ask_all(client, learner, dict(items[:half]), split=False),
+                                       _ask_all(client, learner, dict(items[half:]), split=False))
     return {**left, **right}
 
 
 async def rate(sb, user_id: str, language: str, languages: list[str], word_ids: list[int]) -> dict[int, float]:
     """Rate these words for this learner and save the ratings."""
-    entries = await asyncio.to_thread(word_entries, sb, word_ids)
+    entries, (known, learning) = await asyncio.gather(
+        asyncio.to_thread(word_entries, sb, word_ids),
+        asyncio.to_thread(vocabulary, sb, user_id, language))
     if not entries:
         return {}
-    known, learning = await asyncio.to_thread(vocabulary, sb, user_id, language)
     learner = {"learning": LANGUAGES[language], "other_languages": languages,
                "known_words": known, "learning_words": learning}
     async with httpx.AsyncClient(timeout=60, headers={
@@ -214,11 +235,13 @@ async def panel_words(sb, user_id: str, language: str, missing: list[dict], rank
     groups: the words come back as they do for every other account."""
     plain = {"missing_words": with_importance(missing, ranks), "ranking": False, "buckets": False}
     try:
-        languages = await asyncio.to_thread(known_languages, sb, user_id)
+        word_ids = [w["id"] for w in missing]
+        # Asked together: most of the wait is the round trips.
+        languages, scores = await asyncio.gather(
+            asyncio.to_thread(known_languages, sb, user_id),
+            asyncio.to_thread(saved_scores, sb, user_id, word_ids))
         if not languages:
             return plain
-        word_ids = [w["id"] for w in missing]
-        scores = await asyncio.to_thread(saved_scores, sb, user_id, word_ids)
         # Invalid words are never rated (and never listed), so they mustn't keep
         # the panel asking.
         unrated = [w["id"] for w in missing if w["id"] not in scores and w.get("status") != "invalid"]

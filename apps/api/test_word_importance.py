@@ -186,3 +186,25 @@ def test_a_failed_background_ranking_stops_running_and_saves_nothing(monkeypatch
 
     assert asyncio.run(opens()) is False
     assert store.saved == []
+
+
+def test_spread_deals_a_long_list_into_a_few_groups_and_leaves_a_short_one_whole():
+    assert len(word_importance.spread(list(range(10)))) == 1
+    groups = word_importance.spread(list(range(740)))
+    assert len(groups) == word_importance.PARALLEL_REQUESTS
+    assert sorted(x for g in groups for x in g) == list(range(740))
+    assert len(word_importance.spread(list(range(130)))) == 2
+
+
+def test_many_words_go_out_as_concurrent_requests_and_come_back_whole(monkeypatch):
+    sent = []
+
+    async def ask(client, state, asked):
+        sent.append(len(state["words"]))
+        await asyncio.sleep(0)
+        return {key[1:]: [4.0, 3.0] for key in asked if key.startswith("h")}
+
+    monkeypatch.setattr(word_importance, "ask", ask)
+    words = {i: word_importance.Word(f"w{i}") for i in range(300)}
+    ranks = asyncio.run(word_importance._ask_all(None, {}, words))
+    assert len(ranks) == 300 and len(sent) == word_importance.PARALLEL_REQUESTS and sum(sent) == 300

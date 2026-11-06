@@ -57,6 +57,20 @@ URL = "https://openrouter.ai/api/alpha/decisions"
 MODEL = "typesafe/jev-1.13"   # pinned, like video_quality.py
 RUBRIC_VERSION = 1            # bump when a prompt changes; saved ranks are redone
 
+# One request answers its questions largely one after another: about 0.5 s plus
+# 1.8 ms a question, measured 2026-11-05 (1,480 questions: 2.3 s in one request,
+# 1.2 s as four at once, same answers). So a long list goes out as concurrent
+# requests, each with at least MIN_WORDS_PER_REQUEST words so a short list
+# doesn't pay for the split.
+PARALLEL_REQUESTS = 4
+MIN_WORDS_PER_REQUEST = 60
+
+
+def spread(items: list, parts: int = PARALLEL_REQUESTS, minimum: int = MIN_WORDS_PER_REQUEST) -> list[list]:
+    """`items` dealt into at most `parts` groups of at least `minimum` each."""
+    count = max(1, min(parts, len(items) // minimum))
+    return [items[i::count] for i in range(count)]
+
 # The list shows the most important missing words as key words: always
 # MIN_KEY_WORDS if there are that many, then more from the mean of here and
 # general at KEY_FROM, up to MAX_KEY_WORDS. What is left after a learner's known
@@ -165,8 +179,13 @@ async def ask(client: httpx.AsyncClient, state: dict, asked: dict) -> dict[str, 
     raise last or RuntimeError("Jev did not answer")
 
 
-async def _ask_all(client: httpx.AsyncClient, state: dict, words: dict[int, Word]) -> dict[str, list[float]]:
-    """All the words in one request, or in two halves if that is too long."""
+async def _ask_all(client: httpx.AsyncClient, state: dict, words: dict[int, Word],
+                   split: bool = True) -> dict[str, list[float]]:
+    """All the words, in a few concurrent requests when there are many, or in
+    two halves if a request is too long."""
+    if split and len(groups := spread(list(words.items()))) > 1:
+        parts = await asyncio.gather(*(_ask_all(client, state, dict(group), split=False) for group in groups))
+        return {k: v for part in parts for k, v in part.items()}
     described = {f"w{word_id}": word.describe() for word_id, word in words.items()}
     try:
         return await ask(client, {**state, "words": described}, questions(list(words)))
@@ -175,8 +194,8 @@ async def _ask_all(client: httpx.AsyncClient, state: dict, words: dict[int, Word
             raise
     items = list(words.items())
     half = len(items) // 2
-    left, right = await asyncio.gather(_ask_all(client, state, dict(items[:half])),
-                                       _ask_all(client, state, dict(items[half:])))
+    left, right = await asyncio.gather(_ask_all(client, state, dict(items[:half]), split=False),
+                                       _ask_all(client, state, dict(items[half:]), split=False))
     return {**left, **right}
 
 
