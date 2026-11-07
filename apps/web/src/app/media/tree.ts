@@ -102,6 +102,16 @@ export function findNode(tree: LayoutNode[], key: string): LayoutNode | null {
   return null;
 }
 
+/** The folder `key` sits directly in, or null at the top level. */
+export function parentOf(tree: LayoutNode[], key: string, parent: FolderNode | null = null): FolderNode | null | undefined {
+  for (const node of tree) {
+    if (keyOf(node) === key) return parent;
+    const found = node.type === 'folder' ? parentOf(node.children, key, node) : undefined;
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 /** Swaps `key` with its neighbour among its siblings (-1 up, 1 down). */
 export function shift(tree: LayoutNode[], key: string, by: -1 | 1): LayoutNode[] {
   const walk = (nodes: LayoutNode[]): LayoutNode[] => {

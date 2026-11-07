@@ -5,14 +5,16 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { AnimatePresence } from 'framer-motion';
 import { DndContext, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent, DragMoveEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import type { SortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { LucideIcon } from 'lucide-react';
 import { FileText, Film, Folder, FolderOpen, GripVertical, MoreHorizontal, Music, Newspaper, Tv } from 'lucide-react';
 import type { ImportedMediaSummary, MediaKind } from './api';
 import { MenuButton, MenuPanel, useDismiss } from './menu';
 import {
-  MAX_FOLDER_DEPTH, addFolder, contains, countItems, drop, findNode, flatten, keyOf, listFolders, moveNode, moveToRoot, newFolderId, project, removeFolder, shift, updateFolder,
+  MAX_FOLDER_DEPTH, addFolder, contains, countItems, drop, findNode, flatten, keyOf, listFolders, moveNode, moveToRoot, newFolderId, parentOf, project, removeFolder, shift, updateFolder,
 } from './tree';
 import type { FlatRow, FolderNode, LayoutNode } from './tree';
 
@@ -54,6 +56,10 @@ const detailsOf = (media: ImportedMediaSummary) => {
 // sideways moves it one level in or out.
 const INDENT = 44;
 
+// Held over the middle half of a folder's row, a dragged row goes into that
+// folder; nearer its top or bottom edge it lands beside it.
+const INTO_BAND = 0.25;
+
 interface TreeProps {
   tree: LayoutNode[];
   media: Map<string, ImportedMediaSummary>;
@@ -69,6 +75,8 @@ export default function LibraryTree({ tree, media, onChange, renaming, onRename 
   const [active, setActive] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [offsetX, setOffsetX] = useState(0);
+  // The folder the dragged row is held over, which it drops straight into.
+  const [target, setTarget] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   // The row that just moved glows for a moment, so the eye can follow it.
   const [moved, setMoved] = useState<string | null>(null);
@@ -85,7 +93,12 @@ export default function LibraryTree({ tree, media, onChange, renaming, onRename 
     () => flatten(tree, true, active ?? undefined).filter((row) => row.node.type === 'folder' || media.has(row.node.id)),
     [tree, active, media],
   );
-  const landing = active && over ? project(rows, active, over, offsetX, INDENT) : null;
+  const targetRow = target ? rows.find((row) => row.key === target) : undefined;
+  const landing = !active || !over ? null
+    : targetRow ? { depth: targetRow.depth + 1, parent: targetRow.key, after: targetRow.key }
+      : project(rows, active, over, offsetX, INDENT);
+  // While a folder takes the row, the other rows stay where they are.
+  const strategy = useCallback<SortingStrategy>((args) => target ? null : verticalListSortingStrategy(args), [target]);
 
   // Touch drags start after a short hold, so a swipe still scrolls the page.
   const sensors = useSensors(
@@ -100,16 +113,27 @@ export default function LibraryTree({ tree, media, onChange, renaming, onRename 
   };
 
   const reset = () => {
-    setActive(null); setOver(null); setOffsetX(0);
+    setActive(null); setOver(null); setOffsetX(0); setTarget(null);
     setTimeout(() => { dragged.current = false; });
   };
 
-  const end = () => {
+  // A quick drop can end the drag before the last move has re-rendered, so
+  // the folder under it is worked out again from the drop itself.
+  const end = (event: DragEndEvent) => {
+    const into = targetOf(event) ?? target;
+    if (active && into) {
+      commit(moveNode(tree, active, into, 'inside'), active);
+      reset();
+      return;
+    }
     const at = rows.findIndex((row) => row.key === active);
     const unchanged = landing && landing.parent === rows[at]?.parent && landing.after === (rows[at - 1]?.key ?? null);
     if (active && landing && !unchanged) commit(drop(tree, active, landing.after, landing.parent), active);
     reset();
   };
+
+  const targetOf = ({ active: moving, over: hovered }: DragMoveEvent | DragEndEvent) =>
+    folderUnder(tree, String(moving.id), hovered ? String(hovered.id) : null, moving.rect.current.translated, hovered?.rect ?? null);
 
   const ctx: RowContext = { tree, media, commit, renaming, onRename, active, into: landing?.parent ?? null, menu, setMenu, moved };
 
@@ -117,12 +141,12 @@ export default function LibraryTree({ tree, media, onChange, renaming, onRename 
     <DndContext
       sensors={sensors} collisionDetection={closestCenter}
       onDragStart={({ active: start }) => { dragged.current = true; setMenu(null); setActive(String(start.id)); setOver(String(start.id)); }}
-      onDragMove={({ delta }) => setOffsetX(delta.x)}
-      onDragOver={({ over: target }) => setOver(target ? String(target.id) : null)}
+      onDragMove={(event) => { setOffsetX(event.delta.x); setTarget(targetOf(event)); }}
+      onDragOver={({ over: hovered }) => setOver(hovered ? String(hovered.id) : null)}
       onDragEnd={end}
       onDragCancel={reset}
     >
-      <SortableContext items={rows.map((row) => row.key)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={rows.map((row) => row.key)} strategy={strategy}>
         <ul className="border-b border-gray-100" onClickCapture={(event) => { if (dragged.current) { event.preventDefault(); event.stopPropagation(); } }}>
           {rows.map((row) => (
             <SortableRow key={row.key} row={row} depth={row.key === active && landing ? landing.depth : row.depth} ctx={ctx}/>
@@ -131,6 +155,16 @@ export default function LibraryTree({ tree, media, onChange, renaming, onRename 
       </SortableContext>
     </DndContext>
   );
+}
+
+// The folder `over` if the dragged row's middle is held over the middle of
+// its row and the row may go in (a folder can't go into itself or too deep).
+// Rects are where the rows sit before anything moves aside.
+function folderUnder(tree: LayoutNode[], active: string, over: string | null, dragged: { top: number; height: number } | null, rect: { top: number; height: number } | null): string | null {
+  if (!over || over === active || !over.startsWith('folder:') || !dragged || !rect) return null;
+  const offset = dragged.top + dragged.height / 2 - (rect.top + rect.height / 2);
+  if (Math.abs(offset) > rect.height * INTO_BAND) return null;
+  return moveNode(tree, active, over, 'inside') === tree ? null : over;
 }
 
 interface RowContext {
@@ -266,7 +300,7 @@ function RenameInput({ folder, ctx }: { folder: FolderNode; ctx: RowContext }) {
   );
 }
 
-// Up, down and into a folder: the way to rearrange without dragging, on a
+// Up, down, into a folder and out of one: the way to rearrange without dragging, on a
 // phone or from the keyboard.
 function MoveActions({ nodeKey, ctx, close }: { nodeKey: string; ctx: RowContext; close: () => void }) {
   const moving = findNode(ctx.tree, nodeKey);
@@ -274,17 +308,21 @@ function MoveActions({ nodeKey, ctx, close }: { nodeKey: string; ctx: RowContext
   const run = (next: LayoutNode[]) => { close(); ctx.commit(next, nodeKey); };
   const targets = listFolders(ctx.tree).filter(({ folder }) => !(moving.type === 'folder' && contains(moving, keyOf(folder)))
     && moveNode(ctx.tree, nodeKey, keyOf(folder), 'inside') !== ctx.tree);
-  const atRoot = ctx.tree.some((node) => keyOf(node) === nodeKey);
+  const parent = parentOf(ctx.tree, nodeKey);
+  // Out of its folder is one level up, just below the folder; the top level
+  // is listed as well only when that is further up than one level.
+  const deep = !!parent && !!parentOf(ctx.tree, keyOf(parent));
   return (
     <>
       <MenuButton onClick={() => run(shift(ctx.tree, nodeKey, -1))}>Move up</MenuButton>
       <MenuButton onClick={() => run(shift(ctx.tree, nodeKey, 1))}>Move down</MenuButton>
-      {(targets.length > 0 || !atRoot) && (
+      {parent && <MenuButton onClick={() => run(moveNode(ctx.tree, nodeKey, keyOf(parent), 'after'))}>Move out of folder</MenuButton>}
+      {(targets.length > 0 || deep) && (
         <>
           <div className="my-1 h-px bg-gray-100"/>
           <p className="px-2.5 pb-1 pt-1.5 text-xs text-gray-500">Move to</p>
           <div className="max-h-48 overflow-y-auto">
-            {!atRoot && <MenuButton onClick={() => run(moveToRoot(ctx.tree, nodeKey, 'start'))}>Top level</MenuButton>}
+            {deep && <MenuButton onClick={() => run(moveToRoot(ctx.tree, nodeKey, 'start'))}>Top level</MenuButton>}
             {targets.map(({ folder, depth }) => (
               <button key={folder.id} role="menuitem" onClick={() => run(moveNode(ctx.tree, nodeKey, keyOf(folder), 'inside'))}
                 className="block w-full truncate rounded-md py-1.5 pr-2.5 text-left text-sm text-gray-700 hover:bg-gray-100" style={{ paddingLeft: 10 + depth * 12 }}>

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { MAX_FOLDER_DEPTH, addFolder, drop, flatten, moveNode, moveToRoot, project, reconcile, removeFolder, shift } from './tree';
+import { MAX_FOLDER_DEPTH, addFolder, drop, flatten, moveNode, moveToRoot, parentOf, project, reconcile, removeFolder, shift } from './tree';
 import type { FolderNode, LayoutNode } from './tree';
 
 const item = (id: string): LayoutNode => ({ type: 'item', id });
@@ -73,4 +73,14 @@ it('keeps folders within the nesting limit when dragging', () => {
   expect(project(rows, 'folder:x', `folder:f${MAX_FOLDER_DEPTH - 2}`, 0, 44)).toBeNull();
   // With nothing below forcing the depth, it settles where it fits.
   expect(project(rows, 'folder:x', 'folder:f3', 500, 44)).toMatchObject({ depth: MAX_FOLDER_DEPTH - 2, parent: 'folder:f1' });
+});
+
+it('finds the folder a node sits in', () => {
+  const tree = [item('a'), folder('f', item('b'), folder('g', item('c')))];
+  expect(parentOf(tree, 'item:a')).toBeNull();
+  expect(parentOf(tree, 'item:b')?.id).toBe('f');
+  expect(parentOf(tree, 'item:c')?.id).toBe('g');
+  expect(parentOf(tree, 'item:missing')).toBeUndefined();
+  // Moving out of a folder puts the row just below it, one level up.
+  expect(moveNode(tree, 'item:c', 'folder:g', 'after')).toEqual([item('a'), folder('f', item('b'), folder('g'), item('c'))]);
 });

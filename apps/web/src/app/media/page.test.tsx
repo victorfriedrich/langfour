@@ -105,6 +105,24 @@ it('moves an item into a folder from its menu and saves the layout', async () =>
   ]);
 });
 
+it('moves an item out of its folder from its menu, to just below the folder', async () => {
+  vi.mocked(getLibrary).mockResolvedValueOnce({ media: library, layout: songs });
+  render(<MediaPage />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Actions for Canción de prueba' }));
+  const menu = screen.getByRole('menu');
+  // One level up is the top level here, so it isn't offered twice.
+  expect(within(menu).queryByRole('menuitem', { name: 'Top level' })).not.toBeInTheDocument();
+  vi.useFakeTimers();
+  fireEvent.click(within(menu).getByRole('menuitem', { name: 'Move out of folder' }));
+  await act(async () => { vi.runAllTimers(); });
+  expect(saveLayout).toHaveBeenLastCalledWith(expect.anything(), 'es', [
+    { type: 'item', id: 'ep' },
+    { type: 'item', id: 'art' },
+    { ...songs[0], children: [] },
+    { type: 'item', id: 'song' },
+  ]);
+});
+
 it('names a new folder in place', async () => {
   render(<MediaPage />);
   fireEvent.click(await screen.findByRole('button', { name: 'New folder' }));
