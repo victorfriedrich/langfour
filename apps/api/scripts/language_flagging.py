@@ -21,8 +21,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
 
+from ai_gateway import chat
 from languages import require_code
-from llm_client import client
 from models import MODEL_FAST
 from supabase_client import supabase
 from utils import parse_chatgpt_output
@@ -71,7 +71,8 @@ def verify_language(words: list[dict], language: str) -> list[str]:
     **Terms to check**  
     {chr(10).join(word_entries)}
     """
-    response = client.chat.completions.create(
+    response = chat(
+        "script.language_flagging",
         model=MODEL_FAST,
         messages=[
             {"role": "system", "content": system_msg},

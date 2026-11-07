@@ -15,8 +15,9 @@ from typing import Any
 
 import httpx
 
-URL = "https://openrouter.ai/api/v1/chat/completions"
-CREDITS_URL = "https://openrouter.ai/api/v1/credits"
+from ai_gateway import CHAT_URL, CREDITS_URL, http_client
+
+URL = CHAT_URL
 MODEL = os.getenv("VIDEO_LOOKS_MODEL", "google/gemini-2.5-flash")
 THUMBNAIL_URL = "https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
 
@@ -53,8 +54,7 @@ class OutOfCredit(Exception):
 
 
 def client() -> httpx.Client:
-    return httpx.Client(timeout=90, headers={
-        "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"})
+    return http_client("video.looks", timeout=90)
 
 
 def credits_left(http: httpx.Client) -> float:

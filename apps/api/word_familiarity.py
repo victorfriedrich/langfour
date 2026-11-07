@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
@@ -35,6 +34,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ai_gateway import async_http_client
 from auth import get_current_user
 from languages import LANGUAGES
 from supabase_client import supabase
@@ -196,8 +196,7 @@ async def rate(sb, user_id: str, language: str, languages: list[str], word_ids: 
         return {}
     learner = {"learning": LANGUAGES[language], "other_languages": languages,
                "known_words": known, "learning_words": learning}
-    async with httpx.AsyncClient(timeout=60, headers={
-            "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}) as client:
+    async with async_http_client("words.familiarity", timeout=60) as client:
         scores = await _ask_all(client, learner, entries)
 
     def save() -> None:

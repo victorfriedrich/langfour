@@ -50,6 +50,9 @@ Nothing secret can live in either.
 | `LLM_MODEL_SMART`, `LLM_MODEL_FAST` | any OpenRouter slug | defaults `deepseek/deepseek-v4-pro` and `deepseek/deepseek-v4-flash` |
 | `DEEPINFRA_API_KEY` | [deepinfra.com/dash/api_keys](https://deepinfra.com/dash/api_keys) | transcription only; the API boots without it |
 | `LLM_MODEL_TRANSCRIBE` | | default `openai/whisper-large-v3-turbo` |
+| `AI_SPEND_SINK` | | `supabase` (default) adds per-feature AI spend to the `ai_spend` table every minute; `log` only logs it. See `ai_gateway.py` |
+| `AI_SPEND_FLUSH_SECONDS` | | default `60`; `0` never flushes (tests) |
+| `AI_SPEND_ORIGIN` | | the process name in `ai_spend.origin`; defaults to the script's file name (`uvicorn` on Koyeb) |
 | `ALLOWED_ORIGINS` | | comma-separated CORS allowlist; default is localhost and `app.langfour.com` |
 | `EXTENSION_ID` | `chrome://extensions` with Developer mode on | adds `chrome-extension://<id>` to the allowlist. `manifest.json` pins the extension `key`, so the ID is the same on every machine |
 | `YOUTUBE_API_KEY` | Google Cloud Console → enable *YouTube Data API v3* → Credentials | the discovery pipeline only, never read by the API. When that API returns 403 it echoes the full request URL, key included, so the pipeline redacts it before anything is stored |

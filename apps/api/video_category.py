@@ -17,13 +17,14 @@ Howto & Style.
 
 from __future__ import annotations
 
-import os
 import time
 from typing import Any
 
 import httpx
 
-URL = "https://openrouter.ai/api/alpha/decisions"
+from ai_gateway import JEV_URL, http_client
+
+URL = JEV_URL
 MODEL = "typesafe/jev-1.13"      # pinned, like video_quality.py
 
 TRANSCRIPT_WORDS = 120
@@ -83,8 +84,7 @@ def state(processed: dict) -> dict[str, Any]:
 
 
 def client() -> httpx.Client:
-    return httpx.Client(timeout=60, headers={
-        "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"})
+    return http_client("video.category", timeout=60)
 
 
 def classify(http: httpx.Client, processed: dict, attempts: int = 5) -> str:

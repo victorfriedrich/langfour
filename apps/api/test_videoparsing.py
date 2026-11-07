@@ -489,10 +489,7 @@ def test_the_caption_retry_after_a_block_takes_a_new_ip(captions):
 def test_whisper_accepts_every_shape_the_transcription_reply_takes(monkeypatch, tmp_path, reply, expected):
     audio = tmp_path / "piece.m4a"
     audio.write_bytes(b"")
-    client = type("C", (), {})()
-    client.audio = type("A", (), {})()
-    client.audio.transcriptions = type("T", (), {"create": staticmethod(lambda **k: reply)})()
-    monkeypatch.setattr(vp, "transcription_client", lambda: client)
+    monkeypatch.setattr(vp, "ai_transcribe", lambda source, **k: reply)
     assert vp.whisper(str(audio), "es") == expected
 
 

@@ -26,15 +26,16 @@ languages are skipped, not scored, and therefore never hidden.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import Any
 
 import httpx
 
+from ai_gateway import JEV_URL, http_client
+
 log = logging.getLogger(__name__)
 
-URL = "https://openrouter.ai/api/alpha/decisions"
+URL = JEV_URL
 MODEL = "typesafe/jev-1.13"      # pinned: the thresholds were measured against it
 RUBRIC_VERSION = 1               # bump when a prompt changes; old rows are rescored
 LANGUAGES = ("es",)
@@ -150,8 +151,7 @@ def transcript_words(processed: dict) -> list[str]:
 
 
 def client() -> httpx.Client:
-    return httpx.Client(timeout=60, headers={
-        "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"})
+    return http_client("video.quality", timeout=60)
 
 
 def ask(http: httpx.Client, title: str, words: list[str], attempts: int = 5) -> dict[str, Any]:

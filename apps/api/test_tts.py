@@ -1,5 +1,6 @@
 """/api/tts: short texts only, signed-in only, each text paid for once."""
 import base64
+import json
 import os
 from types import SimpleNamespace
 
@@ -24,18 +25,11 @@ AUTH = {"authorization": "Bearer ordinary-session"}
 
 
 @pytest.fixture
-def calls(monkeypatch):
+def calls(monkeypatch, ai_upstream):
     monkeypatch.setattr(auth, "verify_token", lambda t: SimpleNamespace(id="user-1", is_anonymous=False))
     monkeypatch.setattr(tts, "_cache", type(tts._cache)())
     monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
-    sent = []
-
-    def fake_post(url, **kwargs):
-        sent.append((url, kwargs))
-        return SimpleNamespace(ok=True, status_code=200, content=b"mp3-bytes")
-
-    monkeypatch.setattr(tts.requests, "post", fake_post)
-    return sent
+    return ai_upstream.requests
 
 
 client = TestClient(app)
@@ -47,11 +41,11 @@ def test_speaks_a_word_once_and_then_from_cache(calls):
         assert response.status_code == 200
         assert base64.b64decode(response.json()["audio"]) == b"mp3-bytes"
     assert len(calls) == 1
-    url, kwargs = calls[0]
-    assert url.endswith(f"/{tts.DEFAULT_VOICE_ID}")
-    assert kwargs["json"]["text"] == "caía"
-    assert kwargs["json"]["language_code"] == "es"
-    assert kwargs["headers"]["xi-api-key"] == "el-test"
+    sent = json.loads(calls[0].content)
+    assert calls[0].url.path.endswith(f"/{tts.DEFAULT_VOICE_ID}")
+    assert sent["text"] == "caía"
+    assert sent["language_code"] == "es"
+    assert calls[0].headers["xi-api-key"] == "el-test"
 
 
 def test_refuses_long_text_and_unknown_language(calls):

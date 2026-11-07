@@ -1066,7 +1066,7 @@ def verdict_for(name: str, titles: Sequence[str], lang: str) -> dict[str, float]
     """One MODEL_FAST call, imported lazily so harvest/enrich need no LLM key."""
     from pydantic import BaseModel
 
-    from llm_client import parse_structured
+    from ai_gateway import parse_structured
     from models import MODEL_FAST
 
     class ChannelVerdict(BaseModel):
@@ -1074,7 +1074,7 @@ def verdict_for(name: str, titles: Sequence[str], lang: str) -> dict[str, float]
         intellectuality: float
 
     prompt = CLASSIFY_PROMPT.format(name=name, lang=lang, titles="\n".join(titles))
-    v = parse_structured(model=MODEL_FAST, messages=[{"role": "user", "content": prompt}],
+    v = parse_structured("pipeline.channel_verdict", model=MODEL_FAST, messages=[{"role": "user", "content": prompt}],
                          schema_model=ChannelVerdict, reasoning={"enabled": False},
                          max_tokens=800, temperature=0.2)
     def clamp(x):
@@ -1129,7 +1129,6 @@ def classify(db: sqlite3.Connection, lang: str, g: Gates, limit: int,
 # learner's time (worth), and would anyone watch it for fun (appeal) -- and
 # select() needs a video to be decent on engagement and on both.
 
-JUDGE_URL = "https://openrouter.ai/api/alpha/decisions"
 JUDGE_MODEL = "typesafe/jev-1.13"      # pinned, like video_quality.py
 JUDGE_WORKERS = 16
 JUDGE_TITLES = 25                      # most-viewed titles shown per channel
@@ -1207,11 +1206,12 @@ def judge_questions(lang: str) -> dict[str, dict]:
 def judgment_for(http, state: dict, lang: str, attempts: int = 5) -> dict[str, Any]:
     """One Decisions API request: expected worth and appeal (1-10), p_clickbait,
     and the likeliest genre. Retries transient errors like video_quality.ask."""
+    from ai_gateway import JEV_URL
     questions = judge_questions(lang)
     last: Exception | None = None
     for attempt in range(attempts):
         try:
-            r = http.post(JUDGE_URL, json={"model": JUDGE_MODEL, "state": state,
+            r = http.post(JEV_URL, json={"model": JUDGE_MODEL, "state": state,
                                            "questions": questions})
             if r.status_code == 200:
                 answers = r.json().get("answers", {})
@@ -1237,7 +1237,6 @@ def judge(db: sqlite3.Connection, lang: str, g: Gates, limit: int,
     """Jev's worth and appeal for every channel select() would take, `workers`
     requests in flight. Like classify: reads and writes stay on this thread,
     one commit per channel, so a stopped run resumes where it left off."""
-    import httpx
     from dotenv import load_dotenv
     load_dotenv(API_ROOT / ".env")         # as YouTube() does: cwd may be anywhere
 
@@ -1254,8 +1253,8 @@ def judge(db: sqlite3.Connection, lang: str, g: Gates, limit: int,
         states[r["channel_id"]] = {"channel": r["title"] or r["channel_id"],
                                    "description": (description or "")[:400], "titles": titles}
     done = failed = 0
-    headers = {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}
-    with httpx.Client(timeout=60, headers=headers) as http, \
+    from ai_gateway import http_client  # lazy: harvest/enrich need no LLM key
+    with http_client("pipeline.channel_judge", timeout=60) as http, \
             ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(judgment_for, http, state, lang): cid
                    for cid, state in states.items()}
