@@ -2,7 +2,7 @@ import logging
 
 from dotenv import load_dotenv
 
-from llm_client import client
+from ai_gateway import chat
 from models import MODEL_FAST
 
 load_dotenv()
@@ -449,7 +449,8 @@ def get_or_create_translation(word_id: int, language: str) -> str:
         )
 
         try:
-            response = client.chat.completions.create(
+            response = chat(
+                "translate_word",
                 model=MODEL_FAST,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=50,

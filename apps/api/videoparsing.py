@@ -12,8 +12,8 @@ import requests
 from dotenv import load_dotenv
 from moviepy.editor import VideoFileClip
 
+from ai_gateway import transcribe as ai_transcribe
 from languages import require_code
-from llm_client import transcription_client
 from models import MODEL_TRANSCRIBE
 from nlp_processing import group_text, parse
 from paths import processed_file
@@ -229,8 +229,8 @@ def whisper(audio_file: str, language: str) -> str:
     for attempt in range(3):
         try:
             with open(audio_file, "rb") as fh:
-                result = transcription_client().audio.transcriptions.create(
-                    model=MODEL_TRANSCRIBE, file=fh, response_format="text", language=language)
+                result = ai_transcribe(
+                    "video.transcribe", model=MODEL_TRANSCRIBE, file=fh, response_format="text", language=language)
             # A bare string on OpenAI; DeepInfra may return an object instead,
             # and a piece that is only a number ("15", in a video counting to
             # 100) comes back parsed as an int.

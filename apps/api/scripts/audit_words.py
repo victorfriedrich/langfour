@@ -54,9 +54,10 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 load_dotenv()
 
+from ai_gateway import JEV_URL, async_http_client
 from languages import require_code
 
-URL = "https://openrouter.ai/api/alpha/decisions"
+URL = JEV_URL
 MODEL = "typesafe/jev-1.13"      # pinned: the thresholds were measured against it
 
 VALID_ABOVE = 0.7
@@ -285,8 +286,7 @@ async def audit(entries: list[dict], language: str, parallel: int, on_batch) -> 
     done = failed = 0
     cost = 0.0
     limits = httpx.Limits(max_connections=parallel, max_keepalive_connections=parallel)
-    headers = {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}
-    async with httpx.AsyncClient(timeout=120, limits=limits, headers=headers) as client:
+    async with async_http_client("script.audit_words", timeout=120, limits=limits) as client:
         async def one(e: dict):
             nonlocal done, failed, cost
             forms = [f["form"] for f in e["forms"]]
@@ -331,8 +331,7 @@ async def resolve_flagged(sb, language: str, parallel: int, dry_run: bool) -> No
     totals: dict[str, int] = {}
     pending: list[tuple[dict, list]] = []
     limits = httpx.Limits(max_connections=parallel, max_keepalive_connections=parallel)
-    headers = {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}
-    async with httpx.AsyncClient(timeout=120, limits=limits, headers=headers) as client:
+    async with async_http_client("script.audit_words", timeout=120, limits=limits) as client:
         async def one(w: dict):
             async with sem:
                 try:

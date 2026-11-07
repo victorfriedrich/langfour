@@ -33,18 +33,18 @@ def _tone_wav(path: str, seconds: float = 1.0, rate: int = 16000, hz: float = 44
 
 def main() -> int:
     try:
-        from llm_client import DEEPINFRA_BASE_URL, transcription_client
+        from ai_gateway import DEEPINFRA_BASE_URL, check_transcription_configured, transcribe
         from models import MODEL_TRANSCRIBE
     except RuntimeError as exc:
         print(f"FAIL  {exc}")
         return 1
 
     try:
-        client = transcription_client()
+        check_transcription_configured()
     except RuntimeError as exc:
         print(f"FAIL  {exc}")
         return 1
-    print(f"OK    client built -> {DEEPINFRA_BASE_URL} (model {MODEL_TRANSCRIBE})")
+    print(f"OK    key present -> {DEEPINFRA_BASE_URL} (model {MODEL_TRANSCRIBE})")
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         path = tmp.name
@@ -52,7 +52,8 @@ def main() -> int:
         _tone_wav(path)
         print(f"OK    generated {os.path.getsize(path)} byte probe wav")
         with open(path, "rb") as fh:
-            result = client.audio.transcriptions.create(
+            result = transcribe(
+                "script.check_transcribe",
                 model=MODEL_TRANSCRIBE,
                 file=fh,
             )

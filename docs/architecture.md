@@ -30,7 +30,7 @@ langfour/
 │       ├── recommender.py    document-term matrix, ranking
 │       ├── nlp_processing.py text -> dictionary IDs, LLM-backed dictionary growth
 │       ├── auth.py           deny-by-default bearer-token middleware
-│       ├── llm_client.py     the only place an LLM client is built
+│       ├── ai_gateway.py     the only door to paid AI APIs; logs spend per feature
 │       ├── ytpipeline.py     channel discovery -> selection -> video_queue
 │       ├── ingest.py         drains video_queue into transcripts
 │       ├── corpus_sync.py    streams the corpus from object storage at boot
@@ -169,11 +169,38 @@ origins are now an explicit allowlist.
 
 ## LLM layer
 
-All chat completions go through **OpenRouter** and speech-to-text through
-**DeepInfra**, both via the unmodified `openai` SDK pointed at different base
-URLs. `llm_client.py` is the only place a client is constructed and
-`models.py` the only place a model is named, so switching models is an
-environment change.
+All chat completions and Jev decisions go through **OpenRouter**,
+speech-to-text through **DeepInfra** and word pronunciation through
+**ElevenLabs**. `ai_gateway.py` is the only module that talks to any of them
+and `models.py` the only place a chat model is named, so switching models is
+an environment change.
+
+### AI spend: every call names the feature that pays for it
+
+`ai_gateway.py` hands out the only clients that may reach an AI provider:
+`chat()`, `parse_structured()`, `transcribe()`, and `http_client()` /
+`async_http_client()` for raw endpoints (Jev's Decisions API, vision chat,
+ElevenLabs). Each takes a **source**, a key of `ai_gateway.SOURCES` such as
+`video.quality` or `words.importance`, with one line on what it buys. The
+gateway's transport then
+
+- puts `user=<source>` in every OpenRouter request body, chat and Jev alike,
+  which OpenRouter keeps privately per generation (`external_user`). There is
+  no per-source `HTTP-Referer`: OpenRouter registers an app for each one;
+- reads the `usage.cost` OpenRouter returns, sums calls, tokens, dollars and
+  errors per (hour, process, source, provider, model), and adds the sums to
+  the `ai_spend` table every minute (`sql/ai_spend.sql`), with one INFO log
+  line per flush as the fallback record.
+
+`python apps/api/scripts/ai_spend.py --days 7 --by day,source` reads the table.
+
+Three test layers keep it the only door. `conftest.py` fails any test whose
+code reaches an AI host without the gateway, and points the gateway itself at
+a fake (`ai_upstream`) so no test spends money. `test_ai_gateway.py` drives
+every paid feature against that fake and checks its spend landed under its
+own source, and scans the source tree for AI hosts, AI keys or `openai`
+imports outside the gateway. A new AI feature registers a source and adds a
+line to that test's `FEATURES`.
 
 | Tier | Env | Default | Used for |
 |---|---|---|---|

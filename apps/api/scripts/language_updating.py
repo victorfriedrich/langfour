@@ -18,8 +18,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
 
+from ai_gateway import chat
 from languages import require_code
-from llm_client import client
 from models import MODEL_SMART
 from supabase_client import supabase
 from utils import parse_chatgpt_output
@@ -35,7 +35,8 @@ def get_translations(words: list[dict]) -> list[dict]:
     word_list = [word['root'] for word in words]
     prompt = f"Please provide English equivalents for the following Spanish terms. If a word is offensive or not a valid spanish word, don't include it. For each term, offer 1-3 adequate translations, separated by commas. For nouns, omit the article in the translation. Present the results in a JSON format where the Spanish term is the key and its English equivalent is the value. Terms to translate:\n\n{', '.join(word_list)}"
     print(word_list)
-    response = client.chat.completions.create(
+    response = chat(
+        "script.language_updating",
         model=MODEL_SMART,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=2400,

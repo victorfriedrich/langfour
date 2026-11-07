@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 load_dotenv()
 
-from llm_client import client
+from ai_gateway import chat
 from models import MODEL_SMART
 from supabase_client import supabase
 from utils import parse_chatgpt_output
@@ -43,7 +43,8 @@ def analyze_cognates(words: list[dict]) -> list[dict]:
     Be conservative in your assessment whether a french and english speaker would know the cognate.
     :\n\n{', '.join(word_list)}"""
 
-    response = client.chat.completions.create(
+    response = chat(
+        "script.cognates",
         model=MODEL_SMART,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=1000,
