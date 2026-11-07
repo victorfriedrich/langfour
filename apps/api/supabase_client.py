@@ -26,7 +26,11 @@ import os
 import sys
 
 from dotenv import load_dotenv
-from supabase import Client, create_client
+from gotrue.http_clients import SyncClient as AuthHttpClient
+from postgrest import SyncPostgrestClient
+from postgrest.utils import SyncClient as PostgrestHttpClient
+from supabase import Client
+from supabase._sync.auth_client import SyncSupabaseAuthClient
 
 load_dotenv()
 
@@ -108,6 +112,41 @@ def _verify_key() -> None:
 
 _verify_key()
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# HTTP/1.1, not the HTTP/2 the library defaults to. This one client is shared by
+# every request thread (asyncio.to_thread, sync dependencies), and one endpoint
+# runs several queries at once. httpx keeps a single HTTP/2 connection per host
+# and its sync HTTP/2 code is not safe across threads: concurrent queries break
+# the connection, and every query on it fails with ConnectionTerminated or a
+# KeyError. On Koyeb that was about one word-list request in five (2026-11-07).
+# Over HTTP/1.1 the pool gives each thread its own connection.
+class _Http1Postgrest(SyncPostgrestClient):
+    def create_session(self, base_url, headers, timeout, verify=True):
+        return PostgrestHttpClient(base_url=base_url, headers=headers, timeout=timeout,
+                                   verify=verify, follow_redirects=True, http2=False)
+
+
+class _Http1Client(Client):
+    # Static in the library; it is also called again to rebuild the client
+    # after an auth event, so the override covers that too.
+    @staticmethod
+    def _init_postgrest_client(rest_url, headers, schema, timeout, verify=True):
+        return _Http1Postgrest(rest_url, headers=headers, schema=schema, timeout=timeout, verify=verify)
+
+    @staticmethod
+    def _init_supabase_auth_client(auth_url, client_options, verify=True):
+        return SyncSupabaseAuthClient(
+            url=auth_url,
+            auto_refresh_token=client_options.auto_refresh_token,
+            persist_session=client_options.persist_session,
+            storage=client_options.storage,
+            headers=client_options.headers,
+            flow_type=client_options.flow_type,
+            verify=verify,
+            http_client=AuthHttpClient(verify=verify, follow_redirects=True, http2=False),
+        )
+
+
+supabase: Client = _Http1Client.create(SUPABASE_URL, SUPABASE_KEY)
 
 __all__ = ["SUPABASE_KEY", "SUPABASE_URL", "supabase"]
