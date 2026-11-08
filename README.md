@@ -2,6 +2,8 @@
 
 Langfour turns the content you already watch and read into personalized language practice.
 
+**[langfour.com](https://www.langfour.com)** · [Open the app](https://app.langfour.com)
+
 Its browser extension translates unfamiliar words in place on YouTube, Netflix, Prime Video and any article page, and saves them to your vocabulary. The web app turns that vocabulary into practice and recommends videos you can mostly understand. Your flashcards can live in RemNote, and Claude or ChatGPT can use what you know to talk and teach at your level.
 
 ![Langfour: find videos tailored to your vocabulary, and add words to flashcards from YouTube, Netflix and news sites](docs/images/overview.png)
@@ -22,9 +24,9 @@ Deeper reading: **[Architecture](docs/architecture.md)** · **[Configuration](do
 
 ## Why Langfour?
 
-Learners are stuck choosing between authentic content that is too hard and graded material that is not interesting. Research on extensive reading puts the sweet spot around 95% known words, but nothing tells you which video that is.
+Learners choose between native content that is too hard and graded material that isn't interesting. Once you know about 95% of the words, you can follow a video without stopping (van Zeeland & Schmitt, 2013). Langfour is built around that number: it shows how much of each video you already understand and finds the words that would raise it most.
 
-Langfour tracks your vocabulary as dictionary root forms rather than raw strings, marks and translates unfamiliar words while you browse, finds videos at your level, and carries what you save into practice.
+Those are usually not the most common words of the language but the ones a channel keeps using. 30 words from a channel you watch help as much as hundreds of everyday words.
 
 ## What it does
 
@@ -94,6 +96,8 @@ Full walkthrough in **[docs/architecture.md](docs/architecture.md)**.
 **The AI chat connector serves data and the user's assistant does the thinking.** The MCP server returns vocabulary, grammar progress and the rubrics needed to judge answers consistently, and records the results the assistant reports. It runs no model of its own.
 
 **Recommendations count words heard.** Each language is a sparse matrix of transcripts by dictionary words, and ranking every video for a user is one matrix-vector product. Each cell holds how often a word is said, so a video's score is the share of what you would hear that you already know. Cells used to be 1 or 0, which counted a word said once the same as one said fifty times and made long videos look harder than they are. → [details](docs/architecture.md#comprehension-ranked-recommendations)
+
+**Vocabulary is tracked as dictionary roots, and the dictionary grows itself.** "hablo", "hablas" and "hablé" count as one known word. A word the dictionary doesn't have yet is checked by a model once, reduced to its root, given its inflections and saved, so every later text and user finds it in the cache. → [details](docs/architecture.md#from-text-to-dictionary-ids)
 
 ## Running it locally
 
