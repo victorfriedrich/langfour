@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
-"""Add row-aligned video titles, channel names and lengths to an existing
-matrix manifest (recommender.Recommender._cached_details reads the last two)."""
+"""Write row-aligned categories, video titles, channel names and lengths into
+an existing matrix manifest (recommender.Recommender._cached_details reads the
+last two).
+
+Categories are rewritten too because the API takes them from this manifest,
+not from the transcript files, whenever the manifest's filenames still match.
+scripts/highleveltags.py changes only the files, so without this a relabelled
+corpus was packed with the old labels beside it."""
 
 import json
 import sys
@@ -26,9 +32,11 @@ def build(language_dir: Path) -> None:
         raise SystemExit(f"{manifest_path} is not a counts matrix; rebuild it before packing.")
     filenames = manifest["filenames"]
 
-    titles, creators, lengths = [], [], []
+    categories, titles, creators, lengths = [], [], [], []
     for filename in filenames:
         data = json.loads((language_dir / filename).read_text(encoding="utf-8"))
+        # As file_manager.load_documents.
+        categories.append(data.get("category", "Unknown"))
         title = data.get("title", "")
         titles.append(title if isinstance(title, str) else "")
         # As file_manager.video_details.
@@ -36,6 +44,7 @@ def build(language_dir: Path) -> None:
         creators.append(creator.strip() if isinstance(creator, str) else "")
         lengths.append(int(length) if isinstance(length, (int, float)) and length > 0 else None)
 
+    manifest["categories"] = categories
     manifest["titles"] = titles
     manifest["creators"] = creators
     manifest["lengths"] = lengths

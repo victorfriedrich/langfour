@@ -29,6 +29,26 @@ def test_build_adds_titles_to_legacy_manifest(tmp_path):
     assert manifest["filenames"] == filenames
 
 
+def test_build_takes_categories_from_the_files(tmp_path):
+    # Relabelled with highleveltags.py after the matrix was built: the API
+    # reads the manifest's categories, so they must follow the files.
+    (tmp_path / "eating_processed.json").write_text(
+        json.dumps({"title": "PROBANDO DULCES", "category": "Other"}), encoding="utf-8")
+    (tmp_path / "new_processed.json").write_text(json.dumps({"title": "Nueva"}), encoding="utf-8")
+    manifest_path = tmp_path / "document_term_counts.npz.meta.json"
+    manifest_path.write_text(json.dumps({
+        "filenames": ["eating_processed.json", "new_processed.json"],
+        "categories": ["Cooking", "Cooking"],
+        "titles": ["", ""],
+        "max_word_id": 7,
+        "weights": "counts",
+    }), encoding="utf-8")
+
+    build(tmp_path)
+
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["categories"] == ["Other", "Unknown"]
+
+
 def test_packing_refuses_a_corpus_without_the_counts_matrix(tmp_path):
     # Only the binary matrix from before counts: every boot would rebuild.
     (tmp_path / "document_term_matrix.npz.meta.json").write_text(

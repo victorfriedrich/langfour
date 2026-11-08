@@ -12,6 +12,13 @@ not a one-time backfill. The category itself comes from Jev (video_category.py).
 By default it only fills in files that have no category, so it is cheap to re-run
 after an ingest. Pass --redo to also revisit the verdicts worth a second attempt,
 or --all to classify every file again after a change to video_category.py.
+
+Production only sees the new labels once the corpus is packed and uploaded from
+this disk (scripts/pack_corpus.sh, then scripts/upload_corpus.sh) and the API
+restarts. Pack from the data dir this ran on: worktrees keep their own corpus
+copies, and on 2026-11-04 one that was never relabelled was packed and
+uploaded, so the PR that took eating videos out of Cooking never reached
+the Videos page.
 """
 import json
 import os
