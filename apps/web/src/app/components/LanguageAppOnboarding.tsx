@@ -250,11 +250,15 @@ const LanguageAppOnboarding: React.FC<LanguageAppOnboardingProps> = ({
   
       {/* Overlay footer */}
       {(currentStep === 1 || currentStep === 2) && !isComplete && (
-        <div className="absolute bottom-4 text-sm text-gray-600 z-20">
+        <div className="absolute bottom-4 text-center text-sm text-gray-600 z-20">
           Already have an account?{' '}
           <a href="/login" className="text-indigo-500 font-semibold hover:underline">
             Sign in
           </a>
+          <div className="mt-1 flex justify-center gap-3 text-xs text-gray-500">
+            <a href="https://www.langfour.com/privacy" className="hover:text-gray-800">Privacy</a>
+            <a href="https://www.langfour.com/imprint" className="hover:text-gray-800">Imprint</a>
+          </div>
         </div>
       )}
     </div>

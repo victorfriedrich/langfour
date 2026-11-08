@@ -275,6 +275,10 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
                       <LogOutIcon size={14} />
                       <span>Log out</span>
                     </button>
+                    <div className="flex items-center gap-3 border-t border-gray-100 px-2 pt-2 text-xs text-gray-500">
+                      <a href="https://www.langfour.com/privacy" className="hover:text-gray-800">Privacy</a>
+                      <a href="https://www.langfour.com/imprint" className="hover:text-gray-800">Imprint</a>
+                    </div>
                   </div>
                 </div>
               </>

@@ -140,6 +140,10 @@ function Login() {
               </button>
             </div>
           )}
+          <div className="flex justify-center gap-3 text-xs text-gray-500">
+            <a href="https://www.langfour.com/privacy" className="hover:text-gray-800">Privacy</a>
+            <a href="https://www.langfour.com/imprint" className="hover:text-gray-800">Imprint</a>
+          </div>
         </div>
       </div>
     </div>
