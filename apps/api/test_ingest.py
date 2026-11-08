@@ -10,7 +10,8 @@ import ingest
 from conftest import FakeSupabase
 from conftest import queued as pending
 
-real_score = ingest.score     # the autouse fixture below replaces ingest.score
+real_score = ingest.score     # the autouse fixtures below replace ingest.score
+real_label = ingest.label     # and ingest.label
 
 
 @pytest.fixture(autouse=True)
@@ -21,6 +22,43 @@ def scored(monkeypatch):
     monkeypatch.setattr(video_quality, "client", lambda: Mock())
     monkeypatch.setattr(ingest, "score", lambda sb, http, vid, lang: calls.append((vid, lang)))
     return calls
+
+
+@pytest.fixture(autouse=True)
+def labelled(monkeypatch):
+    """Record what process() hands to the labeller instead of calling Jev."""
+    import video_category
+    calls = []
+    monkeypatch.setattr(video_category, "client", lambda: Mock())
+    monkeypatch.setattr(ingest, "label", lambda http, vid, lang: calls.append((vid, lang)))
+    return calls
+
+
+def test_label_sets_a_missing_topic_and_keeps_an_existing_one(corpus, monkeypatch):
+    import video_category
+    monkeypatch.setattr(video_category, "classify", lambda http, processed: "Cooking")
+    (corpus / "new_processed.json").write_text(json.dumps({"title": "Tortilla de patatas"}))
+    (corpus / "old_processed.json").write_text(json.dumps({"title": "Mukbang", "category": "Other"}))
+
+    real_label(Mock(), "new", "es")
+    real_label(Mock(), "old", "es")
+
+    assert json.loads((corpus / "new_processed.json").read_text())["category"] == "Cooking"
+    assert json.loads((corpus / "old_processed.json").read_text())["category"] == "Other"
+    assert not list(corpus.glob("*.tmp"))
+
+
+def test_a_labelling_failure_never_fails_the_video(corpus, monkeypatch, capsys):
+    import video_category
+    (corpus / "a_processed.json").write_text(json.dumps({"title": "t"}))
+
+    def boom(*_args):
+        raise RuntimeError("Jev HTTP 402")
+
+    monkeypatch.setattr(video_category, "classify", boom)
+    real_label(Mock(), "a", "es")
+    assert "not labelled: RuntimeError: Jev HTTP 402" in capsys.readouterr().out
+    assert json.loads((corpus / "a_processed.json").read_text()) == {"title": "t"}
 
 
 def test_run_scores_finished_transcripts_only(corpus, monkeypatch, scored):
@@ -288,7 +326,8 @@ def test_a_videos_own_failure_is_not_an_outage():
     assert ingest.outage_of(None) is None
 
 
-def test_publish_runs_before_done_and_its_failure_hands_the_row_back(corpus, monkeypatch, scored):
+def test_publish_runs_before_done_and_its_failure_hands_the_row_back(corpus, monkeypatch, scored,
+                                                                     labelled):
     def transcribe(vid, lang, *_):
         (corpus / f"{vid}_processed.json").write_text("{}")
         return "done", None
@@ -297,9 +336,10 @@ def test_publish_runs_before_done_and_its_failure_hands_the_row_back(corpus, mon
     published = []
     sb = FakeSupabase([pending("a"), pending("b")])
     row = ingest.claim(sb, "es", 1)[0]
+    # Labelled before publishing, so the uploaded copy has its topic.
     assert ingest.process(sb, row, "es", ingest._Scorer(),
-                          publish=lambda lang, vid: published.append(vid)) == "done"
-    assert published == ["a"] and sb.row("a")["status"] == "done"
+                          publish=lambda lang, vid: published.append((vid, list(labelled)))) == "done"
+    assert published == [("a", [("a", "es")])] and sb.row("a")["status"] == "done"
 
     def down(lang, vid):
         raise ConnectionError("r2 unreachable")

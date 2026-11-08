@@ -3,11 +3,11 @@
 
     python3 scripts/highleveltags.py <language> [--redo | --all]
 
-This is the only writer of the `category` field. videoparsing.py stores raw
-`tags` at ingest but no category, and file_manager.py reads `category` to build
-the category list, falling back to "Unknown" -- so a freshly ingested video has
-no category until this runs. It is a pipeline stage that was never automated,
-not a one-time backfill. The category itself comes from Jev (video_category.py).
+Since 2026-11-09 ingest.py labels each video as it finishes (ingest.label),
+so this is for the rest: videos whose label failed at ingest, transcripts made
+outside ingest.py, and relabelling after a change to the definitions.
+file_manager.py reads `category` to build the category list, falling back to
+"Unknown". The category itself comes from Jev (video_category.py).
 
 By default it only fills in files that have no category, so it is cheap to re-run
 after an ingest. Pass --redo to also revisit the verdicts worth a second attempt,
