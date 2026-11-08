@@ -85,7 +85,7 @@ Full walkthrough in **[docs/architecture.md](docs/architecture.md)**.
 
 ## Design decisions
 
-**Channels are found through Common Crawl.** The crawl's URL index is sorted, so the pipeline binary-searches it with HTTP range requests and downloads only the blocks that list YouTube channels. About 40 monthly crawls gave over 700,000 channel IDs without touching the YouTube API. Each later stage costs more than the one before and runs only on channels that passed the cheaper ones: about 17,000 had their uploads sampled, and 2,400 were judged by a language model. → [details](docs/architecture.md#finding-videos-worth-transcribing)
+**Channels are found through Common Crawl.** The crawl's URL index is sorted, so the pipeline binary-searches it with HTTP range requests and downloads only the blocks that list YouTube channels. About 40 monthly crawls gave over 700,000 channel IDs without touching the YouTube API. → [details](docs/architecture.md#finding-videos-worth-transcribing)
 
 **Popularity and quality are scored separately, then multiplied.** Engagement from the YouTube API (likes and comments per view, views per subscriber) shows whether people watch a channel. A language model judges whether it is worth a learner's time and whether anyone would watch it for fun. Each signal is ranked as a percentile and they are combined with a weighted geometric mean, so popular junk sinks on worth and worthy lectures sink on appeal.
 
@@ -93,11 +93,7 @@ Full walkthrough in **[docs/architecture.md](docs/architecture.md)**.
 
 **The AI chat connector serves data and the user's assistant does the thinking.** The MCP server returns vocabulary, grammar progress and the rubrics needed to judge answers consistently, and records the results the assistant reports. It runs no model of its own.
 
-**Recommendations count words heard.** Each language is a sparse matrix of transcripts by dictionary words, and ranking every video for a user is one matrix-vector product. Cells used to be 1 or 0, which measured the share of distinct words known. That share falls as videos get longer, while the share of words actually heard does not, so cells now hold how often each word is said. → [details](docs/architecture.md#comprehension-ranked-recommendations)
-
-**Memory and latency fit a small instance.** The 2 GB Spanish corpus unpacks at boot as a stream in 20 MB of memory. Loading language-detection models on demand cut a process from 572 MB to 155 MB. Moving the extension's word marking from a database query to a dictionary cached in the browser took a long article from over 20 s to about 1 s. Nothing on screen waits for a language model: word lists appear at once and the ranking fills in.
-
-**Every AI call goes through one module.** It tags each call with the feature that made it and logs the cost, and tests fail if code calls a model any other way.
+**Recommendations count words heard.** Each language is a sparse matrix of transcripts by dictionary words, and ranking every video for a user is one matrix-vector product. Each cell holds how often a word is said, so a video's score is the share of what you would hear that you already know. Cells used to be 1 or 0, which counted a word said once the same as one said fifty times and made long videos look harder than they are. → [details](docs/architecture.md#comprehension-ranked-recommendations)
 
 ## Running it locally
 
