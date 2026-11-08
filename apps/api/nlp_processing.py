@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from ai_gateway import chat, parse_structured
 from database import (
     add_wordform,
     cached_word_id,
@@ -36,7 +37,6 @@ from instructionmanager import (
     INSTRUCTION_VERIFY_NEW_WORD,
 )
 from languages import require_code
-from llm_client import client, parse_structured
 from models import MODEL_FAST, MODEL_SMART
 from utils import SPECIAL_CHARACTERS, is_special_character, parse_chatgpt_output
 from word_matching import CandidateIndex, jev_client, match
@@ -54,7 +54,8 @@ def filter_entities(text: str, language: str) -> str:
     prompt = INSTRUCTION_FILTER_LANGUAGE[language].format(text=text)
 
     try:
-        response = client.chat.completions.create(
+        response = chat(
+            "parse.filter_entities",
             model=MODEL_FAST,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1250,
@@ -92,6 +93,7 @@ def get_word_root(word: str, language: str) -> dict | None:
     prompt = INSTRUCTION_ROOT_FORM[language].format(word=word)
     try:
         return parse_structured(
+            "parse.word_root",
             model=MODEL_SMART,
             messages=[{"role": "user", "content": prompt}],
             schema_model=WordRoot,
@@ -104,7 +106,8 @@ def get_word_root(word: str, language: str) -> dict | None:
 
 def generate_alternatives(word: str, type: str, language: str):
     if type == "verb":
-        response = client.chat.completions.create(
+        response = chat(
+            "parse.alternatives",
             model=MODEL_SMART,
             messages=[{"role": "user", "content": INSTRUCTION_VERBS[language].format(word=word)}],
             max_tokens=550,
@@ -130,7 +133,8 @@ def generate_alternatives(word: str, type: str, language: str):
     else:
         return []
 
-    response = client.chat.completions.create(
+    response = chat(
+        "parse.alternatives",
         model=MODEL_SMART,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=180,
@@ -172,6 +176,7 @@ def verify_and_translate(root: str, type: str, forms: list[str], language: str) 
         root=root, type=type or "other", forms=", ".join(forms) or "(none)"
     )
     return parse_structured(
+        "parse.verify_translate",
         model=MODEL_SMART,
         messages=[{"role": "user", "content": prompt}],
         schema_model=WordVerdict,
@@ -338,7 +343,8 @@ def summarize_text(text: str) -> str:
     prompt = INSTRUCTION_SUMMARIZE.format(text=text)
     
     try:
-        response = client.chat.completions.create(
+        response = chat(
+            "reader.summarize",
             model=MODEL_FAST,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=25,
@@ -385,7 +391,8 @@ def translate_section(section: str, language: str) -> dict:
     
     prompt = INSTRUCTION_TRANSLATE.format(text=section, language=language)
     
-    response = client.chat.completions.create(
+    response = chat(
+        "reader.translate_section",
         model=MODEL_SMART,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=200,
@@ -420,6 +427,7 @@ def verify_language(words: list[str], language: str) -> list[str]:
     )
 
     return parse_structured(
+        "parse.verify_language",
         model=MODEL_SMART,
         messages=[{"role": "user", "content": prompt}],
         schema_model=InvalidWords,
@@ -472,7 +480,8 @@ def generate_word_examples(
     )
 
     try:
-        resp = client.chat.completions.create(
+        resp = chat(
+            "reader.word_examples",
             model=MODEL_FAST,
             messages=[{"role": "user", "content": user_prompt}],
             response_format={"type": "json_object"},

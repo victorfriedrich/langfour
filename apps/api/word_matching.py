@@ -18,19 +18,19 @@ el don in the audit), so the real-word cutoff is lenient: it only drops a token
 when Jev is close to certain.
 """
 import bisect
-import os
 import unicodedata
 from dataclasses import dataclass
 
 import httpx
 from dotenv import load_dotenv
 
+from ai_gateway import JEV_URL, http_client
 from database import language_key, word_cache
 from languages import require_code
 
 load_dotenv()
 
-URL = "https://openrouter.ai/api/alpha/decisions"
+URL = JEV_URL
 MODEL = "typesafe/jev-1.13"   # pinned, like scripts/audit_words.py
 
 MAX_CANDIDATES = 5
@@ -159,8 +159,7 @@ def ask_jev(client: httpx.Client, word: str, candidates: list[str], language: st
 
 
 def jev_client() -> httpx.Client:
-    return httpx.Client(timeout=30, headers={
-        "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"})
+    return http_client("parse.attach_word", timeout=30)
 
 
 def match(client: httpx.Client, index: CandidateIndex, word: str, language: str) -> Match:

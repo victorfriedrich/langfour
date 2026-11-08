@@ -22,7 +22,7 @@ class _Probe(BaseModel):
 
 def main() -> int:
     try:
-        from llm_client import client, parse_structured, transcription_client
+        from ai_gateway import chat, check_transcription_configured, parse_structured
         from models import MODEL_FAST, MODEL_SMART, MODEL_TRANSCRIBE
     except RuntimeError as exc:
         print(f"FAIL  {exc}")
@@ -30,7 +30,8 @@ def main() -> int:
 
     for label, model in (("FAST ", MODEL_FAST), ("SMART", MODEL_SMART)):
         try:
-            r = client.chat.completions.create(
+            r = chat(
+                "script.check_llm",
                 model=model,
                 messages=[{"role": "user", "content": "Reply with the single word: ok"}],
                 max_tokens=10,
@@ -42,6 +43,7 @@ def main() -> int:
 
     try:
         out = parse_structured(
+            "script.check_llm",
             model=MODEL_SMART,
             messages=[{"role": "user", "content":
                        'Return JSON: ok=true, language="es".'}],
@@ -56,8 +58,8 @@ def main() -> int:
     # Transcription needs an audio file to test properly; just prove the client
     # builds and the key is present.
     try:
-        transcription_client()
-        print(f"OK    DeepInfra client built (model {MODEL_TRANSCRIBE})")
+        check_transcription_configured()
+        print(f"OK    DeepInfra key present (model {MODEL_TRANSCRIBE})")
     except RuntimeError as exc:
         print(f"WARN  {exc}")
 

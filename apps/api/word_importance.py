@@ -43,17 +43,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from collections import Counter
 from collections.abc import Awaitable, Callable
 
 import httpx
 
+from ai_gateway import JEV_URL, async_http_client
 from languages import LANGUAGES
 
 log = logging.getLogger(__name__)
 
-URL = "https://openrouter.ai/api/alpha/decisions"
+URL = JEV_URL
 MODEL = "typesafe/jev-1.13"   # pinned, like video_quality.py
 RUBRIC_VERSION = 1            # bump when a prompt changes; saved ranks are redone
 
@@ -227,8 +227,7 @@ async def rank(sb, language: str, kind: str, title: str, text: str,
         return {}
     state = {"title": title, "kind": KINDS.get(kind, "text"), "language": LANGUAGES[language],
              "text": text, "rubric": RUBRIC}
-    async with httpx.AsyncClient(timeout=60, headers={
-            "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}) as client:
+    async with async_http_client("words.importance", timeout=60) as client:
         return await _ask_all(client, state, words)
 
 

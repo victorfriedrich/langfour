@@ -168,8 +168,7 @@ def pieces(samples: np.ndarray) -> list[tuple[float, float]]:
 def transcribe(wav: str, samples: np.ndarray, model: str, language: str | None) -> dict:
     """Words and segments with timestamps on the window's clock. Without a
     language Whisper detects one per piece; "languages" lists them."""
-    from llm_client import transcription_client
-    client = transcription_client()
+    from ai_gateway import transcribe as ai_transcribe
 
     def one(span):
         start, end = span
@@ -180,8 +179,8 @@ def transcribe(wav: str, samples: np.ndarray, model: str, language: str | None) 
             for attempt in range(4):
                 try:
                     with open(tmp.name, "rb") as fh:
-                        r = client.audio.transcriptions.create(
-                            model=model, file=fh, **({"language": language} if language else {}),
+                        r = ai_transcribe(
+                            "script.listening_benchmark", model=model, file=fh, **({"language": language} if language else {}),
                             response_format="verbose_json",
                             timestamp_granularities=["word", "segment"])
                     break

@@ -18,19 +18,19 @@ THRESHOLD can land either way.
 from __future__ import annotations
 
 import asyncio
-import os
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ai_gateway import JEV_URL, async_http_client
 from auth import get_current_user
 from languages import LANGUAGES, require_code
 from supabase_client import supabase
 
 router = APIRouter()
 
-URL = "https://openrouter.ai/api/alpha/decisions"
+URL = JEV_URL
 MODEL = "typesafe/jev-1.13"   # pinned, like word_matching.py
 THRESHOLD = 0.5               # p(language) from which a word stays marked
 SNIPPET_CHARS = 40            # text shown on each side of the word asked about
@@ -144,8 +144,7 @@ async def language_check(payload: CheckRequest, current_user=Depends(get_current
         async with semaphore:
             return await ask_jev(client, code, block)
 
-    async with httpx.AsyncClient(timeout=20, headers={
-            "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}) as client:
+    async with async_http_client("reader.language_check", timeout=20) as client:
         scores = await asyncio.gather(*(one(client, b) for b in payload.blocks))
     # A block Jev did not answer comes back as null: the extension marks its
     # words as before rather than dropping them.

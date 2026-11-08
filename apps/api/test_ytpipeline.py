@@ -965,6 +965,17 @@ def test_judge_writes_judgments_and_skips_done(db, monkeypatch):
     assert row == (8.2, 6.9, 0.1, "explainer")
 
 
+def test_judge_spends_through_the_gateway_as_channel_judge(db, ai_upstream):
+    """The guard in conftest fails this if judge() builds its own client."""
+    import ai_gateway
+    add_channel(db, "UC_new", **classified())
+    add_videos(db, "UC_new", 6)
+    with ai_gateway.recording() as calls:
+        yp.judge(db, "es", yp.Gates(), limit=10, workers=1)
+    assert ai_upstream.requests
+    assert {c.source for c in calls} == {"pipeline.channel_judge"}
+
+
 def test_placed_agrees_with_percentiles_on_the_reference_and_interpolates_between():
     reference = [1, 2, 3, None]
     assert yp.placed(reference, reference) == yp.percentiles(reference)

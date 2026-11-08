@@ -12,15 +12,14 @@ import base64
 import os
 from collections import OrderedDict
 
-import requests
 from fastapi import APIRouter, Body, Depends, HTTPException
 
+from ai_gateway import ELEVENLABS_TTS_URL, elevenlabs_configured, http_client
 from auth import get_current_user
 from languages import require_code
 
 router = APIRouter()
 
-ELEVENLABS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 # Flash v2.5 is multilingual and costs half a credit per character. The voice
 # is one of ElevenLabs' default voices, which every plan may use over the API.
 DEFAULT_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"
@@ -34,22 +33,21 @@ _cache: OrderedDict[tuple[str, str], str] = OrderedDict()
 
 
 def _synthesize(text: str, language: str) -> bytes:
-    api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
-    if not api_key:
+    if not elevenlabs_configured():
         raise HTTPException(status_code=503, detail="Speech is not configured")
     voice_id = os.getenv("ELEVENLABS_VOICE_ID", "").strip() or DEFAULT_VOICE_ID
-    response = requests.post(
-        ELEVENLABS_URL.format(voice_id=voice_id),
-        params={"output_format": "mp3_44100_64"},
-        headers={"xi-api-key": api_key, "Accept": "audio/mpeg"},
-        json={
-            "text": text,
-            "model_id": os.getenv("ELEVENLABS_MODEL_ID", "").strip() or DEFAULT_MODEL_ID,
-            "language_code": language,
-        },
-        timeout=15,
-    )
-    if not response.ok:
+    with http_client("tts", provider="elevenlabs", timeout=15) as http:
+        response = http.post(
+            ELEVENLABS_TTS_URL.format(voice_id=voice_id),
+            params={"output_format": "mp3_44100_64"},
+            headers={"Accept": "audio/mpeg"},
+            json={
+                "text": text,
+                "model_id": os.getenv("ELEVENLABS_MODEL_ID", "").strip() or DEFAULT_MODEL_ID,
+                "language_code": language,
+            },
+        )
+    if response.status_code != 200:
         raise HTTPException(status_code=502, detail=f"ElevenLabs answered {response.status_code}")
     return response.content
 
