@@ -6,12 +6,12 @@ Build the upload package with `npm run build:store`, then zip the `dist/` folder
 - Manifest: name, description (under 132 chars), 16/32/48/128 icons, `homepage_url`, version 1.2.0.
 - No remotely hosted code or CDN assets in extension pages (FontAwesome was inlined).
 - The `chrome-extension://*/*` web-accessible-resources block stays: it is what makes Parcel build `auth.html` and `reader.html`. Removing it silently drops both pages from `dist/`.
-- Minimal privacy page at https://app.langfour.com/privacy (`static/privacy.html` redirects there).
+- Privacy policy at https://www.langfour.com/privacy (`static/privacy.html` and app.langfour.com/privacy redirect there).
 - First-run welcome page, inline login errors, no `alert()` or placeholder buttons.
 - Production logging goes through `debugLog` (off unless `REACT_APP_DEBUG=true`).
 
 ## Before submitting
-1. **Privacy policy.** `apps/web/src/app/privacy/page.tsx` is deliberately two factual sentences and makes no promises. The store may require a fuller policy for an extension that handles account data; write that yourself rather than generating it.
+1. **Privacy policy.** The policy lives in the LangLanding repo (`src/app/privacy/page.tsx`). Enter https://www.langfour.com/privacy as the store's privacy policy URL.
 2. **Extension ID.** Uploading assigns the store its own ID. Set `EXTENSION_ID` on the API (CORS, `apps/api/app.py`) to the store ID, and decide whether to keep the `key` field in `manifest.json` (it pins the unpacked dev ID).
 3. **Screenshots** (1280x800, at least 1; 3-5 recommended): subtitle highlight with popup, reader with popup, toolbar popup. Small promo tile 440x280.
 4. **Store listing text** (below), category *Education*, language English.

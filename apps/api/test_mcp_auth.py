@@ -60,6 +60,7 @@ def test_discovery_and_challenge_do_not_trust_host(client):
         assert response.status_code == 200
         assert response.json()["resource"] == mcp_auth.MCP_RESOURCE_URL
         assert response.json()["authorization_servers"] == [mcp_auth.MCP_ISSUER]
+        assert response.json()["resource_policy_uri"] == "https://www.langfour.com/privacy"
     response = client.post("/mcp")
     assert response.status_code == 401
     assert mcp_auth.MCP_METADATA_URL in response.headers["www-authenticate"]

@@ -15,7 +15,7 @@ export const BACKEND_URL = (configuredBackendUrl || DEFAULT_BACKEND_URL).replace
   '',
 );
 
-/** The Langfour web app, used for sign-up, flashcards and the privacy policy. */
+/** The Langfour web app, used for sign-up and flashcards. */
 export const WEB_URL = 'https://app.langfour.com';
 
 const DEBUG_ENABLED = process.env.REACT_APP_DEBUG === 'true';

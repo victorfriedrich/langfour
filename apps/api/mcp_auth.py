@@ -26,6 +26,7 @@ if (_parts.scheme not in ("https", "http") or not _parts.netloc
     raise ValueError("MCP_RESOURCE_URL must be an HTTPS URL ending in /mcp (HTTP for localhost only)")
 MCP_ISSUER = SUPABASE_URL.rstrip("/") + "/auth/v1"
 MCP_METADATA_URL = f"{_parts.scheme}://{_parts.netloc}/.well-known/oauth-protected-resource/mcp"
+PRIVACY_POLICY_URL = "https://www.langfour.com/privacy"
 MCP_PUBLIC_PATHS = {"/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"}
 router = APIRouter()
 
@@ -36,6 +37,7 @@ def protected_resource_metadata():
     return {
         "resource": MCP_RESOURCE_URL,
         "resource_name": "Langfour",
+        "resource_policy_uri": PRIVACY_POLICY_URL,
         "authorization_servers": [MCP_ISSUER],
         # No openid scope: an ID token isn't needed, and older Supabase projects
         # still use HS256, which cannot issue OIDC ID tokens.
