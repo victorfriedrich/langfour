@@ -95,6 +95,9 @@ function ConsentRequest({ authorizationId }: { authorizationId: string }) {
             <button disabled={busy} onClick={() => decide(false)} className={`${button} border border-gray-300 text-gray-700 hover:bg-gray-50`}>Deny</button>
           </>
         )}
+        <p className="text-xs text-gray-500">
+          <a href="https://www.langfour.com/privacy" target="_blank" rel="noreferrer" className="hover:text-gray-800 underline">Privacy Policy</a>
+        </p>
       </div>
     </div>
   );
