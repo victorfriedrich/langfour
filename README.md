@@ -6,7 +6,7 @@ Langfour turns the content you already watch and read into personalized language
 
 Its browser extension translates unfamiliar words in place on YouTube, Netflix, Prime Video and any article page, and saves them to your vocabulary. The web app turns that vocabulary into practice and recommends videos you can mostly understand. Your flashcards can live in RemNote, and Claude or ChatGPT can use what you know to talk and teach at your level.
 
-![Langfour: find videos tailored to your vocabulary, and add words to flashcards from YouTube, Netflix and news sites](docs/images/overview.png)
+https://github.com/user-attachments/assets/21c05a8b-ca9c-4cf9-b0f7-586e7f61d96e
 
 [![Extension CI](https://github.com/victorfriedrich/langfour/actions/workflows/extension-ci.yml/badge.svg)](https://github.com/victorfriedrich/langfour/actions/workflows/extension-ci.yml)
 
