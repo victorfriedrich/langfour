@@ -12,7 +12,6 @@ Its browser extension translates unfamiliar words in place on YouTube, Netflix, 
 
 - [Why Langfour?](#why-langfour)
 - [What it does](#what-it-does)
-- [By the numbers](#by-the-numbers)
 - [How it works](#how-it-works)
 - [Five decisions worth defending](#five-decisions-worth-defending)
 - [Running it locally](#running-it-locally)
@@ -33,7 +32,7 @@ Langfour tracks your vocabulary as dictionary root forms rather than raw strings
 
 ![Reader Mode highlighting unfamiliar words in a Spanish news article](docs/images/reader-mode.webp)
 
-**Videos** are ranked by how much of each one you already understand, combined with how good and how engaging it is. You can follow favourite channels and discover new ones at your level.
+**Videos** covers about 30,000 YouTube videos so far, ranked by how much of each one you already understand, combined with how good and how engaging it is. You can follow favourite channels and discover new ones at your level.
 
 ![The Videos page, ranking YouTube videos by the share of known words in each](docs/images/recommendations.png)
 
@@ -48,15 +47,6 @@ Langfour tracks your vocabulary as dictionary root forms rather than raw strings
 **RemNote plugin** turns saved words into RemNote flashcards and reports your reviews back to Langfour.
 
 **Safari on iOS** brings Reader Mode and tappable YouTube captions to the iPhone.
-
-## By the numbers
-
-| | |
-|---|---|
-| Videos transcribed and scored | 30,000+ |
-| Places to use it | 5: web app, Chrome extension, Safari on iOS, RemNote, AI chat |
-| Automated tests | 1,000+ |
-| Pull requests merged since September 2026 | 140+ |
 
 ## How it works
 
