@@ -45,7 +45,7 @@ import logging
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -56,6 +56,7 @@ from pydantic import BaseModel
 import ingest
 import ingest_worker
 import video_quality
+from language_index import LanguageIndex
 from paths import processed_file
 from recommender import MIN_DISTINCT_WORDS
 from videoparsing import transcript_language_matches
@@ -274,34 +275,24 @@ def get_channel_store() -> ChannelStore:
 # The channel in the recommender's matrix
 # ---------------------------------------------------------------------------
 
-def channel_videos(store: ChannelStore, recommender, channel_id: str,
-                   language: str) -> tuple[list[dict], list[tuple[str, int]]]:
-    """The channel's queue rows, and (video id, matrix row) for its videos the
-    numbers come from: done, loaded at boot, not broken (ChannelStore.broken),
-    not a clip."""
-    recommender._ensure_language_loaded(language)
-    queue = store.queue_rows(channel_id, language)
-    index = recommender.rows_by_video[language]
-    distinct = recommender.distinct_words_per_doc[language]
-    loaded = [(r["video_id"], index[r["video_id"]]) for r in queue
-              if r["status"] == "done" and r["video_id"] in index]
+def channel_videos(store: ChannelStore, index: LanguageIndex,
+                   channel_id: str) -> tuple[list[dict], list[tuple[str, int]]]:
+    """The channel's queue rows, and (video id, row of `index`) for its videos
+    the numbers come from: done, loaded at boot, not broken
+    (ChannelStore.broken), not a clip."""
+    queue = store.queue_rows(channel_id, index.language)
+    loaded = [(r["video_id"], index.rows[r["video_id"]]) for r in queue
+              if r["status"] == "done" and r["video_id"] in index.rows]
     broken = store.broken([v for v, _ in loaded]) if loaded else set()
     return queue, [(v, row) for v, row in loaded
-                   if v not in broken and distinct[row] >= MIN_DISTINCT_WORDS]
+                   if v not in broken and index.distinct[row] >= MIN_DISTINCT_WORDS]
 
 
-def _known_vector(width: int, word_ids: Iterable[int]) -> np.ndarray:
-    vector = np.zeros(width, dtype=bool)
-    ids = [w for w in word_ids if 0 <= w < width]
-    vector[ids] = True
-    return vector
-
-
-def coverage(recommender, language: str, rows: list[int],
+def coverage(index: LanguageIndex, rows: list[int],
              known: set[int]) -> tuple[np.ndarray, np.ndarray]:
     """Per video: the words spoken, and how many of them the learner knows."""
-    counts = recommender.matrices[language][rows]
-    known_vector = _known_vector(counts.shape[1], known).astype(np.int32)
+    counts = index.counts[rows]
+    known_vector = index.word_vector(known)
     return np.asarray(counts.sum(axis=1)).ravel(), np.asarray(counts.dot(known_vector)).ravel()
 
 
@@ -309,9 +300,9 @@ def at_level(spoken: np.ndarray, heard: np.ndarray) -> int:
     return int(np.count_nonzero((spoken > 0) & (heard >= AT_LEVEL * spoken)))
 
 
-def best_videos(recommender, language: str, videos: list[tuple[str, int]],
+def best_videos(index: LanguageIndex, videos: list[tuple[str, int]],
                 spoken: np.ndarray, heard: np.ndarray) -> list[BestVideo]:
-    titles = recommender.titles[language]
+    titles = index.titles
     shares = [(heard[n] / spoken[n], video_id, row)
               for n, (video_id, row) in enumerate(videos) if spoken[n]]
     shares.sort(key=lambda s: (-s[0], s[1]))
@@ -320,21 +311,21 @@ def best_videos(recommender, language: str, videos: list[tuple[str, int]],
             for share, video_id, row in shares[:BEST_VIDEOS]]
 
 
-def core_words(store: ChannelStore, recommender, language: str, rows: list[int],
+def core_words(store: ChannelStore, index: LanguageIndex, rows: list[int],
                known: set[int], listed: set[int]) -> CoreWords | None:
     if len(rows) < CORE_MIN_VIDEOS:
         return None
-    counts = recommender.matrices[language][rows]
+    counts = index.counts[rows]
     spoken = np.asarray(counts.sum(axis=0)).ravel()
-    videos = np.asarray(recommender.presence[language][rows].sum(axis=0)).ravel()
+    videos = np.asarray(index.presence[rows].sum(axis=0)).ravel()
     total = spoken.sum()
     if not total:
         return None
-    known_vector = _known_vector(counts.shape[1], known)
+    known_vector = index.word_vector(known, dtype=bool)
     before = spoken[known_vector].sum() / total
 
     eligible = (videos >= max(CORE_MIN_SPREAD, CORE_SHARE * len(rows))) & ~known_vector
-    eligible &= ~_known_vector(counts.shape[1], listed)
+    eligible &= ~index.word_vector(listed, dtype=bool)
     candidates = np.flatnonzero(eligible)
     # Most spoken first; ties to the lower id, the more common word.
     candidates = candidates[np.lexsort((candidates, -spoken[candidates]))][:CORE_CANDIDATES]
@@ -365,13 +356,14 @@ def channel_view(store: ChannelStore, recommender, user_id: str, channel_id: str
                  language: str, now: datetime | None = None) -> ChannelView:
     favourite = store.favourite_row(user_id, channel_id)
     favourited_at = datetime.fromisoformat(favourite["created_at"]) if favourite else None
-    queue, videos = channel_videos(store, recommender, channel_id, language)
+    index = recommender.index(language)
+    queue, videos = channel_videos(store, index, channel_id)
     rows = [row for _, row in videos]
     known = store.known_words(user_id) if rows else set()
     # Every query the card needs, only for a channel that can have one.
     card = len(rows) >= CORE_MIN_VIDEOS and not store.added_from_channel(user_id, channel_id)
     listed = store.listed_words(user_id) if card else set()
-    spoken, heard = coverage(recommender, language, rows, known)
+    spoken, heard = coverage(index, rows, known)
     return ChannelView(
         favourite=favourite is not None,
         uploads=(favourite.get("uploads_outcome") or "pending") if favourite else None,
@@ -379,10 +371,10 @@ def channel_view(store: ChannelStore, recommender, user_id: str, channel_id: str
         videos=len(rows),
         at_level=at_level(spoken, heard),
         understood=round(float(heard.sum() / spoken.sum()) * 100, 1) if spoken.sum() else None,
-        best=best_videos(recommender, language, videos, spoken, heard),
+        best=best_videos(index, videos, spoken, heard),
         progress=(progress(queue, favourited_at, now or datetime.now(UTC))
                   if worker_language() == language else None),
-        core_words=core_words(store, recommender, language, rows, known, listed) if card else None,
+        core_words=core_words(store, index, rows, known, listed) if card else None,
     )
 
 
@@ -627,14 +619,15 @@ def add_core_words(store: ChannelStore, vocab: VocabularyStore, recommender, use
     already = store.added_from_channel(user_id, channel_id)
     if already:
         return CoreWordsAdded(added=already)
-    _, videos = channel_videos(store, recommender, channel_id, language)
+    index = recommender.index(language)
+    _, videos = channel_videos(store, index, channel_id)
     rows = [row for _, row in videos]
-    words = core_words(store, recommender, language, rows,
+    words = core_words(store, index, rows,
                        store.known_words(user_id), store.listed_words(user_id))
     if words is None:
         return CoreWordsAdded(added=[])
     ids = [w.word_id for w in words.words]
-    contexts = context_lines(language, ids, videos, recommender.presence[language])
+    contexts = context_lines(language, ids, videos, index.presence)
     saved = {e["word_id"] for e in vocab.events(user_id, ids, ["saved"])
              if (e.get("context") or {}).get("channel_id") == channel_id}
     vocab.insert_events([

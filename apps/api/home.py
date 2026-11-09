@@ -305,22 +305,21 @@ class _Corpus:
 
     def __init__(self, recommender, language: str, known: set[int], watch: dict[str, dict],
                  hidden_videos: set[str], hidden_channels: set[str]):
-        recommender._ensure_language_loaded(language)
+        # Every array below comes from this one index, so rows line up.
+        self.index = index = recommender.index(language)
         self.language = language
-        self.rows = recommender.rows_by_video[language]
-        self.titles = recommender.titles[language]
-        self.categories = recommender.categories[language]
-        n = len(self.titles)
-        self.creators = recommender.creators.get(language) or [""] * n
-        self.lengths = recommender.lengths.get(language) or [None] * n
+        self.rows = index.rows
+        self.titles = index.titles
+        self.categories = index.categories
+        self.creators = index.creators
+        self.lengths = index.lengths
         self.grammar = recommender.grammar.get(language) or {}
-        self.spoken = recommender.total_words_per_doc[language]
+        self.spoken = index.spoken
         self.signals = recommender.video_signals.get(language) or {}
         self.watch = watch
-        self.ratios, self.new_words, _ = recommender._score_documents_by_words(
-            list(known), language)
+        self.ratios, self.new_words, _ = index.score(known)
 
-        distinct = recommender.distinct_words_per_doc[language]
+        distinct = index.distinct
         candidates = [
             (video_id, float(self.ratios[row])) for video_id, row in self.rows.items()
             if video_id not in recommender.hidden_videos
@@ -445,7 +444,7 @@ def _basis(corpus: _Corpus, favourite_names: set[str]) -> ChannelBasis:
 class _Candidates:
     """The channels that can be suggested to this learner, on any topic."""
 
-    def __init__(self, recommender, corpus: _Corpus, favourite_names: set[str]):
+    def __init__(self, corpus: _Corpus, favourite_names: set[str]):
         seeds = _seeds(corpus, favourite_names)
         known = favourite_names | {name for name, _ in seeds}
         by_channel: dict[str, list[str]] = defaultdict(list)
@@ -468,7 +467,7 @@ class _Candidates:
         if seeds and self.eligible:
             names = list(self.eligible)
             cosines = channel_similarity.channel_cosines(
-                recommender, corpus.language, names, [rows for _, rows in seeds])
+                corpus.index, names, [rows for _, rows in seeds])
             # Relative to how alike the seed is to every channel: a big, broad
             # channel is fairly close to everything and would be every channel's
             # nearest seed by raw cosine.
@@ -587,15 +586,14 @@ class _Visit:
         self._channels: dict[str, list[HomeChannel]] = {}
 
     def current(self, recommender, language: str) -> bool:
-        """Not too old, and the matrix it was scored on is still the live one."""
-        recommender._ensure_language_loaded(language)
+        """Not too old, and the corpus it was scored on is still the live one."""
         return (time.monotonic() - self.built < VISIT_TTL
-                and self.corpus.rows is recommender.rows_by_video[language])
+                and self.corpus.index is recommender.index(language))
 
     def channels(self, store: HomeStore, topic: str) -> list[HomeChannel]:
         if topic not in self._channels:
             if self._candidates is None:
-                self._candidates = _Candidates(self.recommender, self.corpus, self.favourite_names)
+                self._candidates = _Candidates(self.corpus, self.favourite_names)
             self._channels[topic] = _channels(store, self.corpus, self._candidates,
                                               self.favourites, topic)
         return self._channels[topic]
@@ -669,10 +667,9 @@ def home(store: HomeStore, recommender, user_id: str, language: str, topic: str 
 
 
 def _channel_of(recommender, language: str, video_id: str) -> str | None:
-    recommender._ensure_language_loaded(language)
-    row = recommender.rows_by_video[language].get(video_id)
-    creators = recommender.creators.get(language) or []
-    return (creators[row] or None) if row is not None and row < len(creators) else None
+    index = recommender.index(language)
+    row = index.rows.get(video_id)
+    return (index.creators[row] or None) if row is not None else None
 
 
 def set_hidden(store: HomeStore, recommender, user_id: str, req: HideRequest,
