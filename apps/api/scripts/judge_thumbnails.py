@@ -38,10 +38,11 @@ PARALLEL = 16
 
 def top_share(rec: Recommender, word_ids: list[int], lang: str) -> list[str]:
     """The video ids in the top 20% by known words, as the recommender takes them."""
-    ratios, _, _ = rec._score_documents_by_words(word_ids, lang, distinct=False)
-    ids = [f.replace("_processed.json", "") for f in rec.filenames[lang]]
+    index = rec.index(lang)
+    ratios, _, _ = index.score(word_ids, distinct=False)
+    ids = index.video_ids
     kept = [i for i in range(len(ids))
-            if ids[i] not in rec.hidden_videos and rec.distinct_words_per_doc[lang][i] >= MIN_DISTINCT_WORDS]
+            if ids[i] not in rec.hidden_videos and index.distinct[i] >= MIN_DISTINCT_WORDS]
     kept.sort(key=lambda i: -ratios[i])
     return [ids[i] for i in kept[: max(1, int(len(kept) * video_blend.POOL_SHARE))]]
 

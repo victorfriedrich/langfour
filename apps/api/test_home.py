@@ -2,6 +2,7 @@
 level, Not interested and the return from YouTube, against an in-memory store
 and a real Recommender built from a small matrix."""
 
+import dataclasses
 import os
 
 os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
@@ -25,6 +26,7 @@ from scipy.sparse import csr_matrix
 import auth
 import home
 from home import HideRequest
+from language_index import LanguageIndex
 from test_recommender import blank_recommender
 
 USER = "11111111-1111-1111-1111-111111111111"
@@ -56,12 +58,15 @@ def build(videos):
         row[list(v["words"])] = 1
         rows.append(row)
     recommender = blank_recommender()
-    recommender.filenames = {"es": [f"{v['id']}_processed.json" for v in videos]}
-    recommender._index_matrix("es", csr_matrix(np.asarray(rows)))
-    recommender.categories = {"es": [v["category"] for v in videos]}
-    recommender.titles = {"es": [f"Title {v['id']}" for v in videos]}
-    recommender.creators = {"es": [v["creator"] for v in videos]}
-    recommender.lengths = {"es": [v["length"] for v in videos]}
+    recommender.indexes["es"] = LanguageIndex.build(
+        "es",
+        [f"{v['id']}_processed.json" for v in videos],
+        csr_matrix(np.asarray(rows)),
+        [v["category"] for v in videos],
+        [f"Title {v['id']}" for v in videos],
+        [v["creator"] for v in videos],
+        [v["length"] for v in videos],
+    )
     recommender.grammar = {"es": {v["id"]: v["grammar"] for v in videos if v["grammar"] is not None}}
     recommender.hidden_videos = set()
     return recommender
@@ -431,8 +436,8 @@ def test_a_visit_ends_with_its_time_or_its_matrix(monkeypatch):
     home.home(store, recommender, USER, "es", reuse=True)
     assert store.known_reads == 2
 
-    # The corpus sync swaps the matrix: rows no longer mean what they did.
-    recommender._index_matrix("es", recommender.matrices["es"])
+    # A newer corpus is a new index: rows no longer mean what they did.
+    recommender.indexes["es"] = dataclasses.replace(recommender.indexes["es"])
     home.home(store, recommender, USER, "es", reuse=True)
     assert store.known_reads == 3
     home.home(store, recommender, USER, "es", reuse=True)
