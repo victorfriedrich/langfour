@@ -48,6 +48,10 @@ PUBLIC_PATHS = {
     # a token after a signed-in user approved the code.
     "/pair/remnote/start",
     "/pair/remnote/claim",
+    # Get started (onboarding.py) shows what a level and topics open up before
+    # the demo account exists. It reads only the corpus and the public level
+    # word lists, nothing about any user.
+    "/api/onboarding/preview",
 } | MCP_PUBLIC_PATHS
 
 # ---------------------------------------------------------------------------

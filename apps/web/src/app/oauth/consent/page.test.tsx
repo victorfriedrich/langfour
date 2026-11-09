@@ -5,10 +5,10 @@ import { UserContext } from '@/context/UserContext';
 import ConsentPage from './page';
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(), approve: vi.fn(), deny: vi.fn(), push: vi.fn(), remember: vi.fn(),
+  get: vi.fn(), approve: vi.fn(), deny: vi.fn(), push: vi.fn(), remember: vi.fn(), otp: vi.fn(),
   params: new URLSearchParams('authorization_id=request-a&redirect_uri=https://evil.example'),
 }));
-vi.mock('@/lib/supabaseclient', () => ({ supabase: { auth: { oauth: {
+vi.mock('@/lib/supabaseclient', () => ({ supabase: { auth: { signInWithOtp: mocks.otp, oauth: {
   getAuthorizationDetails: mocks.get, approveAuthorization: mocks.approve, denyAuthorization: mocks.deny,
 } } } }));
 vi.mock('@/lib/afterLogin', () => ({ rememberAfterLogin: mocks.remember }));
@@ -29,6 +29,7 @@ beforeEach(() => {
   mocks.params = new URLSearchParams('authorization_id=request-a&redirect_uri=https://evil.example');
   mocks.get.mockResolvedValue({ data: details, error: null });
   mocks.approve.mockResolvedValue({ data: { redirect_url: 'https://client.example/callback?code=approved' }, error: null });
+  mocks.otp.mockResolvedValue({ error: null });
   mocks.deny.mockResolvedValue({ data: { redirect_url: 'https://client.example/callback?error=access_denied' }, error: null });
 });
 
@@ -55,11 +56,13 @@ describe('OAuth consent', () => {
     assign.mockRestore();
   });
 
-  it('requires a real login and preserves the authorization request', () => {
+  it('requires a real login and preserves the authorization request', async () => {
     renderPage(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'learner@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Email me a link' }));
+    expect(await screen.findByText('Check your email')).toBeInTheDocument();
     expect(mocks.remember).toHaveBeenCalledWith('/oauth/consent?authorization_id=request-a');
-    expect(mocks.push).toHaveBeenCalledWith('/login');
+    expect(mocks.otp).toHaveBeenCalledWith(expect.objectContaining({ email: 'learner@example.com' }));
     expect(mocks.get).not.toHaveBeenCalled();
   });
 
