@@ -444,7 +444,7 @@ def _basis(corpus: _Corpus, favourite_names: set[str]) -> ChannelBasis:
 class _Candidates:
     """The channels that can be suggested to this learner, on any topic."""
 
-    def __init__(self, recommender, corpus: _Corpus, favourite_names: set[str]):
+    def __init__(self, corpus: _Corpus, favourite_names: set[str]):
         seeds = _seeds(corpus, favourite_names)
         known = favourite_names | {name for name, _ in seeds}
         by_channel: dict[str, list[str]] = defaultdict(list)
@@ -593,7 +593,7 @@ class _Visit:
     def channels(self, store: HomeStore, topic: str) -> list[HomeChannel]:
         if topic not in self._channels:
             if self._candidates is None:
-                self._candidates = _Candidates(self.recommender, self.corpus, self.favourite_names)
+                self._candidates = _Candidates(self.corpus, self.favourite_names)
             self._channels[topic] = _channels(store, self.corpus, self._candidates,
                                               self.favourites, topic)
         return self._channels[topic]

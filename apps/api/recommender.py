@@ -151,7 +151,6 @@ class Recommender:
             creators, lengths = self._cached_details(language, meta, len(filenames))
             self.indexes[language] = LanguageIndex.build(
                 language, filenames, matrix, categories, titles, creators, lengths,
-                max_word_id=int(max_word_id or matrix.shape[1] - 1),
             )
             logger.info("Document-term matrix and metadata for '%s' loaded from disk.", language)
             return True
@@ -208,7 +207,6 @@ class Recommender:
         # arrays as well doubles dataset memory.
         self.indexes[language] = LanguageIndex.build(
             language, files, matrix, cats, titles, creators, lengths,
-            max_word_id=self._determine_max_word_id(docs),
         )
 
     def get_categories(self, language: str) -> list[dict[str, Any]]:
@@ -605,11 +603,11 @@ class Recommender:
 
         if scored:
             ratios, new_words, _ = index.score(word_ids, rows=[row for _, row in scored])
-            for index, (video_id, _) in enumerate(scored):
+            for n, (video_id, _) in enumerate(scored):
                 fits[video_id] = {
                     "status": "scored",
-                    "percentUnderstood": round(float(ratios[index]) * 100, 2),
-                    "newWords": int(new_words[index]),
+                    "percentUnderstood": round(float(ratios[n]) * 100, 2),
+                    "newWords": int(new_words[n]),
                 }
         return fits
 

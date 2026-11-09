@@ -5,8 +5,11 @@ titles[i], creators[i] and lengths[i]. Those used to be ten separate dicts on
 the Recommender, filled one at a time, and every caller indexed them on its
 own, so nothing checked that they lined up and nothing could replace them
 together. Here they are built in one place, checked once, and never changed:
-a newer corpus is a new LanguageIndex, swapped in with one assignment, so a
-reader holding an index sees one consistent corpus for as long as it holds it.
+a newer corpus is a new LanguageIndex, so a reader holding an index sees one
+consistent corpus for as long as it holds it. Swapping one into the
+Recommender is not a single assignment: the hidden-video set (quality filter
+plus dropped channels' videos) is computed from the indexes once at boot and
+would have to be recomputed with them.
 
 Readers take the index once per request (Recommender.index) and pass it on,
 rather than going back to the recommender for each array.
@@ -43,7 +46,6 @@ class LanguageIndex:
     spoken: np.ndarray                 # words spoken per row
     distinct: np.ndarray               # distinct words per row
     rows: Mapping[str, int]            # video id -> row
-    max_word_id: int
 
     @classmethod
     def build(
@@ -55,7 +57,6 @@ class LanguageIndex:
         titles: Sequence[str],
         creators: Sequence[str] | None = None,
         lengths: Sequence[int | None] | None = None,
-        max_word_id: int | None = None,
     ) -> LanguageIndex:
         """Check that every column has a value per matrix row, and derive the
         rest. The presence view shares the matrix's index arrays and adds one
@@ -79,6 +80,13 @@ class LanguageIndex:
             (np.ones(counts.nnz, dtype=np.int8), counts.indices, counts.indptr),
             shape=counts.shape,
         )
+        spoken = np.asarray(counts.sum(axis=1)).ravel()
+        distinct = np.diff(counts.indptr)
+        # Read-only, so no caller can change a corpus other requests are reading.
+        # presence may or may not share counts' index arrays, so freeze both sets.
+        for array in (counts.data, counts.indices, counts.indptr,
+                      presence.data, presence.indices, presence.indptr, spoken, distinct):
+            array.flags.writeable = False
         return cls(
             language=language,
             filenames=tuple(filenames),
@@ -89,10 +97,9 @@ class LanguageIndex:
             lengths=tuple(lengths),
             counts=counts,
             presence=presence,
-            spoken=np.asarray(counts.sum(axis=1)).ravel(),
-            distinct=np.diff(counts.indptr),
+            spoken=spoken,
+            distinct=distinct,
             rows=MappingProxyType(rows),
-            max_word_id=int(counts.shape[1] - 1 if max_word_id is None else max_word_id),
         )
 
     def __len__(self) -> int:

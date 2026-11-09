@@ -25,7 +25,6 @@ def test_every_column_lines_up_with_the_matrix_rows():
     assert dict(index.rows) == {"v0": 0, "v1": 1}
     assert index.spoken.tolist() == [3, 3] and index.distinct.tolist() == [2, 1]
     assert index.presence.toarray().tolist() == [[1, 0, 1], [0, 1, 0]]
-    assert index.max_word_id == 2
 
 
 def test_blank_channel_names_and_lengths_when_the_manifest_has_none():
@@ -70,3 +69,11 @@ def test_similarity_space_is_rebuilt_for_a_new_index_only(monkeypatch):
     first = channel_similarity.space(index)
     assert channel_similarity.space(index) is first
     assert channel_similarity.space(dataclasses.replace(index)) is not first
+
+
+def test_the_arrays_are_read_only():
+    index = build([[2, 0, 1], [0, 3, 0]])
+    for array in (index.counts.data, index.counts.indices, index.counts.indptr,
+                  index.presence.data, index.presence.indices, index.spoken, index.distinct):
+        with pytest.raises(ValueError):
+            array[0] = 9

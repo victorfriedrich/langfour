@@ -80,9 +80,11 @@ generated inventory of it and the runbook SQL that was applied by hand.
 
 ## Comprehension-ranked recommendations
 
-`recommender.py` holds one binary **document-term matrix per language**: a
+`recommender.py` holds one **document-term matrix per language**: a
 SciPy CSR matrix with a row per transcript and a column per dictionary root ID,
-`1` where the word occurs. Only the sparse form is kept after startup; holding
+holding how many times the word is spoken. A second matrix of the same
+sparsity (`presence`, 1 per cell, sharing the index arrays) answers the
+distinct-word questions. Only the sparse form is kept after startup; holding
 the Python lists alongside it doubled resident memory.
 
 The matrix and everything row-aligned with it (video ids, titles, categories,
@@ -90,7 +92,9 @@ channel names, lengths, per-row word totals) live in one immutable
 `LanguageIndex` per language (`language_index.py`), checked for alignment when
 it is built. Callers take it once per request with `Recommender.index()` and
 pass it on, so a request never mixes rows from two versions of the corpus, and
-a newer corpus can replace it with one assignment.
+the arrays are read-only. Replacing one is not a single assignment: the hidden
+set (quality filter plus dropped channels' videos) is computed from the
+indexes at boot and would need recomputing with them.
 
 Ranking videos for a user is one sparse matrix-vector product:
 

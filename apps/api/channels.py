@@ -45,7 +45,7 @@ import logging
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -288,18 +288,11 @@ def channel_videos(store: ChannelStore, index: LanguageIndex,
                    if v not in broken and index.distinct[row] >= MIN_DISTINCT_WORDS]
 
 
-def _known_vector(width: int, word_ids: Iterable[int]) -> np.ndarray:
-    vector = np.zeros(width, dtype=bool)
-    ids = [w for w in word_ids if 0 <= w < width]
-    vector[ids] = True
-    return vector
-
-
 def coverage(index: LanguageIndex, rows: list[int],
              known: set[int]) -> tuple[np.ndarray, np.ndarray]:
     """Per video: the words spoken, and how many of them the learner knows."""
     counts = index.counts[rows]
-    known_vector = _known_vector(counts.shape[1], known).astype(np.int32)
+    known_vector = index.word_vector(known)
     return np.asarray(counts.sum(axis=1)).ravel(), np.asarray(counts.dot(known_vector)).ravel()
 
 
@@ -328,11 +321,11 @@ def core_words(store: ChannelStore, index: LanguageIndex, rows: list[int],
     total = spoken.sum()
     if not total:
         return None
-    known_vector = _known_vector(counts.shape[1], known)
+    known_vector = index.word_vector(known, dtype=bool)
     before = spoken[known_vector].sum() / total
 
     eligible = (videos >= max(CORE_MIN_SPREAD, CORE_SHARE * len(rows))) & ~known_vector
-    eligible &= ~_known_vector(counts.shape[1], listed)
+    eligible &= ~index.word_vector(listed, dtype=bool)
     candidates = np.flatnonzero(eligible)
     # Most spoken first; ties to the lower id, the more common word.
     candidates = candidates[np.lexsort((candidates, -spoken[candidates]))][:CORE_CANDIDATES]
