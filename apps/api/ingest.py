@@ -219,10 +219,36 @@ def score(sb, http, video_id: str, lang: str) -> None:
         print(f"    not scored: {type(exc).__name__}: {str(exc)[:200]}", flush=True)
 
 
+def label(http, video_id: str, lang: str) -> None:
+    """Give a finished transcript the topic the Videos page browses it under
+    (video_category.py), unless it has one.
+
+    This runs before the transcript is published, so the copy on R2 carries
+    the topic too. Before 2026-11-09 only scripts/highleveltags.py labelled
+    videos, by hand, and every video ingested since its last run sat outside
+    every topic: 3,376 Spanish ones by then. Never fails the video: an
+    unlabelled one is in no topic until highleveltags.py fills it in."""
+    import video_category
+    path = processed_file(lang, video_id)
+    try:
+        processed = json.loads(path.read_text("utf-8"))
+        if processed.get("category"):
+            return
+        processed["category"] = video_category.classify(http, processed)
+        # Written aside and renamed, as highleveltags.py does, so a failure
+        # never leaves a half-written transcript.
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(processed, ensure_ascii=False, indent=2), "utf-8")
+        tmp.replace(path)
+    except Exception as exc:
+        print(f"    not labelled: {type(exc).__name__}: {str(exc)[:200]}", flush=True)
+
+
 class _Scorer:
-    """The scoring HTTP client, opened on the first finished video."""
+    """The scoring and labelling HTTP clients, opened on the first finished video."""
     def __init__(self):
         self.http = None
+        self.label_http = None
 
     def __call__(self, sb, vid: str, lang: str) -> None:
         if self.http is None:
@@ -230,9 +256,16 @@ class _Scorer:
             self.http = video_quality.client()
         score(sb, self.http, vid, lang)
 
+    def label(self, vid: str, lang: str) -> None:
+        if self.label_http is None:
+            import video_category
+            self.label_http = video_category.client()
+        label(self.label_http, vid, lang)
+
     def close(self) -> None:
-        if self.http is not None:
-            self.http.close()
+        for http in (self.http, self.label_http):
+            if http is not None:
+                http.close()
 
 
 class Outage(Exception):
@@ -254,7 +287,7 @@ def outage_of(error: str | None) -> str | None:
 
 def process(sb, row: dict, lang: str, scorer: _Scorer,
             captions: bool = True, proxy: bool = True, publish=None) -> str:
-    """Transcribe, score and finish one claimed row; 'done' or 'failed'.
+    """Transcribe, label, score and finish one claimed row; 'done' or 'failed'.
 
     `publish(lang, video_id)` copies a finished transcript somewhere lasting
     before the row says done: on a server the local file is gone at the next
@@ -270,6 +303,8 @@ def process(sb, row: dict, lang: str, scorer: _Scorer,
     if what := outage_of(error):
         release(sb, row)
         raise Outage(f"{what}: {error}")
+    if status == "done":
+        scorer.label(vid, lang)
     if status == "done" and publish:
         try:
             publish(lang, vid)
