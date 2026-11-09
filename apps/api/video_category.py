@@ -10,6 +10,13 @@ names alone left the model to guess at the borders. "Cooking" was the clear
 case: taste tests, mukbangs and restaurant visits were filed there, so the
 category was largely people eating. Eating now goes to Other.
 
+Once eating was out (2026-11-08), Cooking's top was still mostly videos about
+food that never cook: talks on healthy eating, chef interviews, podcasts, a
+comedy sketch set in a kitchen, coffee-machine reviews, food brands' adverts
+and a winery's corporate video. "Making food" read as "about food", so the
+definition now asks for preparation the viewer can follow, and names where
+the rest goes.
+
 YouTube's own categoryId was considered and is not used: its ~15 buckets put
 recipes, make-up tutorials and mukbangs alike under People & Blogs or
 Howto & Style.
@@ -48,9 +55,15 @@ CATEGORIES: dict[str, str] = {
     "Travel": "Trips, destinations, travel guides, living abroad, sightseeing.",
     "Documentaries": "Documentaries and in-depth reports on real people, places, events, "
                      "crime or society.",
-    "Cooking": "Making food or drink: recipes, cooking and baking techniques, meal prep, "
-               "kitchen tips. The viewer sees how to prepare something. NOT eating or "
-               "tasting food that is already made.",
+    "Cooking": "Someone prepares food or drink on screen and the viewer can follow how: "
+               "recipes, cooking and baking techniques, butchery, meal prep, making coffee, "
+               "tea, beer or wine at home. Most of the video is the preparation. A recipe "
+               "is Cooking however healthy or slimming it is, whether a home cook or a "
+               "restaurant's chef makes it, and whatever machine it is made in. NOT a "
+               "video that is only about food: eating or tasting it, talks, interviews, "
+               "podcasts or documentaries about food, chefs or restaurants, factories "
+               "making food, diet advice without a recipe, reviews of kitchen gadgets, "
+               "adverts and company videos, or sketches set in a kitchen.",
     "Science": "Science, nature, animals, space, engineering and how things work.",
     "Politics": "Politics, elections, government, political news and opinion.",
     "Finance": "Money, investing, economy, business, entrepreneurship, personal finance.",
@@ -58,8 +71,9 @@ CATEGORIES: dict[str, str] = {
     "History": "Historical events, periods and people.",
     "Other": "Anything else, including eating rather than making food: taste tests, "
              "trying snacks or sweets, mukbang, eating challenges, restaurant, fast-food and "
-             "street-food visits or reviews, 'what I eat in a day', food hauls. Also vlogs, "
-             "family life, music, religion, crafts and DIY.",
+             "street-food visits or reviews, 'what I eat in a day', food hauls. Also talks, "
+             "interviews and adverts about food, chefs, restaurants, food brands or "
+             "wineries; vlogs, family life, music, religion, crafts and DIY.",
 }
 
 QUESTIONS = {"category": {
@@ -69,8 +83,13 @@ QUESTIONS = {"category": {
         "The state describes a YouTube video: its title, channel, tags and the first words "
         "of its auto-generated transcript. Which one category would a viewer browsing for "
         "this video look under? Judge what the video is mainly about. A video about food "
-        "counts as Cooking only if it shows how to prepare the food; videos of people "
-        "eating, tasting or reviewing food are Other."),
+        "counts as Cooking when most of it shows someone preparing the food so the viewer "
+        "could follow, including healthy recipes, a restaurant chef cooking a dish and "
+        "recipes made in a machine. Videos of people eating, tasting or reviewing food, "
+        "and talks, interviews or adverts about food, go elsewhere: diet advice without a "
+        "recipe to Health & Fitness, kitchen gadget reviews to Products & Tech, food "
+        "factories and documentaries to Documentaries, sketches to Comedy, the rest to "
+        "Other."),
 }}
 
 
