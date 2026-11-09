@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useContext, useEffect } from 'react';
+import React, { Suspense, useContext, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { UserContext } from '@/context/UserContext';
 import { LANGUAGE_LIST, isLanguageCode } from '@/lib/languages';
@@ -32,4 +32,7 @@ const AddLanguagePage: React.FC = () => {
   );
 };
 
-export default AddLanguagePage;
+export default function Page() {
+  // useSearchParams needs a Suspense boundary to build.
+  return <Suspense><AddLanguagePage /></Suspense>;
+}
