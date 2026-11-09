@@ -1,38 +1,38 @@
 'use client';
 
-import React, { useContext, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import LanguageSetup from '../components/LanguageSetup';
+import React, { Suspense, useContext, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { UserContext } from '@/context/UserContext';
+import { LANGUAGE_LIST, isLanguageCode } from '@/lib/languages';
+import OnboardingFlow from '../components/onboarding/OnboardingFlow';
 
 const AddLanguagePage: React.FC = () => {
   const router = useRouter();
-  const { user, loading } = useContext(UserContext);
+  const searchParams = useSearchParams();
+  const { user, loading, availableLanguages } = useContext(UserContext);
 
-  // Redirect if not logged in
+  // Adding a language needs an account: demo accounts and visitors start
+  // from the beginning instead.
   useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login');
-    }
+    if (loading) return;
+    if (!user) router.push('/login');
+    else if (user.is_anonymous) router.push('/get-started');
   }, [user, loading, router]);
 
-  const handleComplete = () => {
-    router.push('/videos');
-  };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-      </div>
-    );
+  if (loading || !user || user.is_anonymous || !availableLanguages.length) {
+    return <div className="min-h-dvh bg-white" />;
   }
 
+  const have = LANGUAGE_LIST.map((l) => l.code).filter((c) => availableLanguages.some((a) => a.code === c && a.initialized));
+  const requested = searchParams.get('language');
   return (
-    <div className="w-full h-full">
-      <LanguageSetup onComplete={handleComplete} isNewAccount={false} />
-    </div>
+    <OnboardingFlow
+      adding={{ have, start: isLanguageCode(requested) ? requested : undefined }}
+    />
   );
 };
 
-export default AddLanguagePage;
+export default function Page() {
+  // useSearchParams needs a Suspense boundary to build.
+  return <Suspense><AddLanguagePage /></Suspense>;
+}
