@@ -2,18 +2,20 @@
 
 import { Suspense, useContext, useEffect, useState } from 'react';
 import type { OAuthAuthorizationDetails } from '@supabase/supabase-js';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { UserContext } from '@/context/UserContext';
 import { supabase } from '@/lib/supabaseclient';
 import { rememberAfterLogin } from '@/lib/afterLogin';
+import EmailStep from '../../components/entry/EmailStep';
+import GrantCard from '../../components/entry/GrantCard';
+import SkyFrame from '../../components/entry/SkyFrame';
+import s from '../../components/entry/entry.module.css';
 
 const FAILED = 'This connection request could not be completed. Start again from your AI app.';
-const button = 'w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50';
 
 function ConsentRequest({ authorizationId }: { authorizationId: string }) {
   const { user, loading } = useContext(UserContext);
-  const router = useRouter();
   const signedIn = !!user && !user.is_anonymous;
   const [details, setDetails] = useState<OAuthAuthorizationDetails | null>(null);
   const [error, setError] = useState('');
@@ -53,53 +55,54 @@ function ConsentRequest({ authorizationId }: { authorizationId: string }) {
     }
   }
 
-  function signIn() {
+  // Log in right here; the link brings the learner back to this request.
+  async function sendLink(email: string) {
     rememberAfterLogin(`/oauth/consent?authorization_id=${encodeURIComponent(authorizationId)}`);
-    router.push('/login');
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) throw error;
   }
 
+  if (!authorizationId || error) {
+    return <SkyFrame state="error" title="Couldn’t connect" lead={<p role="alert">{error || FAILED}</p>} />;
+  }
+
+  if (!loading && !signedIn) {
+    return (
+      <EmailStep
+        title="Connect your AI app"
+        lead="Log in first. Then you choose what your AI app can do with your Langfour words."
+        action="Email me a link"
+        sentLead="Open the link on this device. It brings you back here to finish connecting."
+        onSend={sendLink}
+        navRight={null}
+        footer="Only connect an app you started this from yourself."
+      />
+    );
+  }
+
+  if (!details) {
+    return (
+      <SkyFrame state="loading" title="Connect your AI app" lead="Checking the request…">
+        <div className={s.waiting}>
+          <Loader2 aria-label="Loading connection" className="animate-spin" />
+        </div>
+      </SkyFrame>
+    );
+  }
+
+  const name = details.client.name || 'An AI app';
+
   return (
-    <div className="min-h-screen bg-gray-50 flex justify-center px-4">
-      <div className="w-full max-w-md mt-20 self-start rounded-xl border border-gray-200 bg-white p-8 shadow-sm space-y-5">
-        <h1 className="text-xl font-semibold text-gray-900">Connect to Langfour</h1>
-        {!authorizationId || error ? (
-          <p role="alert" className="text-sm text-gray-600">{error || FAILED}</p>
-        ) : loading ? (
-          <Loader2 aria-label="Loading" className="animate-spin text-indigo-500" />
-        ) : !signedIn ? (
-          <>
-            <p className="text-sm text-gray-600">Sign in to choose whether to connect your AI app.</p>
-            <button onClick={signIn} className={`${button} bg-indigo-500 text-white hover:bg-indigo-600`}>Sign in</button>
-          </>
-        ) : !details ? (
-          <Loader2 aria-label="Loading connection" className="animate-spin text-indigo-500" />
-        ) : (
-          <>
-            <p className="text-sm text-gray-700"><strong>{details.client.name || 'An AI app'}</strong> wants to connect to your Langfour account.</p>
-            <p className="text-sm text-gray-600">Signed in as {details.user.email}</p>
-            <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
-              <li>See which words you know and are learning.</li>
-              <li>Record vocabulary practice results and texts you read.</li>
-              <li>Update your learning progress and schedule flashcard reviews, including in RemNote when connected.</li>
-              {details.scope.split(/\s+/).filter(Boolean).map(scope => (
-                <li key={scope}>Account permission: {scope}</li>
-              ))}
-            </ul>
-            <div className="text-xs text-gray-500 break-all">
-              <p>Return address: {details.redirect_uri}</p>
-              <p className="mt-2">Only approve a connection you started in an app you trust.</p>
-            </div>
-            <button disabled={busy} onClick={() => decide(true)} className={`${button} bg-indigo-500 text-white hover:bg-indigo-600`}>
-              {busy ? 'Returning to your app…' : 'Allow access'}
-            </button>
-            <button disabled={busy} onClick={() => decide(false)} className={`${button} border border-gray-300 text-gray-700 hover:bg-gray-50`}>Deny</button>
-          </>
-        )}
-        <p className="text-xs text-gray-500">
-          <a href="https://www.langfour.com/privacy" target="_blank" rel="noreferrer" className="hover:text-gray-800 underline">Privacy Policy</a>
-        </p>
-      </div>
-    </div>
+    <SkyFrame
+      state="ask"
+      title={<>Connect <span>{name}</span></>}
+      lead={<p>It’s asking to use your Langfour account. Only allow a connection you started yourself.</p>}
+    >
+      <GrantCard details={details} busy={busy} onDecide={decide} />
+    </SkyFrame>
   );
 }
 

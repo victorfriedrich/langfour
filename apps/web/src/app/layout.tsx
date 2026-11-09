@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { UserProvider } from '@/context/UserContext';
 import DemoAccountHeader from '@/app/components/DemoAccountHeader';
+import DailyWordsRunner from '@/app/components/DailyWordsRunner';
 import Sidebar from '@/app/components/Sidebar'; // Import the client Sidebar
 import { TutorialProvider } from "@/context/TutorialContext";
 import { Analytics } from "@vercel/analytics/react"
@@ -32,7 +33,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased h-dvh bg-gray-100 flex flex-col md:flex-row`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased h-dvh bg-white flex flex-col md:flex-row`}>
         <UserProvider>
           <TutorialProvider>
             <ConditionalSidebar />
@@ -42,6 +43,7 @@ export default function RootLayout({
                 content, which would make the document scroll instead. */}
             <main className="flex-1 min-h-0 overflow-y-auto h-dvh">
               <DemoAccountHeader />
+              <DailyWordsRunner />
               {children}
               <Analytics />
             </main>

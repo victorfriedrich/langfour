@@ -9,7 +9,7 @@ export default function GetStartedLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-white">
       <UserProvider>
         <TutorialProvider>
           {children}

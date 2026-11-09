@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useContext } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ChevronRight, BarChart2, BookMarked, BookOpenText, Film, Clapperboard, Menu, X, Globe, LogInIcon, LogOutIcon, Download, Plus } from 'lucide-react';
 import { UserContext, AvailableLanguageOption } from '@/context/UserContext';
 import { supabase } from '@/lib/supabaseclient';
@@ -13,6 +14,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const pathname = usePathname();
 
   const { user, language, availableLanguages, setLanguage } = useContext(UserContext);
   const [isDemoVisible, setIsDemoVisible] = useState(false);
@@ -47,8 +49,9 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
     { href: '/extension', name: 'Extension', icon: Download },
   ];
 
-  // Add login item only for non-logged in users
-  if (!user || user.is_anonymous) {
+  // Add login item only without any session; a demo account has "Log in"
+  // in the demo line instead.
+  if (!user) {
     navItems.push({ href: '/login', name: 'Login', icon: LogInIcon });
   }
 
@@ -96,7 +99,7 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
       {/* Mobile Header. In the page's flow, not fixed: iOS Safari places fixed
           elements against a different top edge than the page, and the content
           below slid under the header. */}
-      <div className="md:hidden bg-indigo-700 text-white relative z-50 flex shrink-0 items-center">
+      <div className="md:hidden bg-white text-[#222326] border-b border-[#ECEDF0] relative z-50 flex shrink-0 items-center">
         <button
           onClick={toggleSidebar}
           className="pl-3 py-3 rounded-md focus:outline-none"
@@ -105,8 +108,11 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
           {isMobileOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
         {isDemoVisible && (
-          <div className="flex-1 text-center py-2 rounded-md">
-            Demo account | <Link href="/start-learning" className="underline underline-offset-2">Sign up</Link> to save your progress
+          <div className="flex flex-1 items-center justify-center gap-2 py-2 text-sm text-[#5C606B]">
+            <span className="h-[7px] w-[7px] rounded-full bg-[#F5A524]" aria-hidden="true" />
+            Demo account
+            <Link href="/start-learning" className="font-semibold text-[#222326]">Save progress</Link>
+            <Link href="/login" className="text-[#5C606B]">Log in</Link>
           </div>
         )}
       </div>
@@ -118,7 +124,7 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
           transform transition-transform duration-300 ease-in-out
           ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
           md:sticky md:top-0 md:translate-x-0 md:flex-shrink-0 
-          bg-gray-100 border-r border-gray-200 overflow-y-auto md:h-screen
+          bg-white border-r border-[#ECEDF0] overflow-y-auto md:h-screen
           ${isCollapsed ? 'md:w-16' : 'md:w-60'}
           w-60 md:block
           ${isMobileOpen ? 'block' : 'hidden'}
@@ -126,18 +132,18 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
           h-full md:h-screen
         `}
       >
-        <div className="p-3 flex flex-col h-full">
+        <div className="px-3.5 pt-5 pb-3.5 flex flex-col h-full">
           {/* Desktop Toggle Button */}
-          <div className="hidden md:flex items-center justify-between mb-4">
+          <div className="hidden md:flex items-center justify-between mb-6 pl-2">
             {!isCollapsed && (
               <Link href="/" className="flex items-center gap-2" aria-label="Langfour home">
-                <img src="/langfour-logo.svg" alt="Langfour logo" className="h-9 w-9" />
-                <span className="text-xl font-bold text-gray-800">Langfour</span>
+                <img src="/langfour-logo.svg" alt="Langfour logo" className="h-7 w-7" />
+                <span className="text-[19px] font-semibold tracking-[-0.02em] text-[#222326]">Langfour</span>
               </Link>
             )}
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className="p-1 rounded-md hover:bg-gray-200"
+              className="p-1 rounded-md text-[#8A8E98] hover:bg-[#F3F4F6] hover:text-[#222326]"
               aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
             >
               <ChevronRight
@@ -148,7 +154,7 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
           </div>
 
           {/* Navigation Items */}
-          <div className="flex-1 space-y-1">
+          <div className="flex-1 space-y-0.5">
             {navItems.map((item) => (
               <Link
                 href={item.href}
@@ -156,31 +162,34 @@ const Sidebar: React.FC<SidebarProps> = ({ documentName }) => {
                 onClick={() => {
                   setIsMobileOpen(false);
                 }}
-                className={`flex items-center py-2 px-2 text-sm font-medium rounded-md transition-colors duration-150 ease-in-out ${isCollapsed
+                aria-current={pathname?.startsWith(item.href) ? 'page' : undefined}
+                className={`flex h-[38px] items-center px-2.5 text-[15px] rounded-[10px] transition-colors duration-150 ease-in-out ${isCollapsed
                   ? 'md:justify-center'
-                  : 'justify-start text-gray-800 hover:bg-gray-200'
-                  }`}
+                  : 'justify-start'
+                  } ${pathname?.startsWith(item.href)
+                  ? 'bg-[#F3F4F6] font-semibold text-[#222326]'
+                  : 'font-medium text-[#5C606B] hover:bg-[#F3F4F6] hover:text-[#222326]'}`}
               >
-                <item.icon className="h-5 w-5 text-gray-500" />
-                <span className={`ml-2 truncate ${isCollapsed ? 'md:hidden' : ''}`}>{item.name}</span>
+                <item.icon className="h-[19px] w-[19px]" strokeWidth={1.75} />
+                <span className={`ml-3 truncate ${isCollapsed ? 'md:hidden' : ''}`}>{item.name}</span>
               </Link>
             ))}
           </div>
 
-          <div className="mt-auto border-t border-gray-200 relative">
+          <div className="mt-auto border-t border-[#ECEDF0] relative">
             <div className={`flex items-center ${isCollapsed ? 'md:justify-center p-2' : 'justify-between gap-2 p-3'}`}>
               {/* Account Information */}
               <button
                 className={`flex flex-col items-start truncate ${isCollapsed ? 'md:hidden' : ''}`}
                 onClick={toggleAccountPopup}
               >
-                <p className="text-sm font-medium text-gray-800">Profile</p>
-                <p className="text-xs text-gray-500 truncate">{user?.email ? user.email : 'Demo Account'}</p>
+                <p className="text-sm font-semibold text-[#222326]">Profile</p>
+                <p className="text-[13px] text-[#8A8E98] truncate">{user?.email ? user.email : 'Demo Account'}</p>
               </button>
               {/* Language Selector */}
               <button
                 onClick={toggleLanguagePopup}
-                className={`rounded-md hover:bg-gray-200 focus:outline-none flex-shrink-0 ${isCollapsed ? 'md:h-12 md:w-12 md:flex md:items-center md:justify-center' : 'p-2'}`}
+                className={`rounded-md hover:bg-[#F3F4F6] focus:outline-none flex-shrink-0 ${isCollapsed ? 'md:h-12 md:w-12 md:flex md:items-center md:justify-center' : 'p-2'}`}
                 aria-label="Change Language"
               >
                 {language?.flag ? (

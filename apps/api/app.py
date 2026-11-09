@@ -41,6 +41,7 @@ from nlp_processing import (
     parse_and_translate_word,
     translate_section,
 )
+from onboarding_routes import router as onboarding_router
 from recommender import Recommender
 from remnote_sync import pair_router as remnote_pair_router
 from remnote_sync import sync_router as remnote_sync_router
@@ -154,6 +155,7 @@ app.include_router(channel_router, tags=["channels"])
 app.include_router(video_fit_router, tags=["videos"])
 app.include_router(watch_router, tags=["watch"])
 app.include_router(home_router, tags=["home"])
+app.include_router(onboarding_router, tags=["onboarding"])
 app.router.routes.extend(mcp.streamable_http_app().routes)
 
 

@@ -1,38 +1,27 @@
 'use client';
 
-import React, { useContext, useEffect } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserContext } from '@/context/UserContext';
-import LanguageAppOnboarding from '../components/LanguageAppOnboarding';
+import OnboardingFlow from '../components/onboarding/OnboardingFlow';
 
-const ProficiencyPage: React.FC = () => {
+const GetStartedPage: React.FC = () => {
   const router = useRouter();
   const { user, loading } = useContext(UserContext);
-  
-  // If a non-anonymous user exists, redirect immediately
+  // Wait for the first load only: creating the demo account at the end of
+  // the flow reloads the context, and the flow must stay on screen meanwhile.
+  const [ready, setReady] = useState(false);
+  if (!loading && !ready) setReady(true);
+
+  // A signed-in account has nothing to set up here.
   useEffect(() => {
     if (user && !user.is_anonymous) {
       router.push('/videos');
     }
   }, [user, router]);
 
-  const handleSetupComplete = () => {
-    router.push('/videos');
-  };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <LanguageAppOnboarding onComplete={handleSetupComplete} isNewAccount={true} />
-    </>
-  );
+  if (!ready) return <div className="min-h-dvh bg-white" />;
+  return <OnboardingFlow />;
 };
 
-export default ProficiencyPage;
+export default GetStartedPage;
