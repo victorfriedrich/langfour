@@ -182,6 +182,8 @@
   .pill { flex-wrap: wrap; padding: 8px; }
   .pill input { padding: 0 12px; flex-basis: 100%; }
   .go { width: 100%; justify-content: center; }
+  /* Sent: the address keeps the first row, the button takes its own, as in the pill */
+  .sent { flex-wrap: wrap; row-gap: 8px; }
   .edgeTall { margin-top: -140px; }
   .bandTall { padding-bottom: 170px; }
 }
