@@ -88,15 +88,29 @@ function PreviewCard({ video, showPercent }: { video: HomeVideo; showPercent: bo
   );
 }
 
-export default function OnboardingFlow({ language = 'es' }: { language?: LanguageCode }) {
+const LIVE_LANGUAGES: LanguageCode[] = ['es'];
+
+interface OnboardingFlowProps {
+  /** The language this flow sets up; in add mode, the one picked. */
+  language?: LanguageCode;
+  /** Adding a language to a signed-in account: no demo account, no sign-in
+   *  link, and the languages the account already has are not offered. */
+  adding?: { have: LanguageCode[]; start?: LanguageCode };
+}
+
+export default function OnboardingFlow({ language: fixed = 'es', adding }: OnboardingFlowProps) {
+  const [picked, setPicked] = useState<LanguageCode | null>(
+    adding?.start && LIVE_LANGUAGES.includes(adding.start) && !adding.have.includes(adding.start) ? adding.start : null,
+  );
+  const language = picked ?? fixed;
   const router = useRouter();
   const { user, initializeLanguage, setLanguage, fetchWithAuth } = useContext(UserContext);
   const { createDemoAccount } = useCreateDemoAccount();
   const { addWordsToUserwords } = useUpdateUserwords();
 
-  const [step, setStep] = useState<Step>('language');
+  const [step, setStep] = useState<Step>(picked ? 'level' : 'language');
   const [leaving, setLeaving] = useState(false);
-  const [arrived, setArrived] = useState(false);
+  const [arrived, setArrived] = useState(picked !== null);
   const [level, setLevel] = useState<Level>('A1');
   const [hover, setHover] = useState<Level | null>(null);
   const [topics, setTopics] = useState<string[]>([]);
@@ -157,7 +171,8 @@ export default function OnboardingFlow({ language = 'es' }: { language?: Languag
 
   /** The band fades its content, then glides into the panel's place over a
    *  sky that stays still; the level step then takes over in that spot. */
-  const chooseLanguage = () => {
+  const chooseLanguage = (code: LanguageCode) => {
+    setPicked(code);
     const vw = document.documentElement.clientWidth;
     const b = band.current, w = bandWall.current;
     if (vw < 960 || !b || !w || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -186,7 +201,7 @@ export default function OnboardingFlow({ language = 'es' }: { language?: Languag
     setStep('done');
     try {
       // As before: a demo account per start, until the learner saves it.
-      if (!user || user.is_anonymous) await createDemoAccount(level);
+      if (!adding && (!user || user.is_anonymous)) await createDemoAccount(level);
       await initializeLanguage(language, level);
       setLanguage(LANGUAGES[language]);
       await saveDailyPrefs(language, { pace, topics });
@@ -211,18 +226,18 @@ export default function OnboardingFlow({ language = 'es' }: { language?: Languag
     // pinned in place with inline styles, as one of Split's columns.
     return (
       <div key="language" className={e.page}>
-        <EntryNav right={<HaveAccount />} />
+        <EntryNav right={adding ? <a href="/videos">Cancel</a> : <HaveAccount />} />
         <section className={`${e.band} ${e.bandTall}`} ref={band}>
           <SkyWall className={e.wall} wallRef={bandWall} />
           <h1 className={`${e.title} ${e.in} ${fade}`}>Which language are you learning?</h1>
         </section>
         <div className={`${e.edge} ${e.edgeTall} ${e.in3} ${fade}`}>
           <div className={e.langs}>
-            {LANGUAGE_LIST.map((lang) => {
-              const live = lang.code === language;
+            {LANGUAGE_LIST.filter((lang) => !adding?.have.includes(lang.code)).map((lang) => {
+              const live = LIVE_LANGUAGES.includes(lang.code);
               const flag = FLAGS[lang.code] && <svg className={e.flag} viewBox="0 0 30 20" aria-hidden="true">{FLAGS[lang.code]}</svg>;
               return live ? (
-                <button key={lang.code} type="button" className={`${e.lang} ${e.live}`} onClick={chooseLanguage}>
+                <button key={lang.code} type="button" className={`${e.lang} ${e.live}`} onClick={() => chooseLanguage(lang.code)}>
                   {flag}
                   <span className={e.arrow}>{ARROW}</span>
                   <b>{lang.name}</b>
@@ -350,7 +365,7 @@ export default function OnboardingFlow({ language = 'es' }: { language?: Languag
 
   return (
     <div key="split" className={o.split}>
-      <EntryNav right={<HaveAccount />} />
+      <EntryNav right={adding ? <a href="/videos">Cancel</a> : <HaveAccount />} />
       <section className={o.left}>
         <div className={o.stage} key={step}>{left}</div>
       </section>
