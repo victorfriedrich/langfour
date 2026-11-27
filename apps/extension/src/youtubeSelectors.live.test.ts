@@ -15,7 +15,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { BROWSE, SELECTORS } from './youtubeChannel';
-import { findVideoCards, videoIdFromHref } from './youtubeSelectors';
+import { findVideoCards, videoIdFromHref, type VideoCard } from './youtubeSelectors';
 
 const enabled = Boolean(process.env.YOUTUBE_LIVE);
 
@@ -42,9 +42,24 @@ async function open(url: string, waitFor: string): Promise<Page> {
   const page = await context.newPage();
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector(waitFor, { timeout: 30_000 });
-  // Duration labels render after the cards; findVideoCards skips cards without one.
-  await page.waitForFunction(() => document.querySelector('.ytBadgeShapeText, ytd-thumbnail-overlay-time-status-renderer #text'), null, { timeout: 15_000 }).catch(() => {});
   return page;
+}
+
+/**
+ * The video cards on the page, or inside `within`, once MIN_CARDS of them
+ * can take a badge. Cards keep streaming in after the first one, and their
+ * duration labels after that, so counting as soon as one shows found only 2
+ * on some runs. Gives up after 15 s and returns what it found, so the test
+ * fails on the count rather than on a timeout.
+ */
+async function videoCards(page: Page, within?: string): Promise<VideoCard[]> {
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    const doc = await snapshot(page);
+    const cards = findVideoCards((within && doc.querySelector(within)) || doc);
+    if (cards.length >= MIN_CARDS || Date.now() > deadline) return cards;
+    await page.waitForTimeout(500);
+  }
 }
 
 /**
@@ -76,7 +91,7 @@ describe.skipIf(!enabled)('YouTube selectors on youtube.com', () => {
 
   it('find video cards in search results', async () => {
     const page = await open(SEARCH, 'ytd-video-renderer');
-    const cards = findVideoCards(await snapshot(page));
+    const cards = await videoCards(page);
     expect(cards.length, 'video cards found in search results').toBeGreaterThanOrEqual(MIN_CARDS);
   }, TIMEOUT_MS);
 
@@ -88,14 +103,12 @@ describe.skipIf(!enabled)('YouTube selectors on youtube.com', () => {
     expect(videoId, 'a watch link in the search results').not.toBeNull();
     const page = await open(`https://www.youtube.com/watch?v=${videoId}&hl=es`,
       '#related yt-lockup-view-model, #related ytd-compact-video-renderer');
-    const doc = await snapshot(page);
-    const related = doc.querySelector('#related');
-    expect(findVideoCards(related ?? doc).length, 'video cards found in the sidebar').toBeGreaterThanOrEqual(MIN_CARDS);
+    expect((await videoCards(page, '#related')).length, 'video cards found in the sidebar').toBeGreaterThanOrEqual(MIN_CARDS);
   }, TIMEOUT_MS);
 
   it('find video cards and the header parts on a channel page', async () => {
     const page = await open(CHANNEL, `${BROWSE} ytd-rich-item-renderer`);
-    expect(findVideoCards(await snapshot(page)).length, 'video cards on the Videos tab').toBeGreaterThanOrEqual(MIN_CARDS);
+    expect((await videoCards(page)).length, 'video cards on the Videos tab').toBeGreaterThanOrEqual(MIN_CARDS);
 
     // The Favourite button and the Langfour tab go into these.
     for (const [name, selector] of Object.entries(SELECTORS)) {
