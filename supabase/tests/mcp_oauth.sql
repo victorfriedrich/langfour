@@ -9,7 +9,7 @@ begin
   assert public.langfour_mcp_access_token(direct) = direct, 'Direct login changed';
   result := public.langfour_mcp_access_token(oauth);
   assert result#>>'{claims,role}' = 'langfour_mcp', 'Wrong role';
-  assert result#>'{claims,aud}' = '["authenticated","https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app/mcp"]'::jsonb, 'Wrong audience';
+  assert result#>'{claims,aud}' = '["authenticated","https://api.langfour.com/mcp"]'::jsonb, 'Wrong audience';
   assert result#>>'{claims,client_id}' = 'client-a', 'Missing OAuth client';
   assert result#>>'{claims,sub}' = 'user-a', 'Identity changed';
   assert public.langfour_mcp_access_token(result) = result, 'Hook not idempotent';

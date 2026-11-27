@@ -1,5 +1,4 @@
-const DEFAULT_BACKEND_URL =
-  'https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app';
+const DEFAULT_BACKEND_URL = 'https://api.langfour.com';
 
 const configuredBackendUrl = process.env.REACT_APP_BACKEND_URL?.trim();
 

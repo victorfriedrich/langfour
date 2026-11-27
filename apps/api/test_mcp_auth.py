@@ -67,11 +67,14 @@ def test_discovery_and_challenge_do_not_trust_host(client):
     assert client.get("/.well-known/not-public").status_code == 401
 
 
-def test_oauth_access_reaches_tool_as_owner(client, monkeypatch):
+@pytest.mark.parametrize("resource", [mcp_auth.MCP_RESOURCE_URL, mcp_auth.LEGACY_RESOURCE_URL])
+def test_oauth_access_reaches_tool_as_owner(client, monkeypatch, resource):
+    # The legacy audience covers tokens issued before the hook moved to api.langfour.com.
     store = FakeStore()
     monkeypatch.setattr(mcp_server, "get_practice_store", lambda: store)
     response = client.post("/mcp", headers={
-        "authorization": f"Bearer {token()}", "accept": "application/json, text/event-stream",
+        "authorization": f"Bearer {token(aud=['authenticated', resource])}",
+        "accept": "application/json, text/event-stream",
     }, json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
         "name": "record_practice", "arguments": {
             "language": "es", "answers": [{"word": "hablar", "direction": "produce", "correct": False}],

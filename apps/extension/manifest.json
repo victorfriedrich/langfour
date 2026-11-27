@@ -99,7 +99,7 @@
     }
   ],
   "host_permissions": [
-    "https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app/*",
+    "https://api.langfour.com/*",
     "https://xpovcmbrttmkhnrfspvo.supabase.co/*",
     "https://www.youtube.com/*"
   ],

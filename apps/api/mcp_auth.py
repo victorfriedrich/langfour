@@ -15,9 +15,12 @@ from fastapi import APIRouter
 
 from supabase_client import SUPABASE_URL
 
-MCP_RESOURCE_URL = os.getenv(
-    "MCP_RESOURCE_URL", "https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app/mcp"
-).rstrip("/")
+MCP_RESOURCE_URL = os.getenv("MCP_RESOURCE_URL", "https://api.langfour.com/mcp").rstrip("/")
+# The same service under Koyeb's default hostname, the audience until 2026-11-27.
+# Tokens the hook issued before its audience moved stay valid for up to an hour,
+# so they are accepted too. Drop this once that migration has been live a day.
+LEGACY_RESOURCE_URL = "https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app/mcp"
+_ACCEPTED_AUDIENCES = (["authenticated", MCP_RESOURCE_URL], ["authenticated", LEGACY_RESOURCE_URL])
 _parts = urlsplit(MCP_RESOURCE_URL)
 if (_parts.scheme not in ("https", "http") or not _parts.netloc
         or _parts.path != "/mcp" or _parts.query or _parts.fragment
@@ -81,7 +84,7 @@ def valid_mcp_claims(claims: dict, user) -> bool:
     exp = claims.get("exp")
     return (
         claims.get("iss") == MCP_ISSUER
-        and claims.get("aud") == ["authenticated", MCP_RESOURCE_URL]
+        and claims.get("aud") in _ACCEPTED_AUDIENCES
         and claims.get("role") == "langfour_mcp"
         and isinstance(claims.get("client_id"), str) and bool(claims["client_id"])
         and claims.get("sub") == str(user.id)
