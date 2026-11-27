@@ -7,6 +7,7 @@ import pytest
 from scipy.sparse import csr_matrix
 
 import recommender as recommender_module
+from language_index import LanguageIndex
 from recommender import Recommender
 
 
@@ -15,38 +16,25 @@ def blank_recommender(base_folder=None):
     recommender.base_folder = base_folder
     recommender.languages = ["es"]
     recommender.blacklisted_files = set()
-    recommender.documents = {}
-    recommender.filenames = {}
-    recommender.categories = {}
-    recommender.titles = {}
-    recommender.max_word_ids = {}
-    recommender.matrices = {}
-    recommender.presence = {}
-    recommender.total_words_per_doc = {}
-    recommender.distinct_words_per_doc = {}
-    recommender.rows_by_video = {}
+    recommender.indexes = {}
     recommender.video_signals = {}
-    recommender.creators = {}
-    recommender.lengths = {}
     recommender.grammar = {}
     return recommender
 
 
-def make_recommender(rows, categories=None, titles=None):
+def make_recommender(rows, categories=None, titles=None, creators=None):
     """Rows are times each word is spoken in a video."""
     recommender = blank_recommender()
     matrix = csr_matrix(np.asarray(rows, dtype=np.int16))
-    recommender.filenames = {
-        "es": [f"video-{index}_processed.json" for index in range(matrix.shape[0])]
-    }
-    recommender._index_matrix("es", matrix)
-    recommender.categories = {
-        "es": categories or ["Other"] * matrix.shape[0]
-    }
-    recommender.titles = {
-        "es": titles or [f"Video {index}" for index in range(matrix.shape[0])]
-    }
-    recommender.max_word_ids = {"es": max(matrix.shape[1] - 1, 0)}
+    n = matrix.shape[0]
+    recommender.indexes["es"] = LanguageIndex.build(
+        "es",
+        [f"video-{index}_processed.json" for index in range(n)],
+        matrix,
+        categories or ["Other"] * n,
+        titles or [f"Video {index}" for index in range(n)],
+        creators,
+    )
     recommender.hidden_videos = set()
     return recommender
 
@@ -122,8 +110,8 @@ def test_unreadable_video_signals_keep_known_words_order(monkeypatch):
 
 
 def test_dropped_channels_videos_are_found_by_creator(monkeypatch):
-    recommender = make_recommender([np.ones(150, dtype=np.int8)] * 3)
-    recommender.creators = {"es": ["Kept", "Dropped", ""]}
+    recommender = make_recommender([np.ones(150, dtype=np.int8)] * 3,
+                                   creators=["Kept", "Dropped", ""])
     monkeypatch.setattr(recommender_module, "DROPPED_CHANNELS", frozenset({"Dropped"}))
     assert recommender._dropped_channel_videos() == {"video-1"}
 
@@ -282,8 +270,9 @@ def test_matrix_manifest_persists_titles_and_loads_without_transcripts(tmp_path)
     loaded = blank_recommender(str(tmp_path))
 
     assert loaded._try_load_cached_language("es") is True
-    assert loaded.titles["es"] == ["A trip"]
-    assert (loaded.creators["es"], loaded.lengths["es"]) == (["Katy Travels"], [1348])
+    index = loaded.indexes["es"]
+    assert index.titles == ("A trip",)
+    assert (index.creators, index.lengths) == (("Katy Travels",), (1348,))
 
 
 def test_a_manifest_from_before_channel_names_loads_with_blanks(tmp_path):
@@ -300,7 +289,8 @@ def test_a_manifest_from_before_channel_names_loads_with_blanks(tmp_path):
 
     recommender = blank_recommender(str(tmp_path))
     assert recommender._try_load_cached_language("es")
-    assert (recommender.creators["es"], recommender.lengths["es"]) == ([""], [None])
+    index = recommender.indexes["es"]
+    assert (index.creators, index.lengths) == (("",), (None,))
 
 
 def test_coverage_counts_every_word_and_new_words_are_distinct():
@@ -312,15 +302,15 @@ def test_coverage_counts_every_word_and_new_words_are_distinct():
     assert video["percentUnderstood"] == pytest.approx(50 / 199 * 100, abs=0.01)
     assert video["newWords"] == 149 and video["knownWords"] == 1
 
-    ratios, new, known = recommender._score_documents_by_words([1, 2], "es")
+    ratios, new, known = recommender.index("es").score([1, 2])
     assert ratios[0] == pytest.approx(2 / 199) and new[0] == 148 and known[0] == 2
 
 
 def test_scoring_some_rows_matches_scoring_all_of_them():
     recommender = make_recommender([[50] + [1] * 149, [0, 3] + [1] * 148, [2] * 150])
 
-    every = recommender._score_documents_by_words([0, 1], "es")
-    some = recommender._score_documents_by_words([0, 1], "es", rows=[2, 0])
+    every = recommender.index("es").score([0, 1])
+    some = recommender.index("es").score([0, 1], rows=[2, 0])
     for full, part in zip(every, some, strict=True):
         assert list(part) == pytest.approx([full[2], full[0]])
 
@@ -361,7 +351,7 @@ def test_fit_maps_ids_to_rows_from_a_cached_matrix(tmp_path):
     recommender = blank_recommender(str(tmp_path))
     recommender.hidden_videos = set()
     assert recommender._try_load_cached_language("es")
-    assert recommender.rows_by_video["es"] == {"aaa": 0, "bbb": 1}
+    assert dict(recommender.indexes["es"].rows) == {"aaa": 0, "bbb": 1}
     assert recommender.fit_videos(["bbb"], [150], "es") == {"bbb": {"status": "hidden"}}
     assert recommender.fit_videos(["aaa"], [0], "es")["aaa"]["newWords"] == 149
 
@@ -406,9 +396,10 @@ def test_a_binary_cache_is_left_alone_and_counts_are_built(tmp_path):
     assert recommender._try_load_cached_language("es") is False
     recommender._ensure_language_loaded("es")
 
-    assert recommender.matrices["es"].toarray()[0, [4, 9]].tolist() == [2, 1]
-    assert recommender.total_words_per_doc["es"].tolist() == [3]
-    assert recommender.distinct_words_per_doc["es"].tolist() == [2]
+    index = recommender.indexes["es"]
+    assert index.counts.toarray()[0, [4, 9]].tolist() == [2, 1]
+    assert index.spoken.tolist() == [3]
+    assert index.distinct.tolist() == [2]
     meta = json.loads((language_dir / "document_term_counts.npz.meta.json").read_text())
     assert meta["weights"] == "counts"
     assert (language_dir / "document_term_matrix.npz.meta.json").read_text() == old_meta

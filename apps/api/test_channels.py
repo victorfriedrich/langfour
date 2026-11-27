@@ -25,6 +25,7 @@ from scipy.sparse import csr_matrix
 
 import channels
 from conftest import FakeSupabase, queued
+from language_index import LanguageIndex
 
 USER = "11111111-1111-1111-1111-111111111111"
 CHANNEL = "UC" + "a" * 22
@@ -63,16 +64,11 @@ def recommender(videos=VIDEOS):
             data.append(count)
         indptr.append(len(indices))
     counts = csr_matrix((np.array(data, dtype=np.int16), indices, indptr), shape=(len(names), 12))
-    presence = csr_matrix((np.ones(counts.nnz, dtype=np.int8), counts.indices, counts.indptr),
-                          shape=counts.shape)
-    return SimpleNamespace(
-        languages=["es"], _ensure_language_loaded=lambda language: None,
-        filenames={"es": [f"{n}_processed.json" for n in names]},
-        titles={"es": [f"Title of {n}" if n != "v6" else "" for n in names]},
-        rows_by_video={"es": {n: i for i, n in enumerate(names)}},
-        matrices={"es": counts}, presence={"es": presence},
-        distinct_words_per_doc={"es": np.diff(counts.indptr)},
+    index = LanguageIndex.build(
+        "es", [f"{n}_processed.json" for n in names], counts, ["Other"] * len(names),
+        [f"Title of {n}" if n != "v6" else "" for n in names],
     )
+    return SimpleNamespace(languages=["es"], index=lambda language: index)
 
 
 @pytest.fixture(autouse=True)
@@ -519,7 +515,7 @@ def test_context_lines_skip_tokens_that_are_not_words(corpus):
     tokens = [{"content": "el ", "id": 1}, "stray", {"content": "cofre", "id": 5}]
     (corpus / "v1_processed.json").write_text(json.dumps({"title": "t", "content": tokens}))
     rec = recommender()
-    lines = channels.context_lines("es", [5], [("v1", 0)], rec.presence["es"])
+    lines = channels.context_lines("es", [5], [("v1", 0)], rec.index("es").presence)
     assert lines[5]["sentence"] == "el cofre"
 
 

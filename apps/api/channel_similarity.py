@@ -14,23 +14,26 @@ Tried on the es corpus on 2026-11-04: the channels most like Enrique Álex
 Vilas (abandoned places) were Clavero, Jep, Portillo ("72 horas dentro de
 Chernobyl") and Kibara. Log counts instead of presence gave the same lists,
 and presence is already in memory, so nothing new is held per video: only the
-IDF weights, each video's norm and each channel's, cached per matrix.
+IDF weights, each video's norm and each channel's, cached per index.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 
 import numpy as np
 from scipy.sparse import csr_matrix, diags
 
+from language_index import LanguageIndex
+
 MIN_DF = 5
 
-_cache: dict[str, tuple[tuple, _Space]] = {}
+_cache: dict[str, tuple[LanguageIndex, _Space]] = {}
 
 
 class _Space:
-    def __init__(self, presence: csr_matrix, creators: list[str]):
+    def __init__(self, presence: csr_matrix, creators: Sequence[str]):
         n = presence.shape[0]
         df = np.bincount(presence.indices, minlength=presence.shape[1])
         idf = np.log((1 + n) / (1 + df)).astype(np.float32)
@@ -69,24 +72,23 @@ class _Space:
         return (diags(1 / lengths) @ out).tocsr()
 
 
-def space(recommender, language: str) -> _Space:
-    presence = recommender.presence[language]
-    creators = recommender.creators[language]
-    key = (id(presence), presence.shape, presence.nnz, id(creators), len(creators))
-    cached = _cache.get(language)
-    if cached is None or cached[0] != key:
-        cached = (key, _Space(presence, creators))
-        _cache[language] = cached
+def space(index: LanguageIndex) -> _Space:
+    """The index's space, built once per index: an index never changes, and a
+    newer corpus is a new index."""
+    cached = _cache.get(index.language)
+    if cached is None or cached[0] is not index:
+        cached = (index, _Space(index.presence, index.creators))
+        _cache[index.language] = cached
     return cached[1]
 
 
-def channel_cosines(recommender, language: str, names: list[str],
+def channel_cosines(index: LanguageIndex, names: list[str],
                     seeds: list[list[int]]) -> np.ndarray:
     """names x seeds: the cosine of each channel (all its videos) with each
     seed (a list of matrix rows). A name the corpus doesn't have scores 0."""
     if not names or not seeds:
         return np.zeros((len(names), len(seeds)), dtype=np.float32)
-    s = space(recommender, language)
+    s = space(index)
     # pick carries each video's 1/norm and 1/len(channel), so this is each
     # channel's mean vector dotted with each seed.
     raw = (s.presence @ (s.idf @ s.seeds(seeds).T)).toarray()
