@@ -391,7 +391,7 @@ and type-checks the extension only.
 | Component | Where | How |
 |---|---|---|
 | web | Vercel | builds `apps/web` from the monorepo |
-| api | Koyeb | container from `apps/api/Dockerfile`, env vars set in the dashboard |
+| api | Koyeb, as `api.langfour.com` | container from `apps/api/Dockerfile`, env vars set in the dashboard. Namecheap CNAMEs `api` to Koyeb's per-org target, so moving host is a DNS change |
 | extension | zip | `npm run build:ext && npm run pack --workspace=spotlight-lingo` |
 
 The API image builds from the **repository root**:

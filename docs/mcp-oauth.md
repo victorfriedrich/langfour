@@ -3,8 +3,13 @@
 The streamable HTTP MCP endpoint is:
 
 ```
-https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app/mcp
+https://api.langfour.com/mcp
 ```
+
+Until 2026-11-27 it was `https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app/mcp`,
+the same Koyeb service under its default hostname. Connectors added with that URL
+must be removed and added again with the one above: the protected-resource
+metadata now names `api.langfour.com`, and clients check that it matches.
 
 Use **OAuth** in ChatGPT's developer-mode custom app or a Claude remote
 connector. Supabase handles client registration, authorization codes, PKCE,

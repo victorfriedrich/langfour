@@ -8,7 +8,7 @@ export const SETTING_DIRECTION = 'direction';
 export const SETTING_INTERVAL = 'sync-interval-minutes';
 export const SETTING_LINK_EXISTING = 'link-existing';
 
-export const DEFAULT_API_URL = 'https://major-wynny-victorfriedrich-7c04e8cd.koyeb.app';
+export const DEFAULT_API_URL = 'https://api.langfour.com';
 
 // Synced storage, so every device sees the last result and shares the token.
 export const STORAGE_LAST_SYNC = 'last-sync';

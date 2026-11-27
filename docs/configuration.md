@@ -38,7 +38,7 @@ Nothing secret can live in either.
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | `REACT_APP_SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `REACT_APP_SUPABASE_ANON_KEY` | same page → `anon` `public`. Public by design, constrained by RLS |
-| `NEXT_PUBLIC_API_URL` | `REACT_APP_BACKEND_URL` | the API origin. Both fall back to a default, so a missing value fails quietly rather than loudly |
+| `NEXT_PUBLIC_API_URL` | `REACT_APP_BACKEND_URL` | the API origin, `https://api.langfour.com` in production. Both fall back to a default, so a missing value fails quietly rather than loudly |
 
 ## `apps/api`
 
